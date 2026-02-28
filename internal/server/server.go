@@ -11,20 +11,20 @@ import (
 )
 
 type HiveServer struct {
-	agents agent.AgentRegistry
+	registry agent.AgentRegistry
 	redisClient *redis.Client
 }
 
-func NewHiveServer(redisClient *redis.Client) *HiveServer {
+func NewHiveServer(redisClient *redis.Client, registry agent.AgentRegistry) *HiveServer {
 	return &HiveServer{
-		agents:  agent.NewAgentResitry(),
+		registry:  registry,
 		redisClient: redisClient,
 	}
 }
 
 func (s *HiveServer) Start(ctx context.Context) error {
 	log.Println("Starting Hive Server")
-	a, _ := s.agents.GetAgent("")
+	a, _ := s.registry.GetAgent("")
 
 	// Register agent
 	if err := s.redisClient.RegisterAgent(ctx,a.GetID(),a.GetType()); err != nil {

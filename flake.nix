@@ -12,7 +12,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # Define the Go version we want
-        go = pkgs.go_1_26;
+        go = pkgs.go_1_25;
 
         # Build the hive CLI
         hive-cli = pkgs.buildGoModule {
@@ -93,7 +93,7 @@
           ];
 
           shellHook = ''
-            echo "🐝 Welcome to The Hive development environment!"
+            echo "Welcome to The Hive development environment!"
             echo ""
             echo "Available commands:"
             echo "  go run cmd/hive/main.go     - Run the CLI"
