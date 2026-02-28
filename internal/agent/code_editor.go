@@ -10,27 +10,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
-// CodeEditorAgent is an example implementation of the HiveAgent interface
+// codeEditorAgent is an example implementation of the HiveAgent interface
 // It handles tasks related to code editing and file modifications.
-type CodeEditorAgent struct {
+type codeEditorAgent struct {
 	id           string
 	agentType    string
-	redisClient  *redis.Client
 	maxTasks     int
 	capabilities []string
+	feedbackCh   FeedbackChannel
 }
 
 // NewCodeEditorAgent creates a new code editor agent.
-func NewCodeEditorAgent(redisClient *redis.Client) (*CodeEditorAgent, error) {
-	agent := &CodeEditorAgent{
-		id:          "code-editor-" + uuid.New().String()[:8],
-		agentType:   "code_editor",
-		redisClient: redisClient,
-		maxTasks:    5,
+func NewCodeEditorAgent() (HiveAgent, error) {
+	agent := &codeEditorAgent{
+		id:        "code-editor-" + uuid.New().String()[:8],
+		agentType: "code_editor",
+		maxTasks:  5,
 		capabilities: []string{
 			"file_editing",
 			"code_modification",
@@ -43,17 +41,17 @@ func NewCodeEditorAgent(redisClient *redis.Client) (*CodeEditorAgent, error) {
 }
 
 // GetID returns the agent's unique identifier.
-func (a *CodeEditorAgent) GetID() string {
+func (a *codeEditorAgent) GetID() string {
 	return a.id
 }
 
 // GetType returns the agent type.
-func (a *CodeEditorAgent) GetType() string {
+func (a *codeEditorAgent) GetType() string {
 	return a.agentType
 }
 
 // CanHandle determines if this agent can process the given task.
-func (a *CodeEditorAgent) CanHandle(task *types.HiveTask) bool {
+func (a *codeEditorAgent) CanHandle(task *types.HiveTask) bool {
 	// Check if task involves code editing keywords
 	goal := strings.ToLower(task.Goal)
 
@@ -72,14 +70,11 @@ func (a *CodeEditorAgent) CanHandle(task *types.HiveTask) bool {
 }
 
 // Execute performs the main work of the task.
-func (a *CodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) error {
+func (a *codeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) error {
 	log.Printf("Agent %s executing task: %s", a.id, task.ID)
 
 	// Mark task as started
-	task.MarkStarted(a.id)
-	if err := a.redisClient.UpdateTask(ctx, task); err != nil {
-		return fmt.Errorf("failed to update task status: %w", err)
-	}
+	task.MarkStarted(ctx, a.id)
 
 	// Simulate work progress
 	steps := []struct {
@@ -108,10 +103,6 @@ func (a *CodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) err
 		task.Progress = step.progress
 		task.ExecutionSummary = step.description
 
-		if err := a.redisClient.UpdateTask(ctx, task); err != nil {
-			log.Printf("Failed to update task progress: %v", err)
-		}
-
 		// Simulate feedback request at 40% progress
 		if step.progress == 40.0 {
 			if _, err := a.RequestFeedback(ctx, task, "Should I proceed with modifying the main configuration file? This will affect the traffic routing."); err != nil {
@@ -122,8 +113,8 @@ func (a *CodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) err
 
 	// Simulate running tests
 	if err := a.runValidationTests(ctx, task); err != nil {
-		task.MarkFailed(fmt.Sprintf("Validation tests failed: %v", err))
-		return a.redisClient.UpdateTask(ctx, task)
+		task.MarkFailed(ctx, fmt.Sprintf("Validation tests failed: %v", err))
+		return fmt.Errorf("run validtion failed: %w", err)
 	}
 
 	// Mark as completed
@@ -131,49 +122,43 @@ func (a *CodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) err
 	task.LinesChanged = 15
 	task.FilesModified = []string{"config/traffic.go", "handlers/shift.go", "tests/traffic_test.go"}
 	task.TestsPassed = true
-	task.MarkCompleted(summary)
+	task.MarkCompleted(ctx, summary)
 
-	return a.redisClient.UpdateTask(ctx, task)
+	return nil
 }
 
 // ReportStatus provides real-time status updates during execution..
-func (a *CodeEditorAgent) ReportStatus(_ context.Context, _ *types.HiveTask) error {
+func (a *codeEditorAgent) ReportStatus(_ context.Context, _ *types.HiveTask) error {
 	// This would typically be called periodically during execution
 	// For now, it's a no-op as status updates happen in Execute()
 	return nil
 }
 
 // RequestFeedback pauses execution and requests human input.
-func (a *CodeEditorAgent) RequestFeedback(ctx context.Context, task *types.HiveTask, message string) (string, error) {
+func (a *codeEditorAgent) RequestFeedback(ctx context.Context, task *types.HiveTask, message string) (string, error) {
 	log.Printf("Agent %s requesting feedback for task %s: %s", a.id, task.ID, message)
 
 	// Mark task as paused and requiring feedback
-	task.RequestFeedback(message)
-	if err := a.redisClient.UpdateTask(ctx, task); err != nil {
-		return "", fmt.Errorf("failed to update task for feedback: %w", err)
+	task.RequestFeedback(ctx, message)
+	if err := a.feedbackCh.SendRequest(ctx, task.ID, message); err != nil {
+		return "", fmt.Errorf("failed to send feedback request: %w", err)
 	}
 
 	// Wait for feedback with timeout
 	feedbackCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-
-	response, err := a.redisClient.WaitForFeedback(feedbackCtx, task.ID)
+	response, err := a.feedbackCh.WaitForResponse(feedbackCtx, task.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get feedback: %w", err)
 	}
 
 	// Process feedback and resume
-	task.ProvideFeedback(response)
-	if err = a.redisClient.UpdateTask(ctx, task); err != nil {
-		return "", fmt.Errorf("failed to update task after feedback: %w", err)
-	}
-
-	log.Printf("Agent %s received feedback: %s", a.id, response)
+	task.ProvideFeedback(ctx, response)
 	return response, nil
 }
 
 // Validate performs pre-execution validation of the task.
-func (a *CodeEditorAgent) Validate(task *types.HiveTask) error {
+func (a *codeEditorAgent) Validate(task *types.HiveTask) error {
 	if task.Goal == "" {
 		return errors.New("task goal cannot be empty")
 	}
@@ -186,25 +171,24 @@ func (a *CodeEditorAgent) Validate(task *types.HiveTask) error {
 }
 
 // Cleanup performs any necessary cleanup after task completion or failure.
-func (a *CodeEditorAgent) Cleanup(_ context.Context, task *types.HiveTask) error {
+func (a *codeEditorAgent) Cleanup(_ context.Context, task *types.HiveTask) error {
 	log.Printf("Agent %s cleaning up after task %s", a.id, task.ID)
 	// Could include: closing file handles, cleaning temp files, etc.
 	return nil
 }
 
 // GetCapabilities returns a list of capabilities this agent supports.
-func (a *CodeEditorAgent) GetCapabilities() []string {
+func (a *codeEditorAgent) GetCapabilities() []string {
 	return a.capabilities
 }
 
 // Heartbeat indicates the agent is alive and ready to accept work.
-func (a *CodeEditorAgent) Heartbeat() error {
-	ctx := context.Background()
-	return a.redisClient.Heartbeat(ctx, a.id)
+func (a *codeEditorAgent) Heartbeat() error {
+	return nil
 }
 
 // runValidationTests simulates running tests to validate changes.
-func (a *CodeEditorAgent) runValidationTests(ctx context.Context, task *types.HiveTask) error {
+func (a *codeEditorAgent) runValidationTests(ctx context.Context, task *types.HiveTask) error {
 	log.Printf("Running validation tests for task %s", task.ID)
 
 	// Simulate running tests - in a real implementation, this would:
@@ -225,5 +209,10 @@ func (a *CodeEditorAgent) runValidationTests(ctx context.Context, task *types.Hi
 
 	// Simulate 90% success rate
 	// In real implementation, this would be based on actual test results
+	return nil
+}
+
+func (a *codeEditorAgent) Setup(_ context.Context, feedbackCh FeedbackChannel) error {
+	a.feedbackCh = feedbackCh
 	return nil
 }

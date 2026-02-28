@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
 
@@ -29,6 +30,10 @@ type HiveAgent interface {
 	// ReportStatus provides real-time status updates during execution
 	// This is called periodically to update task progress
 	ReportStatus(ctx context.Context, task *types.HiveTask) error
+
+	// Setup setup neccessary tools so the agent could actively do some
+	// functionalities.
+	Setup(ctx context.Context, feedbackCh FeedbackChannel) error
 
 	// RequestFeedback pauses execution and requests human input
 	// The agent should wait for feedback before continuing
@@ -85,8 +90,13 @@ type agentRegistry struct {
 }
 
 // FindAgent implements [Registry].
-func (a *agentRegistry) FindAgent(_ *types.HiveTask) (HiveAgent, error) {
-	return a.agents["id"], nil
+func (a *agentRegistry) FindAgent(task *types.HiveTask) (HiveAgent, error) {
+	for _, agent := range a.agents {
+		if agent.CanHandle(task) {
+			return agent, nil
+		}
+	}
+	return nil, errors.New("failed to find agent for task")
 }
 
 // GetAgent implements [Registry].
@@ -121,4 +131,13 @@ func NewAgentResitry() Registry {
 	return &agentRegistry{
 		agents: make(map[string]HiveAgent),
 	}
+}
+
+// FeedbackChannel represents a communication channel for human-in-the-loop feedback.
+type FeedbackChannel interface {
+	// SendRequest sends a feedback request to the human operator
+	SendRequest(ctx context.Context, taskID, message string) error
+
+	// WaitForResponse waits for human response with timeout
+	WaitForResponse(ctx context.Context, taskID string) (string, error)
 }

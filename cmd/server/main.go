@@ -37,7 +37,7 @@ func main() {
 	defer redisClient.Close()
 
 	// Create and start the code editor agent
-	codeAgent, err := agent.NewCodeEditorAgent(redisClient)
+	codeAgent, err := agent.NewCodeEditorAgent()
 	if err != nil {
 		log.Fatalf("Failed to create code editor agent: %v", err)
 	}

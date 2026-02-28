@@ -1,6 +1,7 @@
 package types //nolint:revive // this package name is acceptable
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -74,6 +75,8 @@ type HiveTask struct {
 	// Execution summary
 	ExecutionSummary string        `json:"execution_summary" db:"execution_summary"`
 	ExecutionTime    time.Duration `json:"execution_time"    db:"execution_time"`
+
+	RecordState func(ctx context.Context, task *HiveTask) error
 }
 
 // NewHiveTask creates a new task with default values.
@@ -95,6 +98,13 @@ func NewHiveTask(goal, jiraID string) *HiveTask {
 	}
 }
 
+func (t *HiveTask) recordState(ctx context.Context) error {
+	if t.RecordState != nil {
+		return t.RecordState(ctx, t)
+	}
+	return nil
+}
+
 // IsActive returns true if the task is currently being processed.
 func (t *HiveTask) IsActive() bool {
 	return t.Status == TaskStatusInProgress || t.Status == TaskStatusPaused
@@ -106,16 +116,17 @@ func (t *HiveTask) CanRetry() bool {
 }
 
 // MarkStarted updates the task to indicate it has started.
-func (t *HiveTask) MarkStarted(agentID string) {
+func (t *HiveTask) MarkStarted(ctx context.Context, agentID string) error {
 	now := time.Now()
 	t.Status = TaskStatusInProgress
 	t.AssignedAgent = agentID
 	t.StartedAt = &now
 	t.UpdatedAt = now
+	return t.recordState(ctx)
 }
 
 // MarkCompleted updates the task to indicate successful completion.
-func (t *HiveTask) MarkCompleted(summary string) {
+func (t *HiveTask) MarkCompleted(ctx context.Context, summary string) error {
 	now := time.Now()
 	t.Status = TaskStatusCompleted
 	t.Progress = 100.0
@@ -126,30 +137,33 @@ func (t *HiveTask) MarkCompleted(summary string) {
 	if t.StartedAt != nil {
 		t.ExecutionTime = now.Sub(*t.StartedAt)
 	}
+	return t.recordState(ctx)
 }
 
 // MarkFailed updates the task to indicate failure.
-func (t *HiveTask) MarkFailed(errorMsg string) {
+func (t *HiveTask) MarkFailed(ctx context.Context, errorMsg string) error {
 	now := time.Now()
 	t.Status = TaskStatusFailed
 	t.ErrorMessage = errorMsg
 	t.UpdatedAt = now
 	t.RetryCount++
+	return t.recordState(ctx)
 }
 
 // RequestFeedback marks the task as requiring human interaction.
-func (t *HiveTask) RequestFeedback(message string) {
+func (t *HiveTask) RequestFeedback(ctx context.Context, message string) error {
 	t.Status = TaskStatusPaused
 	t.RequiresFeedback = true
 	t.FeedbackMessage = message
 	t.UpdatedAt = time.Now()
+	return t.recordState(ctx)
 }
 
 // ProvideFeedback provides the human response and resumes the task.
-func (t *HiveTask) ProvideFeedback(response string) {
+func (t *HiveTask) ProvideFeedback(ctx context.Context, response string) error {
 	t.Status = TaskStatusInProgress
 	t.RequiresFeedback = false
 	t.FeedbackResponse = response
 	t.UpdatedAt = time.Now()
+	return t.recordState(ctx)
 }
-
