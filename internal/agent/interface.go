@@ -9,7 +9,7 @@ import (
 )
 
 // HiveAgent defines the interface that all Hive agents must implement
-// This interface enables pluggable agents that can be moved to gRPC plugins later
+// This interface enables pluggable agents that can be moved to hashicorp gRPC plugins later.
 type HiveAgent interface {
 	// GetID returns the unique identifier for this agent instance
 	GetID() string
@@ -22,6 +22,8 @@ type HiveAgent interface {
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
+	// For success task, markCompleted will be automatically call with the
+	// summary by the agent, so the caller don't have to handle this manually.
 	Execute(ctx context.Context, task *types.HiveTask) error
 
 	// ReportStatus provides real-time status updates during execution
@@ -47,8 +49,8 @@ type HiveAgent interface {
 	Heartbeat() error
 }
 
-// AgentConfig holds configuration for agent initialization
-type AgentConfig struct {
+// Config holds configuration for agent initialization.
+type Config struct {
 	ID           string            `json:"id"`
 	Type         string            `json:"type"`
 	MaxTasks     int               `json:"max_tasks"`
@@ -57,8 +59,8 @@ type AgentConfig struct {
 	Capabilities []string          `json:"capabilities"`
 }
 
-// AgentRegistry manages available agents in the system
-type AgentRegistry interface {
+// Registry manages available agents in the system.
+type Registry interface {
 	// RegisterAgent adds an agent to the registry
 	RegisterAgent(agent HiveAgent) error
 
@@ -82,69 +84,41 @@ type agentRegistry struct {
 	agents map[string]HiveAgent
 }
 
-// FindAgent implements [AgentRegistry].
-func (a *agentRegistry) FindAgent(task *types.HiveTask) (HiveAgent, error) {
+// FindAgent implements [Registry].
+func (a *agentRegistry) FindAgent(_ *types.HiveTask) (HiveAgent, error) {
 	return a.agents["id"], nil
 }
 
-// GetAgent implements [AgentRegistry].
+// GetAgent implements [Registry].
 func (a *agentRegistry) GetAgent(agentID string) (HiveAgent, error) {
 	return a.agents[agentID], nil
 }
 
-// GetAgentsByType implements [AgentRegistry].
-func (a *agentRegistry) GetAgentsByType(agentType string) []HiveAgent {
+// GetAgentsByType implements [Registry].
+func (a *agentRegistry) GetAgentsByType(_ string) []HiveAgent {
 	panic("Not implemented")
 }
 
-// ListAgents implements [AgentRegistry].
+// ListAgents implements [Registry].
 func (a *agentRegistry) ListAgents() []HiveAgent {
 	return slices.Collect(maps.Values(a.agents))
 }
 
-// RegisterAgent implements [AgentRegistry].
+// RegisterAgent implements [Registry].
 func (a *agentRegistry) RegisterAgent(agent HiveAgent) error {
 	id := agent.GetID()
 	a.agents[id] = agent
 	return nil
 }
 
-// UnregisterAgent implements [AgentRegistry].
+// UnregisterAgent implements [Registry].
 func (a *agentRegistry) UnregisterAgent(agentID string) error {
 	delete(a.agents, agentID)
 	return nil
 }
 
-func NewAgentResitry() AgentRegistry {
+func NewAgentResitry() Registry {
 	return &agentRegistry{
 		agents: make(map[string]HiveAgent),
 	}
 }
-
-// AgentManager handles the lifecycle of agents
-type AgentManager interface {
-	// StartAgent initializes and starts an agent
-	StartAgent(ctx context.Context, config *AgentConfig) (HiveAgent, error)
-
-	// StopAgent gracefully shuts down an agent
-	StopAgent(ctx context.Context, agentID string) error
-
-	// RestartAgent restarts a failed or stuck agent
-	RestartAgent(ctx context.Context, agentID string) error
-
-	// MonitorAgents continuously monitors agent health
-	MonitorAgents(ctx context.Context) error
-}
-
-// FeedbackChannel represents a communication channel for human-in-the-loop feedback
-type FeedbackChannel interface {
-	// SendRequest sends a feedback request to the human operator
-	SendRequest(ctx context.Context, taskID, message string) error
-
-	// WaitForResponse waits for human response with timeout
-	WaitForResponse(ctx context.Context, taskID string) (string, error)
-
-	// Close closes the feedback channel
-	Close() error
-}
-

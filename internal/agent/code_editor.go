@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -14,7 +15,7 @@ import (
 )
 
 // CodeEditorAgent is an example implementation of the HiveAgent interface
-// It handles tasks related to code editing and file modifications
+// It handles tasks related to code editing and file modifications.
 type CodeEditorAgent struct {
 	id           string
 	agentType    string
@@ -23,7 +24,7 @@ type CodeEditorAgent struct {
 	capabilities []string
 }
 
-// NewCodeEditorAgent creates a new code editor agent
+// NewCodeEditorAgent creates a new code editor agent.
 func NewCodeEditorAgent(redisClient *redis.Client) (*CodeEditorAgent, error) {
 	agent := &CodeEditorAgent{
 		id:          "code-editor-" + uuid.New().String()[:8],
@@ -41,17 +42,17 @@ func NewCodeEditorAgent(redisClient *redis.Client) (*CodeEditorAgent, error) {
 	return agent, nil
 }
 
-// GetID returns the agent's unique identifier
+// GetID returns the agent's unique identifier.
 func (a *CodeEditorAgent) GetID() string {
 	return a.id
 }
 
-// GetType returns the agent type
+// GetType returns the agent type.
 func (a *CodeEditorAgent) GetType() string {
 	return a.agentType
 }
 
-// CanHandle determines if this agent can process the given task
+// CanHandle determines if this agent can process the given task.
 func (a *CodeEditorAgent) CanHandle(task *types.HiveTask) bool {
 	// Check if task involves code editing keywords
 	goal := strings.ToLower(task.Goal)
@@ -70,7 +71,7 @@ func (a *CodeEditorAgent) CanHandle(task *types.HiveTask) bool {
 	return false
 }
 
-// Execute performs the main work of the task
+// Execute performs the main work of the task.
 func (a *CodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) error {
 	log.Printf("Agent %s executing task: %s", a.id, task.ID)
 
@@ -135,14 +136,14 @@ func (a *CodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) err
 	return a.redisClient.UpdateTask(ctx, task)
 }
 
-// ReportStatus provides real-time status updates during execution
-func (a *CodeEditorAgent) ReportStatus(ctx context.Context, task *types.HiveTask) error {
+// ReportStatus provides real-time status updates during execution..
+func (a *CodeEditorAgent) ReportStatus(_ context.Context, _ *types.HiveTask) error {
 	// This would typically be called periodically during execution
 	// For now, it's a no-op as status updates happen in Execute()
 	return nil
 }
 
-// RequestFeedback pauses execution and requests human input
+// RequestFeedback pauses execution and requests human input.
 func (a *CodeEditorAgent) RequestFeedback(ctx context.Context, task *types.HiveTask, message string) (string, error) {
 	log.Printf("Agent %s requesting feedback for task %s: %s", a.id, task.ID, message)
 
@@ -163,7 +164,7 @@ func (a *CodeEditorAgent) RequestFeedback(ctx context.Context, task *types.HiveT
 
 	// Process feedback and resume
 	task.ProvideFeedback(response)
-	if err := a.redisClient.UpdateTask(ctx, task); err != nil {
+	if err = a.redisClient.UpdateTask(ctx, task); err != nil {
 		return "", fmt.Errorf("failed to update task after feedback: %w", err)
 	}
 
@@ -171,38 +172,38 @@ func (a *CodeEditorAgent) RequestFeedback(ctx context.Context, task *types.HiveT
 	return response, nil
 }
 
-// Validate performs pre-execution validation of the task
+// Validate performs pre-execution validation of the task.
 func (a *CodeEditorAgent) Validate(task *types.HiveTask) error {
 	if task.Goal == "" {
-		return fmt.Errorf("task goal cannot be empty")
+		return errors.New("task goal cannot be empty")
 	}
 
 	if task.WorkingDir == "" {
-		return fmt.Errorf("working directory must be specified")
+		return errors.New("working directory must be specified")
 	}
 
 	return nil
 }
 
-// Cleanup performs any necessary cleanup after task completion or failure
-func (a *CodeEditorAgent) Cleanup(ctx context.Context, task *types.HiveTask) error {
+// Cleanup performs any necessary cleanup after task completion or failure.
+func (a *CodeEditorAgent) Cleanup(_ context.Context, task *types.HiveTask) error {
 	log.Printf("Agent %s cleaning up after task %s", a.id, task.ID)
 	// Could include: closing file handles, cleaning temp files, etc.
 	return nil
 }
 
-// GetCapabilities returns a list of capabilities this agent supports
+// GetCapabilities returns a list of capabilities this agent supports.
 func (a *CodeEditorAgent) GetCapabilities() []string {
 	return a.capabilities
 }
 
-// Heartbeat indicates the agent is alive and ready to accept work
+// Heartbeat indicates the agent is alive and ready to accept work.
 func (a *CodeEditorAgent) Heartbeat() error {
 	ctx := context.Background()
 	return a.redisClient.Heartbeat(ctx, a.id)
 }
 
-// runValidationTests simulates running tests to validate changes
+// runValidationTests simulates running tests to validate changes.
 func (a *CodeEditorAgent) runValidationTests(ctx context.Context, task *types.HiveTask) error {
 	log.Printf("Running validation tests for task %s", task.ID)
 
@@ -226,83 +227,3 @@ func (a *CodeEditorAgent) runValidationTests(ctx context.Context, task *types.Hi
 	// In real implementation, this would be based on actual test results
 	return nil
 }
-
-// Start begins the agent's main execution loop
-func (a *CodeEditorAgent) Start(ctx context.Context) error {
-	log.Printf("Starting Code Editor Agent %s", a.id)
-
-	// Register agent
-	if err := a.redisClient.RegisterAgent(ctx, a.id, a.agentType); err != nil {
-		return fmt.Errorf("failed to register agent: %w", err)
-	}
-
-	// Start heartbeat goroutine
-	go func() {
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := a.Heartbeat(); err != nil {
-					log.Printf("Heartbeat failed: %v", err)
-				}
-			}
-		}
-	}()
-
-	// Main task processing loop
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("Agent %s shutting down", a.id)
-			return ctx.Err()
-		default:
-		}
-
-		// Get next task from queue
-		task, err := a.redisClient.GetNextTask(ctx)
-		if err != nil {
-			log.Printf("Failed to get next task: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		if task == nil {
-			// No tasks available, wait a bit
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// Check if we can handle this task
-		if !a.CanHandle(task) {
-			// Put task back in queue for other agents
-			if err := a.redisClient.SubmitTask(ctx, task); err != nil {
-				log.Printf("Failed to requeue task: %v", err)
-			}
-			continue
-		}
-
-		// Validate and execute task
-		if err := a.Validate(task); err != nil {
-			task.MarkFailed(fmt.Sprintf("Validation failed: %v", err))
-			a.redisClient.UpdateTask(ctx, task)
-			continue
-		}
-
-		// Execute task
-		if err := a.Execute(ctx, task); err != nil {
-			log.Printf("Task execution failed: %v", err)
-			task.MarkFailed(err.Error())
-			a.redisClient.UpdateTask(ctx, task)
-		}
-
-		// Cleanup regardless of success or failure
-		if err := a.Cleanup(ctx, task); err != nil {
-			log.Printf("Cleanup failed: %v", err)
-		}
-	}
-}
-

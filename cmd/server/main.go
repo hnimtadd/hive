@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/redis"
+	"github.com/hnimtadd/hive/internal/server"
 )
 
 func main() {
@@ -41,10 +43,14 @@ func main() {
 	}
 
 	log.Printf("Code Editor Agent %s started and ready for tasks", codeAgent.GetID())
+	registry := agent.NewAgentResitry()
+	if err = registry.RegisterAgent(codeAgent); err != nil {
+		log.Fatalf("Failed to register code agent: %v", err)
+	}
 
-	// Start the agent (this blocks until context is cancelled)
-	if err := codeAgent.Start(ctx); err != nil && err != context.Canceled {
-		log.Fatalf("Agent execution failed: %v", err)
+	server := server.NewHiveServer(redisClient, registry)
+	if err = server.Start(ctx); err != nil && errors.Is(err, context.Canceled) {
+		log.Fatalf("Server execution failed: %v", err)
 	}
 
 	log.Println("Agent worker stopped gracefully")
