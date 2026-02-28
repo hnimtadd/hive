@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	log.Println("Starting Hive Agent Worker...")
+	log.Println("Starting Hive Server Worker...")
 
 	// Create context that can be cancelled
 	ctx, cancel := context.WithCancel(context.Background())
@@ -49,4 +49,3 @@ func main() {
 
 	log.Println("Agent worker stopped gracefully")
 }
-

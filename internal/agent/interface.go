@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"github.com/hnimtadd/hive/pkg/types"
 )
@@ -74,6 +76,49 @@ type AgentRegistry interface {
 
 	// GetAgentsByType returns all agents of a specific type
 	GetAgentsByType(agentType string) []HiveAgent
+}
+
+type agentRegistry struct {
+	agents map[string]HiveAgent
+}
+
+// FindAgent implements [AgentRegistry].
+func (a *agentRegistry) FindAgent(task *types.HiveTask) (HiveAgent, error) {
+	return a.agents["id"], nil
+}
+
+// GetAgent implements [AgentRegistry].
+func (a *agentRegistry) GetAgent(agentID string) (HiveAgent, error) {
+	return a.agents[agentID], nil
+}
+
+// GetAgentsByType implements [AgentRegistry].
+func (a *agentRegistry) GetAgentsByType(agentType string) []HiveAgent {
+	panic("Not implemented")
+}
+
+// ListAgents implements [AgentRegistry].
+func (a *agentRegistry) ListAgents() []HiveAgent {
+	return slices.Collect(maps.Values(a.agents))
+}
+
+// RegisterAgent implements [AgentRegistry].
+func (a *agentRegistry) RegisterAgent(agent HiveAgent) error {
+	id := agent.GetID()
+	a.agents[id] = agent
+	return nil
+}
+
+// UnregisterAgent implements [AgentRegistry].
+func (a *agentRegistry) UnregisterAgent(agentID string) error {
+	delete(a.agents, agentID)
+	return nil
+}
+
+func NewAgentResitry() AgentRegistry {
+	return &agentRegistry{
+		agents: make(map[string]HiveAgent),
+	}
 }
 
 // AgentManager handles the lifecycle of agents
