@@ -76,7 +76,7 @@ type HiveTask struct {
 	ExecutionSummary string        `json:"execution_summary" db:"execution_summary"`
 	ExecutionTime    time.Duration `json:"execution_time"    db:"execution_time"`
 
-	RecordState func(ctx context.Context, task *HiveTask) error
+	RecordState func(ctx context.Context, task *HiveTask) error `json:"-"`
 }
 
 // NewHiveTask creates a new task with default values.
