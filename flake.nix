@@ -27,6 +27,7 @@
 
           buildInputs = with pkgs; [
             sqlite
+            git  # Required for GitLab operations
           ];
 
           meta = with pkgs.lib; {
@@ -50,6 +51,7 @@
 
           buildInputs = with pkgs; [
             sqlite
+            git  # Required for GitLab operations
           ];
 
           meta = with pkgs.lib; {
@@ -74,6 +76,9 @@
             # Database
             sqlite
             redis
+            
+            # Git operations
+            git
 
             # Development tools
             air          # Live reloading for Go
@@ -200,7 +205,7 @@
               wait $AGENT_PID
             }
 
-            echo "🔧 Development scripts loaded!"
+            echo "Development scripts loaded!"
             echo "Available functions: start-redis, stop-redis, build-all, test-all, lint, demo"
           '';
         };
