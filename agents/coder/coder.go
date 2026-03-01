@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/gitlab"
@@ -21,7 +22,7 @@ type AICodeEditorAgent struct {
 	id           string
 	agentType    string
 	redisClient  *redis.Client
-	claudeClient *llm.ClaudeCodeAnalyzer
+	llmClient    llm.LLMClient
 	gitlabClient *gitlab.GitLabIntegrator
 	feedbackCh   agent.FeedbackChannel
 	capabilities []string
@@ -29,10 +30,10 @@ type AICodeEditorAgent struct {
 
 // NewAICodeEditorAgent creates a new AI-powered code editor agent.
 func NewAICodeEditorAgent(redisClient *redis.Client) (*AICodeEditorAgent, error) {
-	// Initialize Claude client using config
-	claudeClient, err := llm.NewClaudeCodeAnalyzer()
+	// Initialize LLM client using config
+	llmClient, err := llm.NewClaudeClient()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Claude client: %w", err)
+		return nil, fmt.Errorf("failed to initialize LLM client: %w", err)
 	}
 
 	// Initialize GitLab client using config
@@ -45,7 +46,7 @@ func NewAICodeEditorAgent(redisClient *redis.Client) (*AICodeEditorAgent, error)
 		id:           "ai-code-editor-" + uuid.New().String()[:8],
 		agentType:    "ai_code_editor",
 		redisClient:  redisClient,
-		claudeClient: claudeClient,
+		llmClient:    llmClient,
 		gitlabClient: gitlabClient,
 		capabilities: []string{
 			"ai_code_generation",
@@ -139,23 +140,33 @@ func (a *AICodeEditorAgent) Execute(ctx context.Context, task *types.HiveTask) e
 	return task.MarkCompleted(ctx, summary)
 }
 
-// analyzeFeature uses Claude to analyze the feature request.
+// analyzeFeature uses LLM to analyze the feature request.
 func (a *AICodeEditorAgent) analyzeFeature(ctx context.Context, task *types.HiveTask) error {
 	task.Progress = 10.0
 	task.ExecutionSummary = "AI analyzing feature requirements..."
 	_ = a.updateTaskProgress(ctx, task)
 
 	// Get codebase context
-	codebaseContext, err := llm.GetCodebaseContext(a.gitlabClient.GetWorkspaceDir())
+	codebaseContext, err := a.getCodebaseContext(a.gitlabClient.GetWorkspaceDir())
 	if err != nil {
 		log.Printf("Warning: Failed to get codebase context: %v", err)
 		codebaseContext = "No codebase context available"
 	}
 
-	// Analyze feature with Claude
-	analysis, err := a.claudeClient.AnalyzeFeature(ctx, task.Goal, codebaseContext)
+	// Analyze feature with LLM
+	prompt := a.buildAnalysisPrompt(task.Goal, codebaseContext)
+	
+	response, err := a.llmClient.Generate(ctx, []*schema.Message{{
+		Role:    schema.User,
+		Content: prompt,
+	}})
 	if err != nil {
-		return err
+		return fmt.Errorf("LLM analysis failed: %w", err)
+	}
+
+	analysis, err := a.parseAnalysisResult(response.Content)
+	if err != nil {
+		return fmt.Errorf("failed to parse analysis result: %w", err)
 	}
 
 	// Store analysis results in task
@@ -185,7 +196,7 @@ func (a *AICodeEditorAgent) handleAIQuestions(ctx context.Context, task *types.H
 	}
 
 	// Refine analysis with feedback
-	analysis := &llm.AnalysisResult{
+	analysis := &AnalysisResult{
 		FeatureSummary:    task.FeatureSpec,
 		TechnicalApproach: task.TechnicalContext,
 		FilesToModify:     task.FilesToModify,
@@ -195,9 +206,19 @@ func (a *AICodeEditorAgent) handleAIQuestions(ctx context.Context, task *types.H
 		EstimatedTime:     task.AIEstimatedTime,
 	}
 
-	refinedAnalysis, err := a.claudeClient.RefineAnalysis(ctx, analysis, feedback)
+	prompt := a.buildRefinementPrompt(analysis, feedback)
+	
+	response, err := a.llmClient.Generate(ctx, []*schema.Message{{
+		Role:    schema.User,
+		Content: prompt,
+	}})
 	if err != nil {
-		return err
+		return fmt.Errorf("LLM refinement failed: %w", err)
+	}
+
+	refinedAnalysis, err := a.parseAnalysisResult(response.Content)
+	if err != nil {
+		return fmt.Errorf("failed to parse refined analysis: %w", err)
 	}
 
 	// Update task with refined analysis
@@ -236,13 +257,23 @@ func (a *AICodeEditorAgent) prepareWorkspace(ctx context.Context, task *types.Hi
 	return a.updateTaskProgress(ctx, task)
 }
 
-// generateAndImplementCode uses Claude to generate code and implements changes.
+// generateAndImplementCode uses LLM to generate code and implements changes.
 func (a *AICodeEditorAgent) generateAndImplementCode(ctx context.Context, task *types.HiveTask) error {
 	// Re-analyze to get detailed changes
-	codebaseContext, _ := llm.GetCodebaseContext(task.WorkingDir)
-	detailedAnalysis, err := a.claudeClient.AnalyzeFeature(ctx, task.FeatureSpec, codebaseContext)
+	codebaseContext, _ := a.getCodebaseContext(task.WorkingDir)
+	
+	prompt := a.buildAnalysisPrompt(task.FeatureSpec, codebaseContext)
+	response, err := a.llmClient.Generate(ctx, []*schema.Message{{
+		Role:    schema.User,
+		Content: prompt,
+	}})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get detailed analysis: %w", err)
+	}
+
+	detailedAnalysis, err := a.parseAnalysisResult(response.Content)
+	if err != nil {
+		return fmt.Errorf("failed to parse detailed analysis: %w", err)
 	}
 
 	totalChanges := len(detailedAnalysis.Changes)
@@ -255,28 +286,34 @@ func (a *AICodeEditorAgent) generateAndImplementCode(ctx context.Context, task *
 		_ = a.updateTaskProgress(ctx, task)
 
 		// Generate specific code for this change
-		var generatedChange *llm.CodeChange
-		generatedChange, err = a.claudeClient.GenerateCode(ctx, &change, codebaseContext)
+		codePrompt := a.buildCodeGenerationPrompt(&change, codebaseContext)
+		codeResponse, err := a.llmClient.Generate(ctx, []*schema.Message{{
+			Role:    schema.User,
+			Content: codePrompt,
+		}})
 		if err != nil {
 			return fmt.Errorf("failed to generate code for %s: %w", change.FilePath, err)
 		}
 
+		// Extract code from response
+		generatedCode := a.extractCodeFromResponse(codeResponse.Content)
+		change.CodeContent = generatedCode
+
 		// Write code to file
-		if err = a.gitlabClient.WriteFile(generatedChange.FilePath, generatedChange.CodeContent); err != nil {
-			return fmt.Errorf("failed to write file %s: %w", generatedChange.FilePath, err)
+		if err = a.gitlabClient.WriteFile(change.FilePath, change.CodeContent); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", change.FilePath, err)
 		}
 
 		// Commit this change
-		var commitInfo *gitlab.CommitInfo
-		commitInfo, err = a.gitlabClient.CommitChanges([]string{generatedChange.FilePath}, generatedChange.CommitMessage)
+		commitInfo, err := a.gitlabClient.CommitChanges([]string{change.FilePath}, change.CommitMessage)
 		if err != nil {
-			return fmt.Errorf("failed to commit %s: %w", generatedChange.FilePath, err)
+			return fmt.Errorf("failed to commit %s: %w", change.FilePath, err)
 		}
 
 		// Track commits
 		task.CommitMessages = append(task.CommitMessages, commitInfo.Message)
 		task.CommitSHAs = append(task.CommitSHAs, commitInfo.SHA)
-		task.FilesModified = append(task.FilesModified, generatedChange.FilePath)
+		task.FilesModified = append(task.FilesModified, change.FilePath)
 	}
 
 	task.Progress = 90.0
@@ -391,7 +428,7 @@ The feature is ready for code review and testing!`,
 }
 
 // estimateLinesChanged provides a rough estimate of lines changed.
-func (a *AICodeEditorAgent) estimateLinesChanged(changes []llm.CodeChange) int {
+func (a *AICodeEditorAgent) estimateLinesChanged(changes []CodeChange) int {
 	total := 0
 	for _, change := range changes {
 		// Rough estimation based on content length
