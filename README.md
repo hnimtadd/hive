@@ -99,7 +99,7 @@ The `HiveTask` struct represents a complete task with:
 
 The `HiveAgent` interface defines the contract for all agents:
 - `Execute()` - Performs the main work
-- `ReportStatus()` - Provides real-time updates  
+- `ReportStatus()` - Provides real-time updates
 - `RequestFeedback()` - Enables human interaction
 - `CanHandle()` - Determines task compatibility
 
@@ -107,7 +107,7 @@ The `HiveAgent` interface defines the contract for all agents:
 
 Parses natural language commands to extract:
 - Action type (update, fix, add, create, etc.)
-- Target (script, function, API, etc.) 
+- Target (script, function, API, etc.)
 - Urgency level
 - Technology context
 
@@ -119,52 +119,102 @@ Provides distributed communication via:
 - Feedback channels for human-in-the-loop
 - Agent heartbeat and discovery
 
-## Example Workflows
+## AI-Powered Feature Development
 
-### Basic Task Execution
+### **NEW: AI Code Editor Agent**
 
-```bash
-# Submit task
-$ ./bin/hive "Fix the authentication bug in the login handler" --jira "AUTH-456"
-Task submitted successfully with ID: abc123
-
-# Monitor progress
-⏳ Task in progress: Analyzing code structure (20.0%)
-⏳ Task in progress: Identifying target files (40.0%)
-⏸️  Task paused - feedback required: Should I proceed with modifying the main auth module?
-Your response: yes
-⏳ Task in progress: Making code modifications (70.0%)
-⏳ Task in progress: Running validation tests (90.0%)
-✅ Task completed successfully!
-Summary: Fixed authentication bug in login handler. Modified 2 files, changed 8 lines.
-```
-
-### Human-in-the-Loop Feedback
-
-When an agent needs clarification:
+The Hive now includes an AI-powered agent that uses **Claude via Eino** to handle complete feature development workflows:
 
 ```bash
-🤔 Human input required:
-Should I proceed with modifying the main configuration file? This will affect traffic routing.
-Your response: yes, but create a backup first
+# AI develops complete features with GitLab integration
+hive "Add user authentication with JWT tokens and refresh mechanism" \
+  --jira "AUTH-123" \
+  --gitlab-project 42 \
+  --target-branch "main"
+
+# Output:
+AI analyzing feature requirements... (10%)
+AI analysis complete - medium complexity, 4 files to modify (30%)
+AI needs clarification: "Should JWT tokens expire after 1 hour or 24 hours?"
+Your response: 1 hour for access tokens, 7 days for refresh tokens
+Human feedback incorporated, analysis refined (40%)
+Preparing GitLab workspace... (45%)
+Workspace ready - branch: hive/feature-a1b2c3d4 (50%)
+Generating code for auth/handler.go (1/4) (60%)
+Generating code for auth/middleware.go (2/4) (70%)
+Generating code for auth/jwt.go (3/4) (80%)
+Generating code for auth/models.go (4/4) (85%)
+Code generation complete - 4 commits created (90%)
+Creating merge request... (95%)
+Task completed successfully!
+
+AI-powered feature development completed!
+Merge Request: https://gitlab.com/project/merge_requests/123
+Statistics:
+  - 4 commits created
+  - 4 files modified/created
+  - ~156 lines of code generated
+  - Complexity: medium
 ```
+
+### **Key Capabilities**
+- **Intelligent Analysis**: Claude analyzes requirements and technical approach
+- **Human-in-the-Loop**: AI asks clarifying questions when needed
+- **GitLab Integration**: Automated branch creation, commits, and MR creation
+- **Code Generation**: Production-ready Go code following project conventions
+- **Progress Monitoring**: Real-time updates with progress indicators
 
 ## Configuration
 
-Create `~/.hive.yaml` for custom settings:
+### **AI & GitLab Setup**
+
+1. **Copy example configuration:**
+   ```bash
+   cp .hive.example.yaml ~/.hive.yaml
+   ```
+
+2. **Set required environment variables:**
+   ```bash
+   export ANTHROPIC_API_KEY="your-claude-api-key"
+   export GITLAB_TOKEN="your-gitlab-personal-access-token"
+   ```
+
+3. **Configure your settings in `~/.hive.yaml`:**
 
 ```yaml
-redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
+ai:
+  provider: "claude"
+  model: "claude-3-5-sonnet-20241022"
+  api_key_env: "ANTHROPIC_API_KEY"
+
+gitlab:
+  url: "https://gitlab.com"  # or your self-hosted GitLab
+  token_env: "GITLAB_TOKEN"
+  workspace_dir: "$HOME/.hive/workspace"
 
 agents:
-  max_concurrent: 5
-  timeout: 300
+  ai_code_editor:
+    enabled: true
+    max_tasks: 2
+```
 
-logging:
-  level: "info"
+### **Usage Examples**
+
+```bash
+# Traditional task processing
+hive "Fix authentication bug in login handler" --jira "AUTH-456"
+
+# AI-powered feature development
+hive "Add rate limiting with Redis backend" \
+  --gitlab-project 42 \
+  --jira "API-789" \
+  --target-branch "develop"
+
+# Check task status
+hive status abc123
+
+# List active tasks
+hive list
 ```
 
 ## Development
@@ -209,7 +259,7 @@ cd hive  # Environment activates automatically
 ### Adding New Agent Types
 
 1. Implement the `HiveAgent` interface
-2. Register agent capabilities  
+2. Register agent capabilities
 3. Add task routing logic
 4. Include in agent worker
 
