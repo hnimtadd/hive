@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
@@ -32,12 +33,21 @@ type Client struct {
 
 // NewClient creates a new Redis client for Hive operations
 func NewClient() (*Client, error) {
-	// TODO: Make these configurable via environment variables or config file
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	return NewClientWithConfig(&cfg.Redis)
+}
+
+// NewClientWithConfig creates a new Redis client with provided config
+func NewClientWithConfig(cfg *config.RedisConfig) (*Client, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:         "localhost:6379",
-		Password:     "", // no password
-		DB:           0,  // default DB
-		PoolSize:     10,
+		Addr:         cfg.Addr,
+		Password:     cfg.Password,
+		DB:           cfg.DB,
+		PoolSize:     cfg.PoolSize,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
 	})

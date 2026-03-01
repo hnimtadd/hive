@@ -138,5 +138,4 @@ func (s *HiveServer) WaitForResponse(ctx context.Context, taskID string) (string
 
 func (s *HiveServer) recordTaskStateHandler(ctx context.Context, task *types.HiveTask) error {
 	return s.redisClient.UpdateTask(ctx, task)
-	return nil
 }
