@@ -14,9 +14,12 @@ import (
 )
 
 var (
-	cfgFile string
-	jiraID  string
-	verbose bool
+	cfgFile         string
+	jiraID          string
+	gitlabProjectID int
+	targetBranch    string
+	featureSpec     string
+	verbose         bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -27,9 +30,12 @@ var rootCmd = &cobra.Command{
 cognitive load and automate project management through natural language CLI commands.
 
 Example usage:
+  # Simple task (legacy mode)
   hive "Update the traffic shift script to deal with 0:100 page" --jira "PROJ-123"
-  hive "Fix the authentication bug in the login handler" --jira "AUTH-456"
-  hive "Add unit tests for the payment service" --jira "TEST-789"`,
+
+  # AI-powered feature development
+  hive "Add user authentication with JWT tokens" --jira "AUTH-456" --gitlab-project 42 --target-branch "main"
+  hive "Implement rate limiting for API endpoints" --gitlab-project 42 --feature "Rate limiting with Redis backend"`,
 
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -65,6 +71,19 @@ func executeCommand(command string) error {
 	task.Command = command
 	task.WorkingDir, _ = os.Getwd()
 
+	// Set AI-powered development fields if provided
+	if gitlabProjectID > 0 {
+		task.GitLabProjectID = gitlabProjectID
+	}
+	if targetBranch != "" {
+		task.TargetBranch = targetBranch
+	}
+	if featureSpec != "" {
+		task.FeatureSpec = featureSpec
+	} else {
+		task.FeatureSpec = intent.Goal // Use goal as feature spec if not explicitly provided
+	}
+
 	// Initialize Redis client
 	redisClient, err := redis.NewClient()
 	if err != nil {
@@ -96,10 +115,10 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 	for update := range updates {
 		switch update.Status {
 		case types.TaskStatusInProgress:
-			fmt.Printf("Task in progress: %s (%.1f%%)\n", update.Description, update.Progress)
+			fmt.Printf("%s (%.1f%%)\n", update.ExecutionSummary, update.Progress)
 		case types.TaskStatusPaused:
 			if update.RequiresFeedback {
-				fmt.Printf("  Task paused - feedback required: %s\n", update.FeedbackMessage)
+				fmt.Printf("Task paused - feedback required: %s\n", update.FeedbackMessage)
 				// Handle feedback request
 				if err := handleFeedbackRequest(ctx, redisClient, taskID, update.FeedbackMessage); err != nil {
 					return err
@@ -107,12 +126,16 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 			}
 		case types.TaskStatusCompleted:
 			fmt.Printf("Task completed successfully!\n")
-			fmt.Printf("Summary: %s\n", update.ExecutionSummary)
-			if update.LinesChanged > 0 {
-				fmt.Printf("Lines changed: %d\n", update.LinesChanged)
+			fmt.Printf("%s\n", update.ExecutionSummary)
+			// Show GitLab-specific information if available
+			if update.MergeRequestURL != "" {
+				fmt.Printf("Merge Request: %s\n", update.MergeRequestURL)
 			}
-			if len(update.FilesModified) > 0 {
-				fmt.Printf("Files modified: %v\n", update.FilesModified)
+			if len(update.CommitSHAs) > 0 {
+				fmt.Printf("Commits created: %d\n", len(update.CommitSHAs))
+			}
+			if update.LinesChanged > 0 {
+				fmt.Printf("Lines changed: ~%d\n", update.LinesChanged)
 			}
 			return nil
 		case types.TaskStatusFailed:
@@ -214,6 +237,9 @@ func init() {
 
 	// Command-specific flags
 	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
+	rootCmd.Flags().IntVar(&gitlabProjectID, "gitlab-project", 0, "GitLab project ID for AI-powered development")
+	rootCmd.Flags().StringVar(&targetBranch, "target-branch", "main", "Target branch for merge request (default: main)")
+	rootCmd.Flags().StringVar(&featureSpec, "feature", "", "Detailed feature specification for AI analysis")
 
 	// Add subcommands
 	rootCmd.AddCommand(statusCmd)

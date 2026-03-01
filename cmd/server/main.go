@@ -36,16 +36,16 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Create and start the code editor agent
-	codeAgent, err := agent.NewCodeEditorAgent()
+	// Create and start the AI code editor agent
+	aiCodeAgent, err := agent.NewAICodeEditorAgent(redisClient)
 	if err != nil {
-		log.Fatalf("Failed to create code editor agent: %v", err)
+		log.Fatalf("Failed to create AI code editor agent: %v", err)
 	}
 
-	log.Printf("Code Editor Agent %s started and ready for tasks", codeAgent.GetID())
+	log.Printf("AI Code Editor Agent %s started and ready for tasks", aiCodeAgent.GetID())
 	registry := agent.NewAgentResitry()
-	if err = registry.RegisterAgent(codeAgent); err != nil {
-		log.Fatalf("Failed to register code agent: %v", err)
+	if err = registry.RegisterAgent(aiCodeAgent); err != nil {
+		log.Fatalf("Failed to register AI code agent: %v", err)
 	}
 
 	server := server.NewHiveServer(redisClient, registry)
