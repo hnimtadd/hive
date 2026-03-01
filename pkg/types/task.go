@@ -76,6 +76,28 @@ type HiveTask struct {
 	ExecutionSummary string        `json:"execution_summary" db:"execution_summary"`
 	ExecutionTime    time.Duration `json:"execution_time"    db:"execution_time"`
 
+	// GitLab integration fields
+	GitLabProjectID int    `json:"gitlab_project_id" db:"gitlab_project_id"`
+	SourceBranch    string `json:"source_branch"     db:"source_branch"`
+	TargetBranch    string `json:"target_branch"     db:"target_branch"`
+	MergeRequestURL string `json:"merge_request_url" db:"merge_request_url"`
+	MergeRequestID  int    `json:"merge_request_id"  db:"merge_request_id"`
+
+	// AI-powered development context
+	FeatureSpec      string   `json:"feature_spec"      db:"feature_spec"`
+	TechnicalContext string   `json:"technical_context" db:"technical_context"`
+	FilesToModify    []string `json:"files_to_modify"   db:"files_to_modify"`
+	FilesToCreate    []string `json:"files_to_create"   db:"files_to_create"`
+
+	// Commit tracking
+	CommitMessages []string `json:"commit_messages" db:"commit_messages"`
+	CommitSHAs     []string `json:"commit_shas"     db:"commit_shas"`
+
+	// AI analysis results
+	AIComplexity    string   `json:"ai_complexity"     db:"ai_complexity"`     // "low", "medium", "high"
+	AIEstimatedTime string   `json:"ai_estimated_time" db:"ai_estimated_time"` // AI's time estimate
+	AIQuestions     []string `json:"ai_questions"      db:"ai_questions"`      // Questions AI needs answered
+
 	RecordState func(ctx context.Context, task *HiveTask) error `json:"-"`
 }
 
@@ -95,6 +117,14 @@ func NewHiveTask(goal, jiraID string) *HiveTask {
 		RequiresFeedback: false,
 		CreatedAt:        now,
 		UpdatedAt:        now,
+
+		// Initialize GitLab and AI fields
+		TargetBranch:   "main",
+		FilesToModify:  make([]string, 0),
+		FilesToCreate:  make([]string, 0),
+		CommitMessages: make([]string, 0),
+		CommitSHAs:     make([]string, 0),
+		AIQuestions:    make([]string, 0),
 	}
 }
 
