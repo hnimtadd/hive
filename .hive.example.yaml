@@ -1,0 +1,45 @@
+# Hive Configuration File
+# Place this file as ~/.hive.yaml or .hive.yaml in project root
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+  pool_size: 10
+
+ai:
+  provider: "claude"
+  model: "claude-3-5-sonnet-20241022"
+  api_key_env: "ANTHROPIC_API_KEY"
+  # base_url: ""  # Optional: custom API endpoint
+  parameters:
+    max_tokens: "4096"
+    temperature: "0.1"
+
+gitlab:
+  url: "https://gitlab.com"
+  token_env: "GITLAB_TOKEN"
+  workspace_dir: "$HOME/.hive/workspace"
+
+agents:
+  max_concurrent: 5
+  timeout_seconds: 300
+  
+  ai_code_editor:
+    enabled: true
+    max_tasks: 2
+    capabilities:
+      - "ai_code_generation"
+      - "feature_development"
+      - "gitlab_integration"
+      - "automated_commits"
+      - "merge_request_creation"
+
+server:
+  port: 8080
+  host: "localhost"
+  metrics_port: 9090
+
+# Environment Variables Required:
+# - ANTHROPIC_API_KEY: Your Claude API key
+# - GITLAB_TOKEN: Your GitLab personal access token

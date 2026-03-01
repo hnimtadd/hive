@@ -70,3 +70,4 @@ temp/
 config.yaml
 config.json
 .hive.yaml
+.hive.test.yaml
