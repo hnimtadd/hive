@@ -114,7 +114,7 @@ func LoadConfig() (*Config, error) {
 	return &config, nil
 }
 
-// setDefaults sets default configuration values
+// setDefaults sets default configuration values.
 func setDefaults() {
 	// Redis defaults
 	viper.SetDefault("redis.addr", "localhost:6379")

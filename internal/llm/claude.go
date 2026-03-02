@@ -8,20 +8,21 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/claude"
 	"github.com/cloudwego/eino/schema"
 	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/pkg/types"
 )
 
-// LLMClient represents a generic Large Language Model client interface
-type LLMClient interface {
+// Client represents a generic Large Language Model client interface.
+type Client interface {
 	Generate(ctx context.Context, messages []*schema.Message) (*schema.Message, error)
 	Close() error
 }
 
-// ClaudeClient is a Claude-specific implementation of LLMClient
+// ClaudeClient is a Claude-specific implementation of LLMClient.
 type ClaudeClient struct {
 	model *claude.ChatModel
 }
 
-// NewClaudeClient creates a new Claude client
+// NewClaudeClient creates a new Claude client.
 func NewClaudeClient() (*ClaudeClient, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -31,7 +32,7 @@ func NewClaudeClient() (*ClaudeClient, error) {
 	return NewClaudeClientWithConfig(&cfg.AI)
 }
 
-// NewClaudeClientWithConfig creates a new Claude client with provided config
+// NewClaudeClientWithConfig creates a new Claude client with provided config.
 func NewClaudeClientWithConfig(cfg *config.AIConfig) (*ClaudeClient, error) {
 	apiKey := os.Getenv(cfg.APIKeyEnv)
 	if apiKey == "" {
@@ -44,8 +45,7 @@ func NewClaudeClientWithConfig(cfg *config.AIConfig) (*ClaudeClient, error) {
 	}
 
 	if cfg.BaseURL != "" {
-		baseURL := cfg.BaseURL
-		claudeConfig.BaseURL = &baseURL
+		claudeConfig.BaseURL = types.Ptr(cfg.BaseURL)
 	}
 
 	model, err := claude.NewChatModel(context.Background(), claudeConfig)
@@ -56,7 +56,7 @@ func NewClaudeClientWithConfig(cfg *config.AIConfig) (*ClaudeClient, error) {
 	return &ClaudeClient{model: model}, nil
 }
 
-// Generate sends a message to Claude and returns the response
+// Generate sends a message to Claude and returns the response.
 func (c *ClaudeClient) Generate(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
 	response, err := c.model.Generate(ctx, messages)
 	if err != nil {
@@ -66,7 +66,7 @@ func (c *ClaudeClient) Generate(ctx context.Context, messages []*schema.Message)
 	return response, nil
 }
 
-// Close closes the Claude client (no-op for Claude)
+// Close closes the Claude client (no-op for Claude).
 func (c *ClaudeClient) Close() error {
 	// Claude client doesn't need explicit closing
 	return nil
