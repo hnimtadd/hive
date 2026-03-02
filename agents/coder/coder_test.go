@@ -65,8 +65,8 @@ func TestNewEnhancedCoderAgent(t *testing.T) {
 	t.Run("successful creation", func(t *testing.T) {
 		mockModel := &MockChatModel{}
 
-		// Mock BindTools call that will be made during ReACT agent creation
-		mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+		// Mock WithTools call that will be made during ReACT agent creation
+		mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 		agent, err := NewCoderAgent(mockModel)
 
@@ -90,7 +90,7 @@ func TestNewEnhancedCoderAgent(t *testing.T) {
 
 func TestEnhancedCoderAgent_CanHandle(t *testing.T) {
 	mockModel := &MockChatModel{}
-	mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 	agent, err := NewCoderAgent(mockModel)
 	assert.NoError(t, err)
@@ -140,7 +140,7 @@ func TestEnhancedCoderAgent_CanHandle(t *testing.T) {
 func TestEnhancedCoderAgent_Execute(t *testing.T) {
 	t.Run("nil task", func(t *testing.T) {
 		mockModel := &MockChatModel{}
-		mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+		mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 		agent, err := NewCoderAgent(mockModel)
 		assert.NoError(t, err)
@@ -155,7 +155,7 @@ func TestEnhancedCoderAgent_Execute(t *testing.T) {
 
 func TestEnhancedCoderAgent_Validate(t *testing.T) {
 	mockModel := &MockChatModel{}
-	mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 	agent, err := NewCoderAgent(mockModel)
 	assert.NoError(t, err)
@@ -188,7 +188,7 @@ func TestEnhancedCoderAgent_Validate(t *testing.T) {
 
 func TestEnhancedCoderAgent_AddTool(t *testing.T) {
 	mockModel := &MockChatModel{}
-	mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 	agent, err := NewCoderAgent(mockModel)
 	assert.NoError(t, err)
@@ -206,7 +206,7 @@ func TestEnhancedCoderAgent_AddTool(t *testing.T) {
 
 func TestEnhancedCoderAgent_Misc(t *testing.T) {
 	mockModel := &MockChatModel{}
-	mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 	agent, err := NewCoderAgent(mockModel)
 	assert.NoError(t, err)

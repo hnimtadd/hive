@@ -47,8 +47,7 @@ func TestNewEinoReACTAgent(t *testing.T) {
 			tools.NewThinkTool(),
 		}
 
-		// Mock the BindTools call that Eino makes internally
-		mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+		mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 		agent, err := NewReACTAgent("test-agent", mockModel, tools)
 		require.NoError(t, err)
@@ -66,8 +65,8 @@ func TestNewEinoReACTAgent(t *testing.T) {
 			tools.NewThinkTool(),
 		}
 
-		// Mock the BindTools call
-		mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+		// Mock the WithTools call
+		mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 		agent, err := NewReACTAgent(
 			"custom-agent",
@@ -116,8 +115,8 @@ func TestEinoReACTAgent_GetTools(t *testing.T) {
 		tools.NewFileReadTool(),
 	}
 
-	// Mock the BindTools call
-	mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+	// Mock the WithTools call
+	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 	agent, err := NewReACTAgent("test-agent", mockModel, tools)
 	require.NoError(t, err)
@@ -130,6 +129,7 @@ func TestEinoReACTAgent_GetTools(t *testing.T) {
 
 func TestEinoReACTAgent_GetAgent(t *testing.T) {
 	mockModel := &MockChatModel{}
+	// No tools, so WithTools won't be called
 	agent, err := NewReACTAgent("test-agent", mockModel, []tool.InvokableTool{})
 	require.NoError(t, err)
 
@@ -144,8 +144,8 @@ func TestEinoReACTAgent_Methods(t *testing.T) {
 			tools.NewThinkTool(),
 		}
 
-		// Mock the BindTools call
-		mockModel.On("BindTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(nil)
+		// Mock the WithTools call
+		mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
 		reactAgent, err := NewReACTAgent("test-agent", mockModel, tools)
 		require.NoError(t, err)
