@@ -2,18 +2,6 @@
 
 A distributed AI agent platform designed to reduce developer cognitive load and automate project management through natural language CLI commands.
 
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   CLI Client    │───▶│   Redis Queue   │───▶│  Worker Agents  │
-│                 │    │                 │    │                 │
-│ hive "command"  │    │ • Task Storage  │    │ • Code Editor   │
-│ --jira PROJ-123 │    │ • Pub/Sub       │    │ • Test Runner   │
-│                 │    │ • Feedback      │    │ • Deployer      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
 ## Quick Start
 
 ### Option 1: Nix (Recommended)
@@ -268,7 +256,6 @@ cd hive  # Environment activates automatically
 Add new action patterns and context extraction in `internal/parser/intent.go`.
 
 ## Future Roadmap
-
 - [ ] SQLite persistence layer for task history
 - [ ] gRPC plugin system using HashiCorp go-plugin
 - [ ] Web dashboard for task monitoring

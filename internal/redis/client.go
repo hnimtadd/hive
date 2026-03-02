@@ -335,4 +335,3 @@ func (c *Client) GetActiveAgents(ctx context.Context) ([]map[string]interface{},
 
 	return agents, nil
 }
-

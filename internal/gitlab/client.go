@@ -22,11 +22,11 @@ type GitLabIntegrator struct {
 
 // RepositoryInfo contains information about the current working repository
 type RepositoryInfo struct {
-	ProjectID    int    `json:"project_id"`
-	ProjectURL   string `json:"project_url"`
+	ProjectID     int    `json:"project_id"`
+	ProjectURL    string `json:"project_url"`
 	CurrentBranch string `json:"current_branch"`
-	SourceBranch string `json:"source_branch"`
-	TargetBranch string `json:"target_branch"`
+	SourceBranch  string `json:"source_branch"`
+	TargetBranch  string `json:"target_branch"`
 }
 
 // CommitInfo represents a git commit
@@ -83,7 +83,7 @@ func (g *GitLabIntegrator) PrepareWorkspace(ctx context.Context, projectID int, 
 	}
 
 	repoDir := filepath.Join(g.workspaceDir, fmt.Sprintf("project-%d", projectID))
-	
+
 	// Clone or update repository
 	if err := g.ensureRepository(project.HTTPURLToRepo, repoDir); err != nil {
 		return nil, fmt.Errorf("failed to prepare repository: %w", err)
@@ -193,7 +193,7 @@ func (g *GitLabIntegrator) PushBranch() error {
 	}
 
 	repoDir := filepath.Join(g.workspaceDir, fmt.Sprintf("project-%d", g.currentRepo.ProjectID))
-	
+
 	// Push branch
 	if err := g.runGitCommand(repoDir, "push", "-u", "origin", g.currentRepo.SourceBranch); err != nil {
 		return fmt.Errorf("failed to push branch: %w", err)
@@ -291,7 +291,7 @@ func (g *GitLabIntegrator) createFeatureBranch(repoDir, branchName, baseBranch s
 func (g *GitLabIntegrator) runGitCommand(workDir string, args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = workDir
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git command failed: %s (output: %s)", err, output)
@@ -349,3 +349,4 @@ func (g *GitLabIntegrator) Cleanup() error {
 	}
 	return nil
 }
+

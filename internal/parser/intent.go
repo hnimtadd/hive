@@ -20,16 +20,16 @@ type Intent struct {
 
 // ActionType constants for common development tasks
 const (
-	ActionTypeUpdate    = "update"
-	ActionTypeFix       = "fix"
-	ActionTypeAdd       = "add"
-	ActionTypeCreate    = "create"
-	ActionTypeRefactor  = "refactor"
-	ActionTypeTest      = "test"
-	ActionTypeDeploy    = "deploy"
-	ActionTypeDebug     = "debug"
-	ActionTypeOptimize  = "optimize"
-	ActionTypeDocument  = "document"
+	ActionTypeUpdate   = "update"
+	ActionTypeFix      = "fix"
+	ActionTypeAdd      = "add"
+	ActionTypeCreate   = "create"
+	ActionTypeRefactor = "refactor"
+	ActionTypeTest     = "test"
+	ActionTypeDeploy   = "deploy"
+	ActionTypeDebug    = "debug"
+	ActionTypeOptimize = "optimize"
+	ActionTypeDocument = "document"
 )
 
 // UrgencyLevel constants
@@ -47,10 +47,10 @@ func ParseIntent(command, jiraID string) (*Intent, error) {
 	}
 
 	intent := &Intent{
-		Goal:       command,
-		JiraID:     jiraID,
-		Context:    make(map[string]string),
-		Urgency:    UrgencyMedium, // default urgency
+		Goal:    command,
+		JiraID:  jiraID,
+		Context: make(map[string]string),
+		Urgency: UrgencyMedium, // default urgency
 	}
 
 	// Normalize the command for parsing
@@ -149,7 +149,7 @@ func extractTarget(command, actionType string) string {
 	if len(words) > 1 {
 		// Skip common articles and prepositions
 		skipWords := map[string]bool{
-			"the": true, "a": true, "an": true, "to": true, "for": true, 
+			"the": true, "a": true, "an": true, "to": true, "for": true,
 			"with": true, "in": true, "on": true, "at": true,
 		}
 
@@ -211,14 +211,14 @@ func extractUrgency(command string) string {
 func extractContext(command string, intent *Intent) {
 	// Extract file extensions or programming languages
 	langPatterns := map[string]string{
-		`\.go\b|golang|go\s`:          "go",
-		`\.js\b|javascript|node`:      "javascript", 
-		`\.py\b|python`:               "python",
-		`\.java\b|java\s`:             "java",
-		`\.ts\b|typescript`:           "typescript",
-		`\.sql\b|database|db`:         "sql",
-		`\.yaml\b|\.yml\b|yaml`:       "yaml",
-		`\.json\b|json`:               "json",
+		`\.go\b|golang|go\s`:              "go",
+		`\.js\b|javascript|node`:          "javascript",
+		`\.py\b|python`:                   "python",
+		`\.java\b|java\s`:                 "java",
+		`\.ts\b|typescript`:               "typescript",
+		`\.sql\b|database|db`:             "sql",
+		`\.yaml\b|\.yml\b|yaml`:           "yaml",
+		`\.json\b|json`:                   "json",
 		`docker|container|k8s|kubernetes`: "docker",
 	}
 
@@ -232,17 +232,17 @@ func extractContext(command string, intent *Intent) {
 
 	// Extract technology/framework mentions
 	techPatterns := map[string]string{
-		`react|jsx|tsx`:        "react",
-		`vue|vuejs`:            "vue",
-		`angular`:              "angular",
-		`spring|springboot`:    "spring",
-		`django|flask`:         "python-web",
-		`express|expressjs`:    "express",
-		`gin|fiber|echo`:       "go-web",
-		`redis|cache`:          "redis",
-		`postgres|postgresql`:  "postgresql",
-		`mysql`:                "mysql",
-		`mongodb|mongo`:        "mongodb",
+		`react|jsx|tsx`:       "react",
+		`vue|vuejs`:           "vue",
+		`angular`:             "angular",
+		`spring|springboot`:   "spring",
+		`django|flask`:        "python-web",
+		`express|expressjs`:   "express",
+		`gin|fiber|echo`:      "go-web",
+		`redis|cache`:         "redis",
+		`postgres|postgresql`: "postgresql",
+		`mysql`:               "mysql",
+		`mongodb|mongo`:       "mongodb",
 	}
 
 	for pattern, tech := range techPatterns {
@@ -258,3 +258,4 @@ func extractContext(command string, intent *Intent) {
 		intent.Context["version"] = matches[0]
 	}
 }
+

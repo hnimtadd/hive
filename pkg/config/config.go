@@ -260,4 +260,3 @@ server:
 # - GITLAB_TOKEN: Your GitLab personal access token
 `
 }
-

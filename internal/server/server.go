@@ -67,7 +67,7 @@ func (s *HiveServer) Start(ctx context.Context) error {
 
 		// Validate and execute task
 		if err = a.Validate(task); err != nil {
-			task.MarkFailed(ctx, fmt.Sprintf("Validation failed: %v", err))
+			_ = task.MarkFailed(ctx, fmt.Sprintf("Validation failed: %v", err))
 			_ = s.redisClient.UpdateTask(ctx, task)
 			continue
 		}
@@ -75,7 +75,7 @@ func (s *HiveServer) Start(ctx context.Context) error {
 		// Execute task
 		if err = a.Execute(ctx, task); err != nil {
 			log.Printf("Task execution failed: %v", err)
-			task.MarkFailed(ctx, err.Error())
+			_ = task.MarkFailed(ctx, err.Error())
 			_ = s.redisClient.UpdateTask(ctx, task)
 		}
 
