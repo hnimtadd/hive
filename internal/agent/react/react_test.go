@@ -8,11 +8,10 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	einoreact "github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/hnimtadd/hive/internal/tools/einotools"
 )
 
 // MockChatModel implements a mock chat model for testing
@@ -45,7 +44,7 @@ func TestNewEinoReACTAgent(t *testing.T) {
 	t.Run("successful creation", func(t *testing.T) {
 		mockModel := &MockChatModel{}
 		tools := []tool.InvokableTool{
-			einotools.NewThinkTool(),
+			tools.NewThinkTool(),
 		}
 
 		// Mock the BindTools call that Eino makes internally
@@ -64,7 +63,7 @@ func TestNewEinoReACTAgent(t *testing.T) {
 	t.Run("with custom options", func(t *testing.T) {
 		mockModel := &MockChatModel{}
 		tools := []tool.InvokableTool{
-			einotools.NewThinkTool(),
+			tools.NewThinkTool(),
 		}
 
 		// Mock the BindTools call
@@ -113,8 +112,8 @@ func TestEinoReACTAgent_ID(t *testing.T) {
 func TestEinoReACTAgent_GetTools(t *testing.T) {
 	mockModel := &MockChatModel{}
 	tools := []tool.InvokableTool{
-		einotools.NewThinkTool(),
-		einotools.NewFileReadTool(),
+		tools.NewThinkTool(),
+		tools.NewFileReadTool(),
 	}
 
 	// Mock the BindTools call
@@ -142,7 +141,7 @@ func TestEinoReACTAgent_Methods(t *testing.T) {
 	t.Run("interface check", func(t *testing.T) {
 		mockModel := &MockChatModel{}
 		tools := []tool.InvokableTool{
-			einotools.NewThinkTool(),
+			tools.NewThinkTool(),
 		}
 
 		// Mock the BindTools call
@@ -243,7 +242,7 @@ func TestEinoReACTAgent_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		tools := []tool.InvokableTool{
-			einotools.NewThinkTool(),
+			tools.NewThinkTool(),
 		}
 
 		agent, err := NewEinoReACTAgent("integration-test", model, tools,
