@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -22,7 +23,7 @@ var (
 	verbose         bool
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "hive [command]",
 	Short: "The Hive - Distributed AI Agent Platform for Developer Productivity",
@@ -38,19 +39,19 @@ Example usage:
   hive "Implement rate limiting for API endpoints" --gitlab-project 42 --feature "Rate limiting with Redis backend"`,
 
 	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		return executeCommand(args[0])
 	},
 }
 
-// executeCommand processes the natural language command
+// executeCommand processes the natural language command.
 func executeCommand(command string) error {
 	ctx := context.Background()
 
 	if verbose {
-		fmt.Printf("Processing command: %s\n", command)
+		log.Printf("Processing command: %s\n", command)
 		if jiraID != "" {
-			fmt.Printf("Jira ID: %s\n", jiraID)
+			log.Printf("Jira ID: %s\n", jiraID)
 		}
 	}
 
@@ -61,7 +62,7 @@ func executeCommand(command string) error {
 	}
 
 	if verbose {
-		fmt.Printf("Parsed intent: %+v\n", intent)
+		log.Printf("Parsed intent: %+v\n", intent)
 	}
 
 	// Create a new Hive task
@@ -92,19 +93,19 @@ func executeCommand(command string) error {
 	defer redisClient.Close()
 
 	// Submit task to the task queue
-	if err := redisClient.SubmitTask(ctx, task); err != nil {
+	if err = redisClient.SubmitTask(ctx, task); err != nil {
 		return fmt.Errorf("failed to submit task: %w", err)
 	}
 
-	fmt.Printf("Task submitted successfully with ID: %s\n", task.ID)
+	log.Printf("Task submitted successfully with ID: %s\n", task.ID)
 
 	// Start monitoring task progress
 	return monitorTask(ctx, redisClient, task.ID)
 }
 
-// monitorTask watches task progress and provides real-time updates
+// monitorTask watches task progress and provides real-time updates.
 func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) error {
-	fmt.Printf("Monitoring task progress for: %s\n", taskID)
+	log.Printf("Monitoring task progress for: %s\n", taskID)
 
 	// Subscribe to task updates
 	updates, err := redisClient.SubscribeToTaskUpdates(ctx, taskID)
@@ -115,42 +116,42 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 	for update := range updates {
 		switch update.Status {
 		case types.TaskStatusInProgress:
-			fmt.Printf("%s (%.1f%%)\n", update.ExecutionSummary, update.Progress)
+			log.Printf("%s (%.1f%%)\n", update.ExecutionSummary, update.Progress)
 		case types.TaskStatusPaused:
 			if update.RequiresFeedback {
-				fmt.Printf("Task paused - feedback required: %s\n", update.FeedbackMessage)
+				log.Printf("Task paused - feedback required: %s\n", update.FeedbackMessage)
 				// Handle feedback request
-				if err := handleFeedbackRequest(ctx, redisClient, taskID, update.FeedbackMessage); err != nil {
+				if err = handleFeedbackRequest(ctx, redisClient, taskID, update.FeedbackMessage); err != nil {
 					return err
 				}
 			}
 		case types.TaskStatusCompleted:
-			fmt.Printf("Task completed successfully!\n")
-			fmt.Printf("%s\n", update.ExecutionSummary)
+			log.Printf("Task completed successfully!\n")
+			log.Printf("%s\n", update.ExecutionSummary)
 			// Show GitLab-specific information if available
 			if update.MergeRequestURL != "" {
-				fmt.Printf("Merge Request: %s\n", update.MergeRequestURL)
+				log.Printf("Merge Request: %s\n", update.MergeRequestURL)
 			}
 			if len(update.CommitSHAs) > 0 {
-				fmt.Printf("Commits created: %d\n", len(update.CommitSHAs))
+				log.Printf("Commits created: %d\n", len(update.CommitSHAs))
 			}
 			if update.LinesChanged > 0 {
-				fmt.Printf("Lines changed: ~%d\n", update.LinesChanged)
+				log.Printf("Lines changed: ~%d\n", update.LinesChanged)
 			}
 			return nil
 		case types.TaskStatusFailed:
-			fmt.Printf("Task failed: %s\n", update.ErrorMessage)
-			return fmt.Errorf("task execution failed")
+			log.Printf("Task failed: %s\n", update.ErrorMessage)
+			return errors.New("task execution failed")
 		}
 	}
 
 	return nil
 }
 
-// handleFeedbackRequest prompts the user for feedback and sends it back
+// handleFeedbackRequest prompts the user for feedback and sends it back.
 func handleFeedbackRequest(ctx context.Context, redisClient *redis.Client, taskID, message string) error {
-	fmt.Printf("\nHuman input required:\n%s\n", message)
-	fmt.Print("Your response: ")
+	log.Printf("\nHuman input required:\n%s\n", message)
+	fmt.Print("Your response: ") //nolint: forbidigo // this should be print inline
 
 	var response string
 	if _, err := fmt.Scanln(&response); err != nil {
@@ -160,12 +161,12 @@ func handleFeedbackRequest(ctx context.Context, redisClient *redis.Client, taskI
 	return redisClient.ProvideFeedback(ctx, taskID, response)
 }
 
-// statusCmd represents the status command
+// statusCmd represents the status command.
 var statusCmd = &cobra.Command{
 	Use:   "status [task-id]",
 	Short: "Check the status of a task",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		ctx := context.Background()
 		taskID := args[0]
 
@@ -180,26 +181,26 @@ var statusCmd = &cobra.Command{
 			return fmt.Errorf("failed to get task: %w", err)
 		}
 
-		fmt.Printf("Task ID: %s\n", task.ID)
-		fmt.Printf("Status: %s\n", task.Status)
-		fmt.Printf("Goal: %s\n", task.Goal)
-		fmt.Printf("Progress: %.1f%%\n", task.Progress)
+		log.Printf("Task ID: %s\n", task.ID)
+		log.Printf("Status: %s\n", task.Status)
+		log.Printf("Goal: %s\n", task.Goal)
+		log.Printf("Progress: %.1f%%\n", task.Progress)
 		if task.AssignedAgent != "" {
-			fmt.Printf("Assigned Agent: %s\n", task.AssignedAgent)
+			log.Printf("Assigned Agent: %s\n", task.AssignedAgent)
 		}
 		if task.ErrorMessage != "" {
-			fmt.Printf("Error: %s\n", task.ErrorMessage)
+			log.Printf("Error: %s\n", task.ErrorMessage)
 		}
 
 		return nil
 	},
 }
 
-// listCmd represents the list command
+// listCmd represents the list command.
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all active tasks",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx := context.Background()
 
 		redisClient, err := redis.NewClient()
@@ -214,13 +215,13 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(tasks) == 0 {
-			fmt.Println("No active tasks found.")
+			log.Println("No active tasks found.")
 			return nil
 		}
 
-		fmt.Printf("Active Tasks (%d):\n", len(tasks))
+		log.Printf("Active Tasks (%d):\n", len(tasks))
 		for _, task := range tasks {
-			fmt.Printf("  %s - %s [%s] %.1f%%\n",
+			log.Printf("  %s - %s [%s] %.1f%%\n",
 				task.ID[:8], task.Goal, task.Status, task.Progress)
 		}
 
@@ -246,7 +247,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 }
 
-// initConfig reads in config file and ENV variables if set
+// initConfig reads in config file and ENV variables if set.
 func initConfig() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -262,7 +263,7 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err == nil && verbose {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+		log.Println("Using config file:", viper.ConfigFileUsed())
 	}
 }
 

@@ -8,7 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/hnimtadd/hive/agents/coder"
 	"github.com/hnimtadd/hive/internal/agent"
+	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/internal/server"
 )
@@ -36,16 +38,23 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Create and start the AI code editor agent
-	aiCodeAgent, err := agent.NewAICodeEditorAgent(redisClient)
+	// Initialize LLM client for enhanced agent
+	llmClient, err := llm.NewClaudeToolCallingClient()
 	if err != nil {
-		log.Fatalf("Failed to create AI code editor agent: %v", err)
+		log.Fatalf("Failed to initialize LLM client: %v", err)
 	}
 
-	log.Printf("AI Code Editor Agent %s started and ready for tasks", aiCodeAgent.GetID())
+	// Create and start the enhanced coder agent
+	coderAgent, err := coder.NewCoderAgent(llmClient)
+	if err != nil {
+		log.Fatalf("Failed to create enhanced coder agent: %v", err)
+	}
+	log.Printf("Coder Agent %s started", coderAgent.GetID())
+
+	// TODO: handle this part automatically
 	registry := agent.NewAgentResitry()
-	if err = registry.RegisterAgent(aiCodeAgent); err != nil {
-		log.Fatalf("Failed to register AI code agent: %v", err)
+	if err = registry.RegisterAgent(coderAgent); err != nil {
+		log.Fatalf("Failed to register enhanced coder agent: %v", err)
 	}
 
 	server := server.NewHiveServer(redisClient, registry)

@@ -122,11 +122,9 @@ func setDefaults() {
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("redis.pool_size", 10)
 
-	// AI defaults
+	// AI defaults - supporting both standard Anthropic and company GrabGPT setup
 	viper.SetDefault("ai.provider", "claude")
 	viper.SetDefault("ai.model", "claude-3-5-sonnet-20241022")
-	viper.SetDefault("ai.api_key_env", "ANTHROPIC_API_KEY")
-	viper.SetDefault("ai.base_url", "")
 
 	// GitLab defaults
 	viper.SetDefault("gitlab.url", "https://gitlab.com")
@@ -256,7 +254,18 @@ server:
   metrics_port: 9090
 
 # Environment Variables Required:
+# For standard Anthropic API:
 # - ANTHROPIC_API_KEY: Your Claude API key
+#
+# For company GrabGPT endpoint:
+# - GRABGPT_API_KEY: Your company API key
+#
+# For AWS Bedrock (Claude Code users):
+# - ANTHROPIC_AUTH_TOKEN: Your Bedrock auth token
+# - ANTHROPIC_BEDROCK_BASE_URL: Your Bedrock endpoint URL
+# - CLAUDE_CODE_USE_BEDROCK: Set to "1" to enable Bedrock
+#
+# Other:
 # - GITLAB_TOKEN: Your GitLab personal access token
 `
 }
