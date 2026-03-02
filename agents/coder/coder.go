@@ -121,6 +121,8 @@ func (a *CoderAgent) CanHandle(task *types.HiveTask) bool {
 		"fix", "debug", "refactor", "optimize", "test",
 		"file", "read", "write", "analyze", "review",
 		"algorithm", "logic", "feature", "module",
+		"programming", "program", "variable", "think", "design",
+		"software", "development", "coding", "script", "library",
 	}
 
 	for _, keyword := range codingKeywords {
