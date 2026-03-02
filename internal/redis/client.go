@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 )
 
 const (
-	// Redis keys
 	TaskQueueKey      = "hive:task_queue"
 	TaskHashPrefix    = "hive:task:"
 	TaskUpdatesPrefix = "hive:updates:"
@@ -20,18 +20,17 @@ const (
 	AgentHeartbeat    = "hive:agents:heartbeat"
 	ActiveTasksSet    = "hive:active_tasks"
 
-	// Channels
 	TaskUpdateChannel  = "hive:task_updates"
 	FeedbackChannel    = "hive:feedback_requests"
 	AgentStatusChannel = "hive:agent_status"
 )
 
-// Client wraps the Redis client with Hive-specific operations
+// Client wraps the Redis client with Hive-specific operations.
 type Client struct {
 	rdb *redis.Client
 }
 
-// NewClient creates a new Redis client for Hive operations
+// NewClient creates a new Redis client for Hive operations.
 func NewClient() (*Client, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -41,7 +40,7 @@ func NewClient() (*Client, error) {
 	return NewClientWithConfig(&cfg.Redis)
 }
 
-// NewClientWithConfig creates a new Redis client with provided config
+// NewClientWithConfig creates a new Redis client with provided config.
 func NewClientWithConfig(cfg *config.RedisConfig) (*Client, error) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         cfg.Addr,
@@ -63,12 +62,12 @@ func NewClientWithConfig(cfg *config.RedisConfig) (*Client, error) {
 	return &Client{rdb: rdb}, nil
 }
 
-// Close closes the Redis connection
+// Close closes the Redis connection.
 func (c *Client) Close() error {
 	return c.rdb.Close()
 }
 
-// SubmitTask adds a new task to the task queue
+// SubmitTask adds a new task to the task queue.
 func (c *Client) SubmitTask(ctx context.Context, task *types.HiveTask) error {
 	// Serialize task to JSON
 	taskJSON, err := json.Marshal(task)
@@ -78,30 +77,30 @@ func (c *Client) SubmitTask(ctx context.Context, task *types.HiveTask) error {
 
 	// Store task in hash
 	taskKey := TaskHashPrefix + task.ID
-	if err := c.rdb.HSet(ctx, taskKey, "data", taskJSON).Err(); err != nil {
+	if err = c.rdb.HSet(ctx, taskKey, "data", taskJSON).Err(); err != nil {
 		return fmt.Errorf("failed to store task: %w", err)
 	}
 
 	// Add to task queue (FIFO)
-	if err := c.rdb.LPush(ctx, TaskQueueKey, task.ID).Err(); err != nil {
+	if err = c.rdb.LPush(ctx, TaskQueueKey, task.ID).Err(); err != nil {
 		return fmt.Errorf("failed to queue task: %w", err)
 	}
 
 	// Add to active tasks set
-	if err := c.rdb.SAdd(ctx, ActiveTasksSet, task.ID).Err(); err != nil {
+	if err = c.rdb.SAdd(ctx, ActiveTasksSet, task.ID).Err(); err != nil {
 		return fmt.Errorf("failed to add to active tasks: %w", err)
 	}
 
 	return nil
 }
 
-// GetNextTask retrieves and removes the next task from the queue
+// GetNextTask retrieves and removes the next task from the queue.
 func (c *Client) GetNextTask(ctx context.Context) (*types.HiveTask, error) {
 	// Pop task ID from queue (blocking with timeout)
 	result, err := c.rdb.BRPop(ctx, 10*time.Second, TaskQueueKey).Result()
 	if err != nil {
-		if err == redis.Nil {
-			return nil, nil // No tasks available
+		if errors.Is(err, redis.Nil) {
+			return nil, nil //nolint: nilnil// No tasks available
 		}
 		return nil, fmt.Errorf("failed to pop from task queue: %w", err)
 	}
@@ -110,26 +109,26 @@ func (c *Client) GetNextTask(ctx context.Context) (*types.HiveTask, error) {
 	return c.GetTask(ctx, taskID)
 }
 
-// GetTask retrieves a task by ID
+// GetTask retrieves a task by ID.
 func (c *Client) GetTask(ctx context.Context, taskID string) (*types.HiveTask, error) {
 	taskKey := TaskHashPrefix + taskID
 	taskJSON, err := c.rdb.HGet(ctx, taskKey, "data").Result()
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return nil, fmt.Errorf("task not found: %s", taskID)
 		}
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 
 	var task types.HiveTask
-	if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
+	if err = json.Unmarshal([]byte(taskJSON), &task); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	return &task, nil
 }
 
-// UpdateTask updates an existing task
+// UpdateTask updates an existing task.
 func (c *Client) UpdateTask(ctx context.Context, task *types.HiveTask) error {
 	taskJSON, err := json.Marshal(task)
 	if err != nil {
@@ -137,12 +136,12 @@ func (c *Client) UpdateTask(ctx context.Context, task *types.HiveTask) error {
 	}
 
 	taskKey := TaskHashPrefix + task.ID
-	if err := c.rdb.HSet(ctx, taskKey, "data", taskJSON).Err(); err != nil {
+	if err = c.rdb.HSet(ctx, taskKey, "data", taskJSON).Err(); err != nil {
 		return fmt.Errorf("failed to update task: %w", err)
 	}
 
 	// Publish task update
-	updateJSON, _ := json.Marshal(map[string]interface{}{
+	updateJSON, _ := json.Marshal(map[string]any{
 		"task_id":   task.ID,
 		"status":    task.Status,
 		"progress":  task.Progress,
@@ -150,7 +149,7 @@ func (c *Client) UpdateTask(ctx context.Context, task *types.HiveTask) error {
 		"task":      task,
 	})
 
-	if err := c.rdb.Publish(ctx, TaskUpdateChannel, updateJSON).Err(); err != nil {
+	if err = c.rdb.Publish(ctx, TaskUpdateChannel, updateJSON).Err(); err != nil {
 		return fmt.Errorf("failed to publish task update: %w", err)
 	}
 
@@ -162,7 +161,7 @@ func (c *Client) UpdateTask(ctx context.Context, task *types.HiveTask) error {
 	return nil
 }
 
-// SubscribeToTaskUpdates subscribes to task update notifications
+// SubscribeToTaskUpdates subscribes to task update notifications.
 func (c *Client) SubscribeToTaskUpdates(ctx context.Context, taskID string) (<-chan *types.HiveTask, error) {
 	pubsub := c.rdb.Subscribe(ctx, TaskUpdateChannel)
 
@@ -201,11 +200,11 @@ func (c *Client) SubscribeToTaskUpdates(ctx context.Context, taskID string) (<-c
 	return ch, nil
 }
 
-// ProvideFeedback sends feedback response for a paused task
+// ProvideFeedback sends feedback response for a paused task.
 func (c *Client) ProvideFeedback(ctx context.Context, taskID, response string) error {
 	feedbackKey := FeedbackPrefix + taskID
 
-	feedback := map[string]interface{}{
+	feedback := map[string]any{
 		"task_id":   taskID,
 		"response":  response,
 		"timestamp": time.Now(),
@@ -217,7 +216,7 @@ func (c *Client) ProvideFeedback(ctx context.Context, taskID, response string) e
 	}
 
 	// Store feedback
-	if err := c.rdb.Set(ctx, feedbackKey, feedbackJSON, time.Hour).Err(); err != nil {
+	if err = c.rdb.Set(ctx, feedbackKey, feedbackJSON, time.Hour).Err(); err != nil {
 		return fmt.Errorf("failed to store feedback: %w", err)
 	}
 
@@ -225,7 +224,7 @@ func (c *Client) ProvideFeedback(ctx context.Context, taskID, response string) e
 	return c.rdb.Publish(ctx, FeedbackChannel, feedbackJSON).Err()
 }
 
-// WaitForFeedback waits for human feedback on a task
+// WaitForFeedback waits for human feedback on a task.
 func (c *Client) WaitForFeedback(ctx context.Context, taskID string) (string, error) {
 	feedbackKey := FeedbackPrefix + taskID
 
@@ -265,7 +264,7 @@ func (c *Client) WaitForFeedback(ctx context.Context, taskID string) (string, er
 	}
 }
 
-// ListActiveTasks returns all currently active tasks
+// ListActiveTasks returns all currently active tasks.
 func (c *Client) ListActiveTasks(ctx context.Context) ([]*types.HiveTask, error) {
 	taskIDs, err := c.rdb.SMembers(ctx, ActiveTasksSet).Result()
 	if err != nil {
@@ -274,7 +273,8 @@ func (c *Client) ListActiveTasks(ctx context.Context) ([]*types.HiveTask, error)
 
 	tasks := make([]*types.HiveTask, 0, len(taskIDs))
 	for _, taskID := range taskIDs {
-		task, err := c.GetTask(ctx, taskID)
+		var task *types.HiveTask
+		task, err = c.GetTask(ctx, taskID)
 		if err != nil {
 			continue // Skip tasks that can't be loaded
 		}
@@ -284,9 +284,9 @@ func (c *Client) ListActiveTasks(ctx context.Context) ([]*types.HiveTask, error)
 	return tasks, nil
 }
 
-// RegisterAgent registers an agent and starts heartbeat
+// RegisterAgent registers an agent and starts heartbeat.
 func (c *Client) RegisterAgent(ctx context.Context, agentID, agentType string) error {
-	agentInfo := map[string]interface{}{
+	agentInfo := map[string]any{
 		"id":         agentID,
 		"type":       agentType,
 		"registered": time.Now(),
@@ -304,7 +304,7 @@ func (c *Client) RegisterAgent(ctx context.Context, agentID, agentType string) e
 	return c.rdb.Set(ctx, agentKey, agentJSON, 30*time.Second).Err()
 }
 
-// Heartbeat updates agent's last seen timestamp
+// Heartbeat updates agent's last seen timestamp.
 func (c *Client) Heartbeat(ctx context.Context, agentID string) error {
 	agentKey := fmt.Sprintf("%s:%s", AgentHeartbeat, agentID)
 
@@ -312,22 +312,23 @@ func (c *Client) Heartbeat(ctx context.Context, agentID string) error {
 	return c.rdb.HSet(ctx, agentKey, "last_seen", time.Now()).Err()
 }
 
-// GetActiveAgents returns all currently active agents
-func (c *Client) GetActiveAgents(ctx context.Context) ([]map[string]interface{}, error) {
+// GetActiveAgents returns all currently active agents.
+func (c *Client) GetActiveAgents(ctx context.Context) ([]map[string]any, error) {
 	pattern := AgentHeartbeat + ":*"
 	keys, err := c.rdb.Keys(ctx, pattern).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent keys: %w", err)
 	}
 
-	agents := make([]map[string]interface{}, 0, len(keys))
+	agents := make([]map[string]any, 0, len(keys))
 	for _, key := range keys {
-		agentJSON, err := c.rdb.Get(ctx, key).Result()
+		var agentJSON string
+		agentJSON, err = c.rdb.Get(ctx, key).Result()
 		if err != nil {
 			continue
 		}
 
-		var agent map[string]interface{}
+		var agent map[string]any
 		if json.Unmarshal([]byte(agentJSON), &agent) == nil {
 			agents = append(agents, agent)
 		}
