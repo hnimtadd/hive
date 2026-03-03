@@ -29,11 +29,26 @@ type RedisConfig struct {
 
 // AIConfig holds AI/LLM configuration.
 type AIConfig struct {
-	Provider   string            `mapstructure:"provider"`
-	Model      string            `mapstructure:"model"`
-	APIKeyEnv  string            `mapstructure:"api_key_env"`
-	BaseURL    string            `mapstructure:"base_url"`
-	Parameters map[string]string `mapstructure:"parameters"`
+	Provider string        `mapstructure:"provider"`
+	Claude   *ClaudeConfig `mapstructure:"claude"`
+}
+
+type ClaudeIntegrationType string
+
+const (
+	ClaudeIntegrationTypeBedrock ClaudeIntegrationType = "bedrock"
+	ClaudeIntegrationTypeAPI     ClaudeIntegrationType = "api"
+)
+
+// ClaudeConfig holds Claude-specific configuration.
+type ClaudeConfig struct {
+	Headers               map[string]string     `mapstructure:"headers"`
+	ClaudeIntegrationType ClaudeIntegrationType `mapstructure:"integration_type"`
+	Region                string                `mapstructure:"region"`
+	AnthropicVersion      string                `mapstructure:"anthropic_version"`
+	Model                 string                `mapstructure:"model"`
+	APIKeyEnv             string                `mapstructure:"api_key_env"`
+	BaseURL               string                `mapstructure:"base_url"`
 }
 
 // GitLabConfig holds GitLab integration settings.
@@ -127,8 +142,6 @@ func setDefaults() {
 	viper.SetDefault("ai.model", "claude-3-5-sonnet-20241022")
 
 	// GitLab defaults
-	viper.SetDefault("gitlab.url", "https://gitlab.com")
-	viper.SetDefault("gitlab.token_env", "GITLAB_TOKEN")
 	viper.SetDefault("gitlab.workspace_dir", getDefaultWorkspaceDir())
 
 	// Agent defaults
@@ -158,13 +171,13 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("ai.provider cannot be empty")
 	}
 
-	if config.AI.APIKeyEnv == "" {
-		return fmt.Errorf("ai.api_key_env cannot be empty")
+	if config.AI.Claude.APIKeyEnv == "" {
+		return fmt.Errorf("ai.claude.api_key_env cannot be empty")
 	}
 
 	// Check if API key environment variable exists
-	if os.Getenv(config.AI.APIKeyEnv) == "" {
-		return fmt.Errorf("environment variable %s is not set", config.AI.APIKeyEnv)
+	if os.Getenv(config.AI.Claude.APIKeyEnv) == "" {
+		return fmt.Errorf("environment variable %s is not set", config.AI.Claude.APIKeyEnv)
 	}
 
 	// Validate GitLab config
@@ -173,7 +186,7 @@ func validateConfig(config *Config) error {
 	}
 
 	if config.GitLab.TokenEnv == "" {
-		return fmt.Errorf("gitlab.token_env cannot be empty")
+		return errors.New("gitlab.token_env cannot be empty")
 	}
 
 	// Check if GitLab token environment variable exists
@@ -187,7 +200,7 @@ func validateConfig(config *Config) error {
 	}
 
 	// Ensure workspace directory exists
-	if err := os.MkdirAll(config.GitLab.WorkspaceDir, 0755); err != nil {
+	if err := os.MkdirAll(config.GitLab.WorkspaceDir, 0750); err != nil {
 		return fmt.Errorf("failed to create workspace directory %s: %w",
 			config.GitLab.WorkspaceDir, err)
 	}
@@ -207,65 +220,4 @@ func getDefaultWorkspaceDir() string {
 	}
 
 	return filepath.Join(homeDir, ".hive", "workspace")
-}
-
-// GetConfigExample returns an example configuration file content.
-func GetConfigExample() string {
-	return `# Hive Configuration File
-# Place this file as ~/.hive.yaml or .hive.yaml in project root
-
-redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
-  pool_size: 10
-
-ai:
-  provider: "claude"
-  model: "claude-3-5-sonnet-20241022"
-  api_key_env: "ANTHROPIC_API_KEY"
-  # base_url: ""  # Optional: custom API endpoint
-  parameters:
-    max_tokens: "4096"
-    temperature: "0.1"
-
-gitlab:
-  url: "https://gitlab.com"
-  token_env: "GITLAB_TOKEN"
-  workspace_dir: "$HOME/.hive/workspace"
-
-agents:
-  max_concurrent: 5
-  timeout_seconds: 300
-
-  ai_code_editor:
-    enabled: true
-    max_tasks: 2
-    capabilities:
-      - "ai_code_generation"
-      - "feature_development"
-      - "gitlab_integration"
-      - "automated_commits"
-      - "merge_request_creation"
-
-server:
-  port: 8080
-  host: "localhost"
-  metrics_port: 9090
-
-# Environment Variables Required:
-# For standard Anthropic API:
-# - ANTHROPIC_API_KEY: Your Claude API key
-#
-# For company GrabGPT endpoint:
-# - GRABGPT_API_KEY: Your company API key
-#
-# For AWS Bedrock (Claude Code users):
-# - ANTHROPIC_AUTH_TOKEN: Your Bedrock auth token
-# - ANTHROPIC_BEDROCK_BASE_URL: Your Bedrock endpoint URL
-# - CLAUDE_CODE_USE_BEDROCK: Set to "1" to enable Bedrock
-#
-# Other:
-# - GITLAB_TOKEN: Your GitLab personal access token
-`
 }

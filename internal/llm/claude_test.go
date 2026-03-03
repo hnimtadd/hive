@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/hnimtadd/hive/pkg/config"
 )
 
 func TestNewClaudeClient(t *testing.T) {
@@ -26,11 +26,13 @@ func TestNewClaudeClient(t *testing.T) {
 func TestNewClaudeClientWithConfig(t *testing.T) {
 	t.Run("missing API key", func(t *testing.T) {
 		cfg := &config.AIConfig{
-			APIKeyEnv: "NON_EXISTENT_ENV_VAR",
-			Model:     "claude-3-sonnet-20240229",
+			Claude: &config.ClaudeConfig{
+				APIKeyEnv: "NON_EXISTENT_ENV_VAR",
+				Model:     "claude-3-sonnet-20240229",
+			},
 		}
 
-		_, err := NewClaudeClientWithConfig(cfg)
+		_, err := NewClaudeClientWithConfig(cfg.Claude)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "environment variable is required")
 	})
@@ -38,7 +40,7 @@ func TestNewClaudeClientWithConfig(t *testing.T) {
 	t.Run("interface compliance", func(t *testing.T) {
 		// Test that the function signature returns the correct interface
 		var cfg config.AIConfig
-		_, err := NewClaudeClientWithConfig(&cfg)
+		_, err := NewClaudeClientWithConfig(cfg.Claude)
 
 		// We expect an error due to missing env var, but the signature should be correct
 		assert.Error(t, err)
@@ -61,11 +63,13 @@ func TestNewClaudeToolCallingClient(t *testing.T) {
 func TestNewClaudeToolCallingClientWithConfig(t *testing.T) {
 	t.Run("missing API key", func(t *testing.T) {
 		cfg := &config.AIConfig{
-			APIKeyEnv: "NON_EXISTENT_ENV_VAR",
-			Model:     "claude-3-sonnet-20240229",
+			Claude: &config.ClaudeConfig{
+				APIKeyEnv: "NON_EXISTENT_ENV_VAR",
+				Model:     "claude-3-sonnet-20240229",
+			},
 		}
 
-		_, err := NewClaudeToolCallingClientWithConfig(cfg)
+		_, err := NewClaudeToolCallingClientWithConfig(cfg.Claude)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "environment variable is required")
 	})
@@ -73,7 +77,7 @@ func TestNewClaudeToolCallingClientWithConfig(t *testing.T) {
 	t.Run("interface compliance", func(t *testing.T) {
 		// Test that the function signature returns the correct interface
 		var cfg config.AIConfig
-		_, err := NewClaudeToolCallingClientWithConfig(&cfg)
+		_, err := NewClaudeToolCallingClientWithConfig(cfg.Claude)
 
 		// We expect an error due to missing env var, but the signature should be correct
 		assert.Error(t, err)
@@ -89,7 +93,7 @@ func TestInterfaceCompatibility(t *testing.T) {
 	})
 
 	t.Run("ToolCallingChatModel interface", func(t *testing.T) {
-		// Test that our function signature returns a type compatible with Eino's interface  
+		// Test that our function signature returns a type compatible with Eino's interface
 		assert.NotNil(t, NewClaudeToolCallingClientWithConfig)
 	})
 }

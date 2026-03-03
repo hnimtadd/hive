@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -18,25 +19,22 @@ func NewClaudeClient() (model.ToolCallingChatModel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
+	if cfg.AI.Claude != nil {
+		return nil, fmt.Errorf("claude configuration is empty")
+	}
 
-	return NewClaudeClientWithConfig(&cfg.AI)
+	return NewClaudeClientWithConfig(cfg.AI.Claude)
 }
 
 // NewClaudeClientWithConfig creates a new Claude client with provided config.
 // Returns Eino's model.ChatModel interface instead of custom wrapper.
-func NewClaudeClientWithConfig(cfg *config.AIConfig) (*claude.ChatModel, error) {
-	apiKey := os.Getenv(cfg.APIKeyEnv)
-	if apiKey == "" {
-		return nil, fmt.Errorf("%s environment variable is required", cfg.APIKeyEnv)
+func NewClaudeClientWithConfig(cfg *config.ClaudeConfig) (*claude.ChatModel, error) {
+	if cfg == nil {
+		return nil, errors.New("claude configuration is empty")
 	}
-
-	claudeConfig := &claude.Config{
-		APIKey: apiKey,
-		Model:  cfg.Model,
-	}
-
-	if cfg.BaseURL != "" {
-		claudeConfig.BaseURL = types.Ptr(cfg.BaseURL)
+	claudeConfig, err := prepareClaudeConfig(*cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare claude configuration: %w", err)
 	}
 
 	// Return Eino's ChatModel directly - no wrapper needed
@@ -55,24 +53,60 @@ func NewClaudeToolCallingClient() (model.ToolCallingChatModel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
+	if cfg.AI.Claude != nil {
+		return nil, fmt.Errorf("claude configuration is empty")
+	}
 
-	return NewClaudeToolCallingClientWithConfig(&cfg.AI)
+	return NewClaudeToolCallingClientWithConfig(cfg.AI.Claude)
 }
 
-// NewClaudeToolCallingClientWithConfig creates a tool-calling Claude client with config.
-func NewClaudeToolCallingClientWithConfig(cfg *config.AIConfig) (model.ToolCallingChatModel, error) {
-	apiKey := os.Getenv(cfg.APIKeyEnv)
+func prepareClaudeConfig(conf config.ClaudeConfig) (*claude.Config, error) {
+	apiKey := os.Getenv(conf.APIKeyEnv)
 	if apiKey == "" {
-		return nil, fmt.Errorf("%s environment variable is required", cfg.APIKeyEnv)
+		return nil, fmt.Errorf("%s environment variable is required", conf.APIKeyEnv)
 	}
 
 	claudeConfig := &claude.Config{
 		APIKey: apiKey,
-		Model:  cfg.Model,
+		Model:  conf.Model,
 	}
 
-	if cfg.BaseURL != "" {
-		claudeConfig.BaseURL = types.Ptr(cfg.BaseURL)
+	if conf.BaseURL != "" {
+		claudeConfig.BaseURL = types.Ptr(conf.BaseURL)
+	}
+
+	switch conf.ClaudeIntegrationType {
+	case config.ClaudeIntegrationTypeAPI:
+		claudeConfig.AdditionalHeaderFields = make(map[string]string)
+		for key, value := range conf.Headers {
+			claudeConfig.AdditionalHeaderFields[key] = value
+		}
+		// Add API key to headers if api-key header is configured
+		if _, hasApiKey := conf.Headers["api-key"]; hasApiKey {
+			claudeConfig.AdditionalHeaderFields["api-key"] = apiKey
+		}
+
+	case config.ClaudeIntegrationTypeBedrock:
+		claudeConfig.ByBedrock = true
+		// Region is only make sense if using with bedrock
+		if conf.Region != "" {
+			claudeConfig.Region = conf.Region
+		}
+	default:
+		return nil, fmt.Errorf("unsupported claude integration type: %s", conf.ClaudeIntegrationType)
+		// unknow
+	}
+	return claudeConfig, nil
+}
+
+// NewClaudeToolCallingClientWithConfig creates a tool-calling Claude client with config.
+func NewClaudeToolCallingClientWithConfig(cfg *config.ClaudeConfig) (model.ToolCallingChatModel, error) {
+	if cfg == nil {
+		return nil, errors.New("claude configuration is empty")
+	}
+	claudeConfig, err := prepareClaudeConfig(*cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare claude configuration: %w", err)
 	}
 
 	// Claude's ChatModel implements both ChatModel and ToolCallingChatModel
