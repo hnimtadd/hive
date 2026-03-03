@@ -39,7 +39,7 @@ func main() {
 	defer redisClient.Close()
 
 	// Initialize LLM client for enhanced agent
-	llmClient, err := llm.NewClaudeToolCallingClient()
+	llmClient, err := llm.NewLLMToolCallingClient()
 	if err != nil {
 		log.Fatalf("Failed to initialize LLM client: %v", err)
 	}

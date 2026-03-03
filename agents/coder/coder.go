@@ -18,7 +18,7 @@ import (
 // CoderAgent is an enhanced AI-powered code editor that uses ReACT pattern
 type CoderAgent struct {
 	id           string
-	reactAgent   *react.ReACTAgent
+	reactAgent   *react.Agent
 	tools        []tool.InvokableTool
 	errorHandler *errors.ErrorHandler
 	capabilities []string
@@ -39,12 +39,11 @@ func NewCoderAgent(chatModel model.ToolCallingChatModel) (*CoderAgent, error) {
 
 	// Create ReACT agent with Eino
 	agentID := "enhanced-coder-" + uuid.New().String()[:8]
-	reactAgent, err := react.NewReACTAgent(
+	reactAgent, err := react.NewWithSystemPrompt(
 		agentID,
 		chatModel,
 		tools,
-		react.WithSystemPrompt(getCoderSystemPrompt()),
-		react.WithGraphName(fmt.Sprintf("coder-agent-%s", agentID)),
+		getCoderSystemPrompt(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ReACT agent: %w", err)
@@ -150,7 +149,7 @@ func (a *CoderAgent) Execute(ctx context.Context, task *types.HiveTask) error {
 
 	_, err := a.errorHandler.WithRetry(ctx, retryConfig, func(ctx context.Context) (any, error) {
 		// Execute the task using the ReACT agent
-		result, execErr := a.reactAgent.Run(ctx, task.Goal)
+		result, execErr := a.reactAgent.Execute(ctx, task.Goal)
 		if execErr != nil {
 			return nil, execErr
 		}
@@ -224,6 +223,6 @@ func (a *CoderAgent) ListTools() []tool.InvokableTool {
 }
 
 // GetAgent returns the underlying Eino ReACT agent for advanced usage
-func (a *CoderAgent) GetAgent() *react.ReACTAgent {
+func (a *CoderAgent) GetAgent() *react.Agent {
 	return a.reactAgent
 }
