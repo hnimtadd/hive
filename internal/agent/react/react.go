@@ -7,163 +7,93 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent"
 	einoreact "github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 )
 
-// ReACTAgent wraps Eino's built-in ReACT agent for easy use
-type ReACTAgent struct {
-	id     string
-	agent  *einoreact.Agent
-	tools  []tool.InvokableTool
-	config *einoreact.AgentConfig
+// Agent is a simplified ReACT agent wrapper.
+type Agent struct {
+	id    string
+	agent *einoreact.Agent
 }
 
-// NewReACTAgent creates a new ReACT agent using Eino's built-in implementation
-func NewReACTAgent(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, options ...Option) (*ReACTAgent, error) {
-	reactAgent := &ReACTAgent{
-		id:    id,
-		tools: tools,
-		config: &einoreact.AgentConfig{
-			ToolCallingModel: chatModel,
-		},
-	}
-
-	// Apply configuration options
-	for _, opt := range options {
-		opt(reactAgent)
+// New creates a new ReACT agent with minimal configuration.
+func New(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool) (*Agent, error) {
+	config := &einoreact.AgentConfig{
+		ToolCallingModel: chatModel,
 	}
 
 	// Configure tools if provided
 	if len(tools) > 0 {
-		// Convert tools to tool.BaseTool interface
 		baseTools := make([]tool.BaseTool, len(tools))
 		for i, t := range tools {
 			baseTools[i] = t
 		}
-
-		// Set up tools config
-		reactAgent.config.ToolsConfig = compose.ToolsNodeConfig{
+		config.ToolsConfig = compose.ToolsNodeConfig{
 			Tools: baseTools,
 		}
 	}
 
 	// Create Eino's ReACT agent
 	ctx := context.Background()
-	einoAgent, err := einoreact.NewAgent(ctx, reactAgent.config)
+	agent, err := einoreact.NewAgent(ctx, config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Eino ReACT agent: %w", err)
+		return nil, fmt.Errorf("failed to create ReACT agent: %w", err)
 	}
 
-	reactAgent.agent = einoAgent
-	return reactAgent, nil
+	return &Agent{
+		id:    id,
+		agent: agent,
+	}, nil
 }
 
-// Run executes the ReACT agent with the given input
-func (a *ReACTAgent) Run(ctx context.Context, input string) (*schema.Message, error) {
-	messages := []*schema.Message{
-		schema.UserMessage(input),
-	}
-
-	result, err := a.agent.Generate(ctx, messages)
-	if err != nil {
-		return nil, fmt.Errorf("ReACT agent execution failed: %w", err)
-	}
-
-	return result, nil
-}
-
-// Stream executes the ReACT agent with streaming response
-func (a *ReACTAgent) Stream(ctx context.Context, input string) (*schema.StreamReader[*schema.Message], error) {
-	messages := []*schema.Message{
-		schema.UserMessage(input),
-	}
-
-	stream, err := a.agent.Stream(ctx, messages)
-	if err != nil {
-		return nil, fmt.Errorf("ReACT agent streaming failed: %w", err)
-	}
-
-	return stream, nil
-}
-
-// RunWithMessages executes the ReACT agent with a conversation history
-func (a *ReACTAgent) RunWithMessages(ctx context.Context, messages []*schema.Message, opts ...agent.AgentOption) (*schema.Message, error) {
-	result, err := a.agent.Generate(ctx, messages, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("ReACT agent execution failed: %w", err)
-	}
-
-	return result, nil
-}
-
-// StreamWithMessages executes the ReACT agent with streaming response and conversation history
-func (a *ReACTAgent) StreamWithMessages(ctx context.Context, messages []*schema.Message, opts ...agent.AgentOption) (*schema.StreamReader[*schema.Message], error) {
-	stream, err := a.agent.Stream(ctx, messages, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("ReACT agent streaming failed: %w", err)
-	}
-
-	return stream, nil
-}
-
-// ID returns the agent ID
-func (a *ReACTAgent) ID() string {
-	return a.id
-}
-
-// GetTools returns the tools available to the agent
-func (a *ReACTAgent) GetTools() []tool.InvokableTool {
-	return a.tools
-}
-
-// GetAgent returns the underlying Eino ReACT agent for advanced usage
-func (a *ReACTAgent) GetAgent() *einoreact.Agent {
-	return a.agent
-}
-
-// Option defines configuration options for the agent
-type Option func(*ReACTAgent)
-
-// WithMaxIterations sets the maximum number of iterations (placeholder for future Eino support)
-func WithMaxIterations(max int) Option {
-	return func(a *ReACTAgent) {
-		// Eino's ReACT agent doesn't directly expose max iterations in config
-		// This could be implemented via graph compile options in the future
-	}
-}
-
-// WithSystemPrompt sets a custom system prompt via message modifier
-func WithSystemPrompt(prompt string) Option {
-	return func(a *ReACTAgent) {
-		a.config.MessageModifier = func(ctx context.Context, input []*schema.Message) []*schema.Message {
-			// Add system prompt if not already present
+// NewWithSystemPrompt creates a new ReACT agent with a system prompt.
+func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string) (*Agent, error) {
+	config := &einoreact.AgentConfig{
+		ToolCallingModel: chatModel,
+		MessageModifier: func(_ context.Context, input []*schema.Message) []*schema.Message {
 			if len(input) > 0 && input[0].Role != schema.System {
-				return append([]*schema.Message{schema.SystemMessage(prompt)}, input...)
+				return append([]*schema.Message{schema.SystemMessage(systemPrompt)}, input...)
 			}
 			return input
+		},
+	}
+
+	// Configure tools if provided
+	if len(tools) > 0 {
+		baseTools := make([]tool.BaseTool, len(tools))
+		for i, t := range tools {
+			baseTools[i] = t
+		}
+		config.ToolsConfig = compose.ToolsNodeConfig{
+			Tools: baseTools,
 		}
 	}
+
+	// Create Eino's ReACT agent
+	ctx := context.Background()
+	agent, err := einoreact.NewAgent(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ReACT agent: %w", err)
+	}
+
+	return &Agent{
+		id:    id,
+		agent: agent,
+	}, nil
 }
 
-// WithMessageModifier sets a custom message modifier
-func WithMessageModifier(modifier einoreact.MessageModifier) Option {
-	return func(a *ReACTAgent) {
-		a.config.MessageModifier = modifier
-	}
+// Execute runs the ReACT agent with the given input.
+func (a *Agent) Execute(ctx context.Context, input string) (*schema.Message, error) {
+	return a.ExecuteWithMessages(ctx, []*schema.Message{schema.UserMessage(input)})
 }
 
-// WithToolCallingModel upgrades to use a tool calling model for better performance
-func WithToolCallingModel(model model.ToolCallingChatModel) Option {
-	return func(a *ReACTAgent) {
-		a.config.ToolCallingModel = model
-	}
+// ExecuteWithMessages runs the ReACT agent with conversation history.
+func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
+	return a.agent.Generate(ctx, messages)
 }
 
-// WithGraphName sets the graph name for debugging and logging
-func WithGraphName(name string) Option {
-	return func(a *ReACTAgent) {
-		a.config.GraphName = name
-	}
+// ID returns the agent ID.
+func (a *Agent) ID() string {
+	return a.id
 }
