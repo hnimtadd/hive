@@ -31,24 +31,33 @@ type RedisConfig struct {
 type AIConfig struct {
 	Provider string        `mapstructure:"provider"`
 	Claude   *ClaudeConfig `mapstructure:"claude"`
+	OpenAI   *OpenAIConfig `mapstructure:"openai"`
 }
 
-type ClaudeIntegrationType string
+type ClaudeProvider string
 
 const (
-	ClaudeIntegrationTypeBedrock ClaudeIntegrationType = "bedrock"
-	ClaudeIntegrationTypeAPI     ClaudeIntegrationType = "api"
+	ClaudeIntegrationTypeBedrock ClaudeProvider = "bedrock"
+	ClaudeIntegrationTypeAPI     ClaudeProvider = "api"
 )
 
 // ClaudeConfig holds Claude-specific configuration.
 type ClaudeConfig struct {
-	Headers               map[string]string     `mapstructure:"headers"`
-	ClaudeIntegrationType ClaudeIntegrationType `mapstructure:"integration_type"`
-	Region                string                `mapstructure:"region"`
-	AnthropicVersion      string                `mapstructure:"anthropic_version"`
-	Model                 string                `mapstructure:"model"`
-	APIKeyEnv             string                `mapstructure:"api_key_env"`
-	BaseURL               string                `mapstructure:"base_url"`
+	Provider         ClaudeProvider    `mapstructure:"provider"`
+	Model            string            `mapstructure:"model"`
+	AnthropicVersion string            `mapstructure:"anthropic_version"`
+	BaseURL          string            `mapstructure:"api_base_url"`
+	Headers          map[string]string `mapstructure:"api_headers"`
+	Region           string            `mapstructure:"bedrock_region"`
+	APIKeyEnv        string            `mapstructure:"api_key_env"`
+}
+
+// OpenAIConfig holds OpenAI-specific configuration.
+type OpenAIConfig struct {
+	Model       string         `mapstructure:"model"`
+	APIKeyEnv   string         `mapstructure:"api_key_env"`
+	BaseURL     string         `mapstructure:"base_url"`
+	ExtraFields map[string]any `mapstructure:"extra_fields"`
 }
 
 // GitLabConfig holds GitLab integration settings.
@@ -116,6 +125,7 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	log.Println("using configuration file at", viper.ConfigFileUsed())
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -171,13 +181,31 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("ai.provider cannot be empty")
 	}
 
-	if config.AI.Claude.APIKeyEnv == "" {
-		return fmt.Errorf("ai.claude.api_key_env cannot be empty")
-	}
-
-	// Check if API key environment variable exists
-	if os.Getenv(config.AI.Claude.APIKeyEnv) == "" {
-		return fmt.Errorf("environment variable %s is not set", config.AI.Claude.APIKeyEnv)
+	switch config.AI.Provider {
+	case "claude":
+		if config.AI.Claude == nil {
+			return fmt.Errorf("ai.claude configuration is required when provider is 'claude'")
+		}
+		if config.AI.Claude.APIKeyEnv == "" {
+			return fmt.Errorf("ai.claude.api_key_env cannot be empty")
+		}
+		// Check if API key environment variable exists
+		if os.Getenv(config.AI.Claude.APIKeyEnv) == "" {
+			return fmt.Errorf("environment variable %s is not set", config.AI.Claude.APIKeyEnv)
+		}
+	case "openai":
+		if config.AI.OpenAI == nil {
+			return fmt.Errorf("ai.openai configuration is required when provider is 'openai'")
+		}
+		if config.AI.OpenAI.APIKeyEnv == "" {
+			return fmt.Errorf("ai.openai.api_key_env cannot be empty")
+		}
+		// Check if API key environment variable exists
+		if os.Getenv(config.AI.OpenAI.APIKeyEnv) == "" {
+			return fmt.Errorf("environment variable %s is not set", config.AI.OpenAI.APIKeyEnv)
+		}
+	default:
+		return fmt.Errorf("unsupported ai.provider: %s", config.AI.Provider)
 	}
 
 	// Validate GitLab config
