@@ -15,6 +15,7 @@ type Config struct {
 	Redis  RedisConfig  `mapstructure:"redis"`
 	AI     AIConfig     `mapstructure:"ai"`
 	GitLab GitLabConfig `mapstructure:"gitlab"`
+	Jira   JiraConfig   `mapstructure:"jira"`
 	Agents AgentsConfig `mapstructure:"agents"`
 	Server ServerConfig `mapstructure:"server"`
 }
@@ -65,6 +66,14 @@ type GitLabConfig struct {
 	URL          string `mapstructure:"url"`
 	TokenEnv     string `mapstructure:"token_env"`
 	WorkspaceDir string `mapstructure:"workspace_dir"`
+}
+
+// JiraConfig holds Jira integration settings.
+type JiraConfig struct {
+	BaseURL     string `mapstructure:"base_url"`
+	UserName    string `mapstructure:"username"`
+	APITokenEnv string `mapstructure:"api_token_env"`
+	Enabled     bool   `mapstructure:"enabled"`
 }
 
 // AgentsConfig holds agent-specific settings.
@@ -163,6 +172,10 @@ func setDefaults() {
 		"ai_code_generation", "feature_development", "gitlab_integration",
 	})
 
+	// Jira defaults
+	viper.SetDefault("jira.enabled", false)
+	viper.SetDefault("jira.is_cloud", true)
+
 	// Server defaults
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
@@ -231,6 +244,23 @@ func validateConfig(config *Config) error {
 	if err := os.MkdirAll(config.GitLab.WorkspaceDir, 0750); err != nil {
 		return fmt.Errorf("failed to create workspace directory %s: %w",
 			config.GitLab.WorkspaceDir, err)
+	}
+
+	// Validate Jira config if enabled
+	if config.Jira.Enabled {
+		if config.Jira.BaseURL == "" {
+			return fmt.Errorf("jira.base_url cannot be empty when jira is enabled")
+		}
+		if config.Jira.UserName == "" {
+			return fmt.Errorf("jira.username cannot be empty when jira is enabled")
+		}
+		if config.Jira.APITokenEnv == "" {
+			return fmt.Errorf("jira.api_token_env cannot be empty when jira is enabled")
+		}
+		// Check if API token environment variable exists
+		if os.Getenv(config.Jira.APITokenEnv) == "" {
+			return fmt.Errorf("environment variable %s is not set", config.Jira.APITokenEnv)
+		}
 	}
 
 	return nil
