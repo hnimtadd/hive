@@ -37,6 +37,7 @@ type HiveTask struct {
 	// Task metadata
 	Title       string       `json:"title"       db:"title"`
 	Description string       `json:"description" db:"description"`
+	Context     string       `json:"contex"      db:"context"`
 	Goal        string       `json:"goal"        db:"goal"`
 	Status      TaskStatus   `json:"status"      db:"status"`
 	Priority    TaskPriority `json:"priority"    db:"priority"`
