@@ -21,10 +21,28 @@ gitlab:
   token_env: "GITLAB_TOKEN"
   workspace_dir: "$HOME/.hive/workspace"
 
+# Jira Integration
+# Enable this to allow the agent to auto-discover task information from Jira tickets
+jira:
+  enabled: false  # Set to true to enable Jira integration
+  base_url: "https://your-company.atlassian.net"
+  username: "your-email@company.com"
+  api_token_env: "JIRA_API_TOKEN"  # Environment variable containing Jira API token
+
+  # Custom fields to extract from Jira tickets
+  # Map your organization's custom field IDs to friendly names
+  # The Agent will include these in the task analysis
+  custom_fields:
+    customfield_10206: "Implementation Guide & Definition of Done"
+    # Add more custom fields as needed:
+    # customfield_xxxxx: "Acceptance Criteria"
+    # customfield_yyyyy: "Technical Specifications"
+    # customfield_zzzzz: "Business Requirements"
+
 agents:
   max_concurrent: 5
   timeout_seconds: 300
-  
+
   ai_code_editor:
     enabled: true
     max_tasks: 2
@@ -43,3 +61,4 @@ server:
 # Environment Variables Required:
 # - ANTHROPIC_API_KEY: Your Claude API key
 # - GITLAB_TOKEN: Your GitLab personal access token
+# - JIRA_API_TOKEN: Your Jira API token (optional, only if jira.enabled is true)
