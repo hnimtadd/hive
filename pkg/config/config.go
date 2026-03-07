@@ -70,10 +70,11 @@ type GitLabConfig struct {
 
 // JiraConfig holds Jira integration settings.
 type JiraConfig struct {
-	BaseURL     string `mapstructure:"base_url"`
-	UserName    string `mapstructure:"username"`
-	APITokenEnv string `mapstructure:"api_token_env"`
-	Enabled     bool   `mapstructure:"enabled"`
+	BaseURL      string            `mapstructure:"base_url"`
+	UserName     string            `mapstructure:"username"`
+	APITokenEnv  string            `mapstructure:"api_token_env"`
+	Enabled      bool              `mapstructure:"enabled"`
+	CustomFields map[string]string `mapstructure:"custom_fields"` // Map of field ID to friendly name
 }
 
 // AgentsConfig holds agent-specific settings.
