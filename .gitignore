@@ -72,4 +72,5 @@ config.json
 .hive.yaml
 .hive.test.yaml
 
-references
+/references/
+/workspace/
