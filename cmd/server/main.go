@@ -13,10 +13,15 @@ import (
 	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/internal/server"
+	"github.com/hnimtadd/hive/pkg/config"
 )
 
 func main() {
 	log.Println("Starting Hive Server Worker...")
+	appConfig, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
 	// Create context that can be cancelled
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,7 +50,7 @@ func main() {
 	}
 
 	// Create and start the enhanced coder agent
-	coderAgent, err := coder.NewCoderAgent(llmClient)
+	coderAgent, err := coder.NewAgent(llmClient, appConfig)
 	if err != nil {
 		log.Fatalf("Failed to create enhanced coder agent: %v", err)
 	}

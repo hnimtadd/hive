@@ -78,11 +78,11 @@ type HiveTask struct {
 	ExecutionTime    time.Duration `json:"execution_time"    db:"execution_time"`
 
 	// GitLab integration fields
-	GitLabProjectID int    `json:"gitlab_project_id" db:"gitlab_project_id"`
-	SourceBranch    string `json:"source_branch"     db:"source_branch"`
-	TargetBranch    string `json:"target_branch"     db:"target_branch"`
-	MergeRequestURL string `json:"merge_request_url" db:"merge_request_url"`
-	MergeRequestID  int    `json:"merge_request_id"  db:"merge_request_id"`
+	GitlabProjectPath string `json:"gitlab_project_path" db:"gitlab_project_path"`
+	SourceBranch      string `json:"source_branch"       db:"source_branch"`
+	TargetBranch      string `json:"target_branch"       db:"target_branch"`
+	MergeRequestURL   string `json:"merge_request_url"   db:"merge_request_url"`
+	MergeRequestID    int    `json:"merge_request_id"    db:"merge_request_id"`
 
 	// AI-powered development context
 	FeatureSpec      string   `json:"feature_spec"      db:"feature_spec"`

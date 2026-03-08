@@ -15,12 +15,12 @@ import (
 )
 
 var (
-	cfgFile         string
-	jiraID          string
-	gitlabProjectID int
-	targetBranch    string
-	featureSpec     string
-	verbose         bool
+	cfgFile            string
+	jiraID             string
+	gitlabProjectPath  string
+	targetBranch       string
+	featureSpec        string
+	verbose            bool
 )
 
 // rootCmd represents the base command when called without any subcommands.
@@ -35,8 +35,8 @@ Example usage:
   hive "Update the traffic shift script to deal with 0:100 page" --jira "PROJ-123"
 
   # AI-powered feature development
-  hive "Add user authentication with JWT tokens" --jira "AUTH-456" --gitlab-project 42 --target-branch "main"
-  hive "Implement rate limiting for API endpoints" --gitlab-project 42 --feature "Rate limiting with Redis backend"`,
+  hive "Add user authentication with JWT tokens" --jira "AUTH-456" --gitlab-project "mygroup/myrepo" --target-branch "main"
+  hive "Implement rate limiting for API endpoints" --gitlab-project "mygroup/myrepo" --feature "Rate limiting with Redis backend"`,
 
 	Args: cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -73,8 +73,8 @@ func executeCommand(command string) error {
 	task.WorkingDir, _ = os.Getwd()
 
 	// Set AI-powered development fields if provided
-	if gitlabProjectID > 0 {
-		task.GitLabProjectID = gitlabProjectID
+	if gitlabProjectPath != "" {
+		task.GitlabProjectPath = gitlabProjectPath
 	}
 	if targetBranch != "" {
 		task.TargetBranch = targetBranch
@@ -128,7 +128,7 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 		case types.TaskStatusCompleted:
 			log.Printf("Task completed successfully!\n")
 			log.Printf("%s\n", update.ExecutionSummary)
-			// Show GitLab-specific information if available
+			// Show Gitlab-specific information if available
 			if update.MergeRequestURL != "" {
 				log.Printf("Merge Request: %s\n", update.MergeRequestURL)
 			}
@@ -238,7 +238,7 @@ func init() {
 
 	// Command-specific flags
 	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
-	rootCmd.Flags().IntVar(&gitlabProjectID, "gitlab-project", 0, "GitLab project ID for AI-powered development")
+	rootCmd.Flags().StringVar(&gitlabProjectPath, "gitlab-project", "", "GitLab project path (e.g., 'group/repo') for AI-powered development")
 	rootCmd.Flags().StringVar(&targetBranch, "target-branch", "main", "Target branch for merge request (default: main)")
 	rootCmd.Flags().StringVar(&featureSpec, "feature", "", "Detailed feature specification for AI analysis")
 
