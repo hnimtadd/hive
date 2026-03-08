@@ -12,12 +12,13 @@ import (
 
 // Config represents the complete Hive configuration.
 type Config struct {
-	Redis  RedisConfig  `mapstructure:"redis"`
-	AI     AIConfig     `mapstructure:"ai"`
-	GitLab GitLabConfig `mapstructure:"gitlab"`
-	Jira   JiraConfig   `mapstructure:"jira"`
-	Agents AgentsConfig `mapstructure:"agents"`
-	Server ServerConfig `mapstructure:"server"`
+	Redis        RedisConfig  `mapstructure:"redis"`
+	AI           AIConfig     `mapstructure:"ai"`
+	Gitlab       GitlabConfig `mapstructure:"gitlab"`
+	Jira         JiraConfig   `mapstructure:"jira"`
+	Agents       AgentsConfig `mapstructure:"agents"`
+	Server       ServerConfig `mapstructure:"server"`
+	WorkspaceDir string       `mapstructure:"workspace"`
 }
 
 // RedisConfig holds Redis connection settings.
@@ -33,6 +34,7 @@ type AIConfig struct {
 	Provider string        `mapstructure:"provider"`
 	Claude   *ClaudeConfig `mapstructure:"claude"`
 	OpenAI   *OpenAIConfig `mapstructure:"openai"`
+	MaxStep  int           `mapstructure:"max_step"`
 }
 
 type ClaudeProvider string
@@ -61,11 +63,11 @@ type OpenAIConfig struct {
 	ExtraFields map[string]any `mapstructure:"extra_fields"`
 }
 
-// GitLabConfig holds GitLab integration settings.
-type GitLabConfig struct {
-	URL          string `mapstructure:"url"`
-	TokenEnv     string `mapstructure:"token_env"`
-	WorkspaceDir string `mapstructure:"workspace_dir"`
+// GitlabConfig holds GitLab integration settings.
+type GitlabConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	URL      string `mapstructure:"url"`
+	TokenEnv string `mapstructure:"token_env"`
 }
 
 // JiraConfig holds Jira integration settings.
@@ -162,7 +164,6 @@ func setDefaults() {
 	viper.SetDefault("ai.model", "claude-3-5-sonnet-20241022")
 
 	// GitLab defaults
-	viper.SetDefault("gitlab.workspace_dir", getDefaultWorkspaceDir())
 
 	// Agent defaults
 	viper.SetDefault("agents.max_concurrent", 5)
@@ -173,6 +174,8 @@ func setDefaults() {
 		"ai_code_generation", "feature_development", "gitlab_integration",
 	})
 
+	viper.SetDefault("ai.max_step", 30)
+
 	// Jira defaults
 	viper.SetDefault("jira.enabled", false)
 	viper.SetDefault("jira.is_cloud", true)
@@ -181,6 +184,7 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
 	viper.SetDefault("server.metrics_port", 9090)
+	viper.SetDefault("workspace", getDefaultWorkspaceDir())
 }
 
 // validateConfig validates the configuration values
@@ -223,28 +227,23 @@ func validateConfig(config *Config) error {
 	}
 
 	// Validate GitLab config
-	if config.GitLab.URL == "" {
-		return fmt.Errorf("gitlab.url cannot be empty")
+	if config.Gitlab.URL == "" {
+		return errors.New("gitlab.url cannot be empty")
 	}
 
-	if config.GitLab.TokenEnv == "" {
+	if config.Gitlab.TokenEnv == "" {
 		return errors.New("gitlab.token_env cannot be empty")
 	}
 
 	// Check if GitLab token environment variable exists
-	if os.Getenv(config.GitLab.TokenEnv) == "" {
-		return fmt.Errorf("environment variable %s is not set", config.GitLab.TokenEnv)
-	}
-
-	// Validate workspace directory
-	if config.GitLab.WorkspaceDir == "" {
-		config.GitLab.WorkspaceDir = getDefaultWorkspaceDir()
+	if os.Getenv(config.Gitlab.TokenEnv) == "" {
+		return fmt.Errorf("environment variable %s is not set", config.Gitlab.TokenEnv)
 	}
 
 	// Ensure workspace directory exists
-	if err := os.MkdirAll(config.GitLab.WorkspaceDir, 0750); err != nil {
+	if err := os.MkdirAll(config.WorkspaceDir, 0750); err != nil {
 		return fmt.Errorf("failed to create workspace directory %s: %w",
-			config.GitLab.WorkspaceDir, err)
+			config.WorkspaceDir, err)
 	}
 
 	// Validate Jira config if enabled

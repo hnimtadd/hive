@@ -7,7 +7,6 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -42,13 +41,11 @@ func (m *MockChatModel) BindTools(toolInfo []*schema.ToolInfo) error {
 func TestNew(t *testing.T) {
 	t.Run("successful creation", func(t *testing.T) {
 		mockModel := &MockChatModel{}
-		tools := []tool.InvokableTool{
-			tools.NewThinkTool(),
-		}
+		tools := []tool.InvokableTool{}
 
 		mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
-		agent, err := New("test-agent", mockModel, tools)
+		agent, err := New("test-agent", mockModel, tools, 10)
 		require.NoError(t, err)
 		assert.Equal(t, "test-agent", agent.ID())
 		assert.NotNil(t, agent.agent)
@@ -60,7 +57,7 @@ func TestNew(t *testing.T) {
 		mockModel := &MockChatModel{}
 		tools := []tool.InvokableTool{}
 
-		agent, err := New("test-agent", mockModel, tools)
+		agent, err := New("test-agent", mockModel, tools, 1)
 		require.NoError(t, err)
 		assert.Equal(t, "test-agent", agent.ID())
 
@@ -70,18 +67,14 @@ func TestNew(t *testing.T) {
 
 func TestNewWithSystemPrompt(t *testing.T) {
 	mockModel := &MockChatModel{}
-	tools := []tool.InvokableTool{
-		tools.NewThinkTool(),
-	}
+	tools := []tool.InvokableTool{}
 
 	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
 
-	agent, err := NewWithSystemPrompt("test-agent", mockModel, tools, "Custom system prompt")
+	agent, err := NewWithSystemPrompt("test-agent", mockModel, tools, "Custom system prompt", 10)
 	require.NoError(t, err)
 	assert.Equal(t, "test-agent", agent.ID())
 	assert.NotNil(t, agent.agent)
 
 	mockModel.AssertExpectations(t)
 }
-
-

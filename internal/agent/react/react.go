@@ -18,9 +18,10 @@ type Agent struct {
 }
 
 // New creates a new ReACT agent with minimal configuration.
-func New(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool) (*Agent, error) {
+func New(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, maxStep int) (*Agent, error) {
 	config := &einoreact.AgentConfig{
 		ToolCallingModel: chatModel,
+		MaxStep:          maxStep,
 	}
 
 	// Configure tools if provided
@@ -48,9 +49,10 @@ func New(id string, chatModel model.ToolCallingChatModel, tools []tool.Invokable
 }
 
 // NewWithSystemPrompt creates a new ReACT agent with a system prompt.
-func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string) (*Agent, error) {
+func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string, maxStep int) (*Agent, error) {
 	config := &einoreact.AgentConfig{
 		ToolCallingModel: chatModel,
+		MaxStep:          maxStep, // Allow up to 30 reasoning/action steps
 		MessageModifier: func(_ context.Context, input []*schema.Message) []*schema.Message {
 			if len(input) > 0 && input[0].Role != schema.System {
 				return append([]*schema.Message{schema.SystemMessage(systemPrompt)}, input...)
