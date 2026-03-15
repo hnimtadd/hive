@@ -10,7 +10,6 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
-	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
@@ -271,12 +270,6 @@ func (a *Agent) Execute(ctx context.Context, task *types.HiveTask) error {
 	})
 
 	return err
-}
-
-// Setup initializes the agent (no-op for enhanced agent)
-func (a *Agent) Setup(ctx context.Context, feedbackCh agent.FeedbackChannel) error {
-	// Enhanced agent is self-contained and doesn't need external setup
-	return nil
 }
 
 // Validate performs pre-execution validation

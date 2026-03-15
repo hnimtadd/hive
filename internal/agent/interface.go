@@ -2,7 +2,12 @@ package agent
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/hnimtadd/hive/internal/agent/react"
+	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
@@ -34,19 +39,88 @@ type HiveAgent interface {
 
 // Config holds configuration for agent initialization.
 type Config struct {
-	ID           string            `json:"id"`
-	Type         string            `json:"type"`
-	MaxTasks     int               `json:"max_tasks"`
-	Timeout      int               `json:"timeout_seconds"`
-	Environment  map[string]string `json:"environment"`
-	Capabilities []string          `json:"capabilities"`
+	ID           string   `json:"id"`
+	MaxTasks     int      `json:"max_tasks"`
+	Timeout      int      `json:"timeout_seconds"`
+	Capabilities []string `json:"capabilities"`
+	Description  string   `json:"description"`
+	MaxSteps     int      `json:"max_steps"`
+
+	LLM   model.ToolCallingChatModel `json:"-"`
+	Tools []tool.InvokableTool       `json:"-"`
 }
 
-// FeedbackChannel represents a communication channel for human-in-the-loop feedback.
-type FeedbackChannel interface {
-	// SendRequest sends a feedback request to the human operator
-	SendRequest(ctx context.Context, taskID, message string) error
+type agent struct {
+	id           string
+	prompt       string
+	capabilities []string
+	timeout      int
+	maxTasks     int
 
-	// WaitForResponse waits for human response with timeout
-	WaitForResponse(ctx context.Context, taskID string) (string, error)
+	agent *react.Agent
+}
+
+func NewAgent(config *Config) (HiveAgent, error) {
+	reactAgent, err := react.NewWithSystemPrompt(
+		config.ID, config.LLM, config.Tools, config.Description,
+		config.MaxSteps,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
+	}
+	return &agent{
+		id:           config.ID,
+		agent:        reactAgent,
+		prompt:       config.Description,
+		timeout:      config.Timeout,
+		maxTasks:     config.MaxTasks,
+		capabilities: config.Capabilities,
+	}, nil
+}
+
+// CanHandle implements [HiveAgent].
+func (a *agent) CanHandle(task *types.HiveTask) bool {
+	panic("unimplemented")
+}
+
+// Description implements [HiveAgent].
+func (a *agent) Description() string {
+	return a.prompt
+}
+
+// Execute implements [HiveAgent].
+func (a *agent) Execute(ctx context.Context, task *types.HiveTask) error {
+	retryConfig := errors.RetryConfig{
+		MaxAttempts:   3,
+		InitialDelay:  500,
+		BackoffFactor: 2.0,
+		MaxDelay:      5000,
+	}
+	handler := errors.NewErrorHandler()
+	_, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (any, error) {
+		// Execute the task using the ReACT agent
+		result, execErr := a.agent.Execute(ctx, task.Description)
+		if execErr != nil {
+			return nil, execErr
+		}
+
+		_ = result
+		return "", nil
+	})
+	return err
+}
+
+// GetID implements [HiveAgent].
+func (a *agent) GetID() string {
+	panic("unimplemented")
+}
+
+// GetType implements [HiveAgent].
+func (a *agent) GetType() string {
+	panic("unimplemented")
+}
+
+// Validate implements [HiveAgent].
+func (a *agent) Validate(task *types.HiveTask) error {
+	panic("unimplemented")
 }

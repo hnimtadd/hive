@@ -11,14 +11,15 @@ import (
 	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/internal/server"
+	"github.com/hnimtadd/hive/pkg/config"
 )
 
 func main() {
 	log.Println("Starting Hive Server Worker...")
-	// appConfig, err := config.LoadConfig()
-	// if err != nil {
-	// 	log.Fatalf("Failed to load config: %v", err)
-	// }
+	appConfig, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
 	// Create context that can be cancelled
 	ctx, cancel := context.WithCancel(context.Background())
@@ -40,20 +41,11 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Initialize LLM client for agents
-	// llmClient, err := llm.NewLLMToolCallingClient()
-	// if err != nil {
-	// 	log.Fatalf("Failed to initialize LLM client: %v", err)
-	// }
-
 	// Create agent registry
-	registry := agent.NewAgentResitry()
-
-	// Create and register Coder Agent
-	// coderAgent, err := coder.NewAgent(llmClient, appConfig)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create coder agent: %v", err)
-	// }
+	registry, err := agent.NewAgentResitry(appConfig)
+	if err != nil {
+		log.Fatalf("failed to init registry: %s", err)
+	}
 
 	// Start the Hive server
 	hiveServer := server.NewHiveServer(redisClient, registry)
