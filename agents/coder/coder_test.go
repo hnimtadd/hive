@@ -74,7 +74,6 @@ func TestNewEnhancedCoderAgent(t *testing.T) {
 		assert.NotNil(t, agent)
 		assert.Equal(t, "enhanced_coder", agent.GetType())
 		assert.NotEmpty(t, agent.GetID())
-		assert.NotEmpty(t, agent.GetCapabilities())
 
 		mockModel.AssertExpectations(t)
 	})
@@ -186,24 +185,6 @@ func TestEnhancedCoderAgent_Validate(t *testing.T) {
 	mockModel.AssertExpectations(t)
 }
 
-func TestEnhancedCoderAgent_AddTool(t *testing.T) {
-	mockModel := &MockChatModel{}
-	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
-
-	agent, err := NewAgent(mockModel, nil)
-	assert.NoError(t, err)
-
-	mockTool := NewMockInvokableTool("custom_tool")
-
-	err = agent.AddTool(mockTool)
-	assert.NoError(t, err)
-
-	tools := agent.ListTools()
-	assert.Contains(t, tools, mockTool)
-
-	mockModel.AssertExpectations(t)
-}
-
 func TestEnhancedCoderAgent_Misc(t *testing.T) {
 	mockModel := &MockChatModel{}
 	mockModel.On("WithTools", mock.AnythingOfType("[]*schema.ToolInfo")).Return(mockModel, nil)
@@ -214,19 +195,11 @@ func TestEnhancedCoderAgent_Misc(t *testing.T) {
 	// Test various methods
 	assert.NotEmpty(t, agent.GetID())
 	assert.Equal(t, "enhanced_coder", agent.GetType())
-	assert.NotEmpty(t, agent.GetCapabilities())
-	assert.NotNil(t, agent.ListTools())
-	assert.NoError(t, agent.Heartbeat())
 	assert.NotNil(t, agent.GetAgent())
 
 	// Test lifecycle methods
 	assert.NoError(t, agent.Setup(context.Background(), nil))
 	assert.NoError(t, agent.Cleanup(context.Background(), &types.HiveTask{}))
-	assert.NoError(t, agent.ReportStatus(context.Background(), &types.HiveTask{}))
-
-	feedback, err := agent.RequestFeedback(context.Background(), &types.HiveTask{}, "test message")
-	assert.NoError(t, err)
-	assert.NotEmpty(t, feedback)
 
 	mockModel.AssertExpectations(t)
 }

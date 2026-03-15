@@ -135,11 +135,6 @@ func (a *Agent) GetType() string {
 	return "enhanced_coder"
 }
 
-// GetCapabilities returns the agent's capabilities
-func (a *Agent) GetCapabilities() []string {
-	return a.capabilities
-}
-
 // CanHandle determines if this agent can process the given task
 func (a *Agent) CanHandle(task *types.HiveTask) bool {
 	if task == nil {
@@ -284,18 +279,6 @@ func (a *Agent) Setup(ctx context.Context, feedbackCh agent.FeedbackChannel) err
 	return nil
 }
 
-// ReportStatus provides real-time status updates
-func (a *Agent) ReportStatus(ctx context.Context, task *types.HiveTask) error {
-	// Status is handled by the ReACT agent internally
-	return nil
-}
-
-// RequestFeedback requests human feedback for complex decisions
-func (a *Agent) RequestFeedback(ctx context.Context, task *types.HiveTask, message string) (string, error) {
-	// For now, return a default response - this could be enhanced with actual human-in-the-loop
-	return "Please proceed with your best judgment.", nil
-}
-
 // Validate performs pre-execution validation
 func (a *Agent) Validate(task *types.HiveTask) error {
 	if task == nil {
@@ -315,28 +298,12 @@ func (a *Agent) Cleanup(ctx context.Context, task *types.HiveTask) error {
 	return nil
 }
 
-// Heartbeat indicates the agent is alive and ready
-func (a *Agent) Heartbeat() error {
-	// Enhanced agent is always ready
-	return nil
-}
-
-// AddTool adds a new tool to the agent (for backwards compatibility)
-func (a *Agent) AddTool(newTool tool.InvokableTool) error {
-	// Add to our tools slice
-	a.tools = append(a.tools, newTool)
-
-	// For now, we'd need to recreate the agent to add tools
-	// This could be enhanced in the future if Eino supports dynamic tool addition
-	return nil
-}
-
-// ListTools returns all available tools
-func (a *Agent) ListTools() []tool.InvokableTool {
-	return a.tools
-}
-
 // GetAgent returns the underlying Eino ReACT agent for advanced usage
 func (a *Agent) GetAgent() *react.Agent {
 	return a.reactAgent
+}
+
+// Description return a self-description about agent capabilities.
+func (a *Agent) Description() string {
+	return ""
 }

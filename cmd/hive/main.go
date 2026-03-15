@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/hnimtadd/hive/internal/parser"
 	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/spf13/cobra"
@@ -15,12 +14,9 @@ import (
 )
 
 var (
-	cfgFile            string
-	jiraID             string
-	gitlabProjectPath  string
-	targetBranch       string
-	featureSpec        string
-	verbose            bool
+	cfgFile string
+	jiraID  string
+	verbose bool
 )
 
 // rootCmd represents the base command when called without any subcommands.
@@ -55,35 +51,10 @@ func executeCommand(command string) error {
 		}
 	}
 
-	// Parse the natural language intent
-	intent, err := parser.ParseIntent(command, jiraID)
-	if err != nil {
-		return fmt.Errorf("failed to parse command intent: %w", err)
-	}
-
-	if verbose {
-		log.Printf("Parsed intent: %+v\n", intent)
-	}
-
 	// Create a new Hive task
-	task := types.NewHiveTask(intent.Goal, intent.JiraID)
-	task.Title = intent.Title
-	task.Description = intent.Description
+	task := types.NewHiveTask(command, jiraID)
 	task.Command = command
 	task.WorkingDir, _ = os.Getwd()
-
-	// Set AI-powered development fields if provided
-	if gitlabProjectPath != "" {
-		task.GitlabProjectPath = gitlabProjectPath
-	}
-	if targetBranch != "" {
-		task.TargetBranch = targetBranch
-	}
-	if featureSpec != "" {
-		task.FeatureSpec = featureSpec
-	} else {
-		task.FeatureSpec = intent.Goal // Use goal as feature spec if not explicitly provided
-	}
 
 	// Initialize Redis client
 	redisClient, err := redis.NewClient()
@@ -117,6 +88,7 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 		switch update.Status {
 		case types.TaskStatusInProgress:
 			log.Printf("%s (%.1f%%)\n", update.ExecutionSummary, update.Progress)
+
 		case types.TaskStatusPaused:
 			if update.RequiresFeedback {
 				log.Printf("Task paused - feedback required: %s\n", update.FeedbackMessage)
@@ -125,6 +97,7 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 					return err
 				}
 			}
+
 		case types.TaskStatusCompleted:
 			log.Printf("Task completed successfully!\n")
 			log.Printf("%s\n", update.ExecutionSummary)
@@ -139,6 +112,7 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 				log.Printf("Lines changed: ~%d\n", update.LinesChanged)
 			}
 			return nil
+
 		case types.TaskStatusFailed:
 			log.Printf("Task failed: %s\n", update.ErrorMessage)
 			return errors.New("task execution failed")
@@ -238,9 +212,6 @@ func init() {
 
 	// Command-specific flags
 	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
-	rootCmd.Flags().StringVar(&gitlabProjectPath, "gitlab-project", "", "GitLab project path (e.g., 'group/repo') for AI-powered development")
-	rootCmd.Flags().StringVar(&targetBranch, "target-branch", "main", "Target branch for merge request (default: main)")
-	rootCmd.Flags().StringVar(&featureSpec, "feature", "", "Detailed feature specification for AI analysis")
 
 	// Add subcommands
 	rootCmd.AddCommand(statusCmd)

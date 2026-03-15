@@ -24,31 +24,12 @@ type HiveAgent interface {
 	// summary by the agent, so the caller don't have to handle this manually.
 	Execute(ctx context.Context, task *types.HiveTask) error
 
-	// ReportStatus provides real-time status updates during execution
-	// This is called periodically to update task progress
-	ReportStatus(ctx context.Context, task *types.HiveTask) error
-
-	// Setup setup neccessary tools so the agent could actively do some
-	// functionalities.
-	Setup(ctx context.Context, feedbackCh FeedbackChannel) error
-
-	// RequestFeedback pauses execution and requests human input
-	// The agent should wait for feedback before continuing
-	RequestFeedback(ctx context.Context, task *types.HiveTask, message string) (string, error)
-
 	// Validate performs pre-execution validation of the task
 	// Returns error if task cannot be executed due to invalid parameters
 	Validate(task *types.HiveTask) error
 
-	// Cleanup performs any necessary cleanup after task completion or failure
-	Cleanup(ctx context.Context, task *types.HiveTask) error
-
-	// GetCapabilities returns a list of capabilities this agent supports
-	GetCapabilities() []string
-
-	// Heartbeat indicates the agent is alive and ready to accept work
-	// Used for agent discovery and health monitoring
-	Heartbeat() error
+	// Description return a self-description about agent capabilities.
+	Description() string
 }
 
 // Config holds configuration for agent initialization.

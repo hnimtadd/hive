@@ -43,27 +43,24 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Initialize LLM client for enhanced agent
+	// Initialize LLM client for agents
 	llmClient, err := llm.NewLLMToolCallingClient()
 	if err != nil {
 		log.Fatalf("Failed to initialize LLM client: %v", err)
 	}
 
-	// Create and start the enhanced coder agent
+	// Create agent registry
+	registry := agent.NewAgentResitry()
+
+	// Create and register Coder Agent
 	coderAgent, err := coder.NewAgent(llmClient, appConfig)
 	if err != nil {
-		log.Fatalf("Failed to create enhanced coder agent: %v", err)
-	}
-	log.Printf("Coder Agent %s started", coderAgent.GetID())
-
-	// TODO: handle this part automatically
-	registry := agent.NewAgentResitry()
-	if err = registry.RegisterAgent(coderAgent); err != nil {
-		log.Fatalf("Failed to register enhanced coder agent: %v", err)
+		log.Fatalf("Failed to create coder agent: %v", err)
 	}
 
-	server := server.NewHiveServer(redisClient, registry)
-	if err = server.Start(ctx); err != nil && errors.Is(err, context.Canceled) {
+	// Start the Hive server
+	hiveServer := server.NewHiveServer(redisClient, registry)
+	if err = hiveServer.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("Server execution failed: %v", err)
 	}
 

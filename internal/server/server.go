@@ -55,33 +55,11 @@ func (s *HiveServer) Start(ctx context.Context) error {
 		}
 		task.RecordState = s.recordTaskStateHandler
 
-		a, err := s.registry.FindAgent(task)
-		if err != nil {
-			log.Printf("failed to find agent for the task: %v", err)
-
-			if err = s.redisClient.SubmitTask(ctx, task); err != nil {
-				log.Printf("Failed to requeue task: %v", err)
-			}
-			continue
-		}
-
-		// Validate and execute task
-		if err = a.Validate(task); err != nil {
-			_ = task.MarkFailed(ctx, fmt.Sprintf("Validation failed: %v", err))
-			_ = s.redisClient.UpdateTask(ctx, task)
-			continue
-		}
-
-		// Execute task
-		if err = a.Execute(ctx, task); err != nil {
-			log.Printf("Task execution failed: %v", err)
+		// Process task through agent pipeline
+		if err = s.processTask(ctx, task); err != nil {
+			log.Printf("Task pipeline failed: %v", err)
 			_ = task.MarkFailed(ctx, err.Error())
 			_ = s.redisClient.UpdateTask(ctx, task)
-		}
-
-		// Cleanup regardless of success or failure
-		if err = a.Cleanup(ctx, task); err != nil {
-			log.Printf("Cleanup failed: %v", err)
 		}
 	}
 }
@@ -89,9 +67,6 @@ func (s *HiveServer) Start(ctx context.Context) error {
 func (s *HiveServer) startAgents(ctx context.Context) error {
 	agents := s.registry.ListAgents()
 	for a := range slices.Values(agents) {
-		if err := a.Setup(ctx, s); err != nil {
-			return err
-		}
 		// Register agent
 		if err := s.redisClient.RegisterAgent(ctx, a.GetID(), a.GetType()); err != nil {
 			return fmt.Errorf("failed to register agent: %w", err)
@@ -126,11 +101,6 @@ func (s *HiveServer) doAgentHeartbeat(ctx context.Context, agents []agent.HiveAg
 	}
 }
 
-// SendRequest implements [agent.FeedbackChannel].
-func (s *HiveServer) SendRequest(ctx context.Context, taskID string, message string) error {
-	return s.redisClient.ProvideFeedback(ctx, taskID, message)
-}
-
 // WaitForResponse implements [agent.FeedbackChannel].
 func (s *HiveServer) WaitForResponse(ctx context.Context, taskID string) (string, error) {
 	return s.redisClient.WaitForFeedback(ctx, taskID)
@@ -138,4 +108,34 @@ func (s *HiveServer) WaitForResponse(ctx context.Context, taskID string) (string
 
 func (s *HiveServer) recordTaskStateHandler(ctx context.Context, task *types.HiveTask) error {
 	return s.redisClient.UpdateTask(ctx, task)
+}
+
+// processTask processes a task through the agent pipeline
+// 1. Find the appropriate execution agent based on analysis
+// 2. Execute the task with the selected agent
+func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) error {
+	log.Printf("Processing task %s: %s", task.ID, task.Description)
+	for task.Status != types.TaskStatusCompleted || task.Status != types.TaskStatusFailed {
+		// Step 4: Find the appropriate execution agent
+		agent, err := s.registry.FindAgent(task)
+		if err != nil {
+			return fmt.Errorf("failed to find execution agent: %w", err)
+		}
+
+		log.Printf("Selected agent: %s (%s)", agent.GetID(), agent.GetType())
+
+		// Step 2: Validate task
+		if err = agent.Validate(task); err != nil {
+			return fmt.Errorf("validation failed: %w", err)
+		}
+
+		// Step 3: Execute task
+		log.Printf("Executing task with %s agent...", agent.GetType())
+		if err = agent.Execute(ctx, task); err != nil {
+			return fmt.Errorf("execution failed: %w", err)
+		}
+	}
+	log.Printf("Task %s completed successfully", task.ID)
+	return nil
+
 }
