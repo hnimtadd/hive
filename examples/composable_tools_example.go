@@ -43,9 +43,6 @@ func main() {
 	}
 	localTools = append(localTools, gitlabAPITool)
 
-	// Example workflow: Agent orchestrates tools to work with a GitLab project
-	fmt.Println("=== Composable Tools Workflow Example ===\n")
-
 	// Step 1: Get project info from GitLab
 	fmt.Println("1. Getting project info from GitLab API...")
 	result, err := gitlabAPITool.InvokableRun(ctx, `{
@@ -160,10 +157,10 @@ func main() {
 		fmt.Printf("Result: %s\n\n", result)
 	}
 
-	fmt.Println("=== Workflow Complete ===")
-	fmt.Println("\nKey Benefits of This Approach:")
-	fmt.Println("1. Flexible: Agent can adapt workflow to any git provider")
-	fmt.Println("2. Transparent: Each step is visible through tool calls")
-	fmt.Println("3. Composable: Tools can be mixed and matched")
-	fmt.Println("4. Simple: Each tool does one thing well")
+	log.Println("=== Workflow Complete ===")
+	log.Println("\nKey Benefits of This Approach:")
+	log.Println("1. Flexible: Agent can adapt workflow to any git provider")
+	log.Println("2. Transparent: Each step is visible through tool calls")
+	log.Println("3. Composable: Tools can be mixed and matched")
+	log.Println("4. Simple: Each tool does one thing well")
 }

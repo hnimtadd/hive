@@ -74,31 +74,7 @@ func (s *HiveServer) startAgents(ctx context.Context) error {
 	}
 
 	// Start heartbeat goroutine
-	go func() {
-		if err := s.doAgentHeartbeat(ctx, agents); err != nil {
-			log.Printf("failed to do agent heartbeat: %v", err)
-		}
-	}()
 	return nil
-}
-
-func (s *HiveServer) doAgentHeartbeat(ctx context.Context, agents []agent.HiveAgent) error {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-
-		case <-ticker.C:
-			for a := range slices.Values(agents) {
-				if err := a.Heartbeat(); err != nil {
-					return fmt.Errorf("heartbeat failed: %w", err)
-				}
-			}
-		}
-	}
 }
 
 // WaitForResponse implements [agent.FeedbackChannel].
@@ -114,28 +90,5 @@ func (s *HiveServer) recordTaskStateHandler(ctx context.Context, task *types.Hiv
 // 1. Find the appropriate execution agent based on analysis
 // 2. Execute the task with the selected agent
 func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) error {
-	log.Printf("Processing task %s: %s", task.ID, task.Description)
-	for task.Status != types.TaskStatusCompleted || task.Status != types.TaskStatusFailed {
-		// Step 4: Find the appropriate execution agent
-		agent, err := s.registry.FindAgent(task)
-		if err != nil {
-			return fmt.Errorf("failed to find execution agent: %w", err)
-		}
-
-		log.Printf("Selected agent: %s (%s)", agent.GetID(), agent.GetType())
-
-		// Step 2: Validate task
-		if err = agent.Validate(task); err != nil {
-			return fmt.Errorf("validation failed: %w", err)
-		}
-
-		// Step 3: Execute task
-		log.Printf("Executing task with %s agent...", agent.GetType())
-		if err = agent.Execute(ctx, task); err != nil {
-			return fmt.Errorf("execution failed: %w", err)
-		}
-	}
-	log.Printf("Task %s completed successfully", task.ID)
-	return nil
-
+	panic("not implemented")
 }

@@ -65,12 +65,16 @@ func NewAnalyzerAgent(chatModel model.ToolCallingChatModel, appConfig *config.Co
 
 	// Create ReACT agent for task analysis
 	agentID := "analyst-" + uuid.New().String()[:8]
+	maxStep := 30
+	if appConfig != nil {
+		maxStep = appConfig.AI.MaxStep
+	}
 	reactAgent, err := react.NewWithSystemPrompt(
 		agentID,
 		chatModel,
 		agentTools,
 		getAnalyzerSystemPrompt(),
-		appConfig.AI.MaxStep,
+		maxStep,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ReACT agent: %w", err)
