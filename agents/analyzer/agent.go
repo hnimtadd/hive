@@ -10,6 +10,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/internal/tools"
@@ -25,7 +26,7 @@ type Agent struct {
 	id           string
 	reactAgent   *react.Agent
 	tools        []tool.InvokableTool
-	errorHandler *errors.ErrorHandler
+	errorHandler *errors.ErrorHandler[*schema.Message]
 	capabilities []string
 }
 
@@ -84,7 +85,7 @@ func NewAnalyzerAgent(chatModel model.ToolCallingChatModel, appConfig *config.Co
 		id:           agentID,
 		reactAgent:   reactAgent,
 		tools:        agentTools,
-		errorHandler: errors.NewErrorHandler(),
+		errorHandler: errors.NewErrorHandler[*schema.Message](),
 		capabilities: []string{
 			"task_analysis",
 			"requirement_parsing",

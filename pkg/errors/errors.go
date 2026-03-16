@@ -103,26 +103,27 @@ func (c *RetryConfig) GetDelay(attempt int) time.Duration {
 }
 
 // ErrorHandler provides utilities for error handling with retry and graceful degradation
-type ErrorHandler struct{}
+type ErrorHandler[T any] struct{}
 
 // NewErrorHandler creates a new error handler
-func NewErrorHandler() *ErrorHandler {
-	return &ErrorHandler{}
+func NewErrorHandler[T any]() *ErrorHandler[T] {
+	return &ErrorHandler[T]{}
 }
 
 // WithRetry executes a function with retry logic for recoverable errors
-func (h *ErrorHandler) WithRetry(
+func (h *ErrorHandler[T]) WithRetry(
 	ctx context.Context,
 	config RetryConfig,
-	fn func(context.Context) (interface{}, error),
-) (interface{}, error) {
+	fn func(context.Context) (T, error),
+) (t T, err error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= config.MaxAttempts; attempt++ {
 		// Check context cancellation before each attempt
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			err = ctx.Err()
+			return
 		default:
 		}
 
@@ -137,7 +138,7 @@ func (h *ErrorHandler) WithRetry(
 		var hiveErr *HiveError
 		if !AsHiveError(err, &hiveErr) || !hiveErr.IsRecoverable() {
 			// Non-recoverable error, don't retry
-			return nil, err
+			return t, err
 		}
 
 		// Don't sleep on the last attempt
@@ -148,7 +149,7 @@ func (h *ErrorHandler) WithRetry(
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return nil, ctx.Err()
+				return t, ctx.Err()
 			case <-timer.C:
 				// Continue to next attempt
 			}
@@ -156,7 +157,7 @@ func (h *ErrorHandler) WithRetry(
 	}
 
 	// All attempts exhausted
-	return nil, NewHiveError(
+	return t, NewHiveError(
 		ErrTypeRetryExhausted,
 		fmt.Sprintf("all %d retry attempts exhausted", config.MaxAttempts),
 		lastErr,
@@ -164,11 +165,11 @@ func (h *ErrorHandler) WithRetry(
 }
 
 // WithGracefulDegradation executes a primary function with fallback on error
-func (h *ErrorHandler) WithGracefulDegradation(
+func (h *ErrorHandler[T]) WithGracefulDegradation(
 	ctx context.Context,
-	primary func(context.Context) (interface{}, error),
-	fallback func(context.Context, error) (interface{}, error),
-) (interface{}, error) {
+	primary func(context.Context) (T, error),
+	fallback func(context.Context, error) (T, error),
+) (T, error) {
 	result, err := primary(ctx)
 	if err == nil {
 		return result, nil
@@ -223,4 +224,3 @@ func ErrRateLimit(message string) *HiveError {
 func ErrInternal(message string, cause error) *HiveError {
 	return NewHiveError(ErrTypeInternal, message, cause)
 }
-

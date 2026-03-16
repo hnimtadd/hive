@@ -6,6 +6,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -27,7 +28,7 @@ type HiveAgent interface {
 	// Returns an error if execution fails, nil if successful
 	// For success task, markCompleted will be automatically call with the
 	// summary by the agent, so the caller don't have to handle this manually.
-	Execute(ctx context.Context, task *types.HiveTask) error
+	Execute(ctx context.Context, task *types.HiveTask) (*schema.Message, error)
 
 	// Validate performs pre-execution validation of the task
 	// Returns error if task cannot be executed due to invalid parameters

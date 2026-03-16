@@ -2,16 +2,16 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/hnimtadd/hive/internal/agent"
+	"github.com/hnimtadd/hive/pkg/types"
 )
 
-type AgentLookupInput struct {
+type delegateTaskInput struct {
 	ID string `json:"agent_id"`
 }
 
@@ -26,9 +26,9 @@ func agentLookupTool(registry agent.Registry) tool.InvokableTool {
 	}
 
 	// Create enhanced tool
-	return utils.NewTool[*AgentLookupInput, *schema.ToolResult](
+	return utils.NewTool(
 		toolInfo,
-		func(ctx context.Context, input *AgentLookupInput) (*schema.ToolResult, error) {
+		func(ctx context.Context, input *delegateTaskInput) (*schema.ToolResult, error) {
 			agent, exists := registry.GetByID(input.ID)
 			if !exists {
 				return &schema.ToolResult{
@@ -37,19 +37,27 @@ func agentLookupTool(registry agent.Registry) tool.InvokableTool {
 					},
 				}, nil
 			}
-			agentInfo := map[string]string{
-				"agentID":     input.ID,
-				"description": agent.Description(),
+			task, found := types.TaskFromContext(ctx)
+			if !found {
+				return nil, fmt.Errorf("task not found from context")
 			}
-			infoJSON, err := json.Marshal(agentInfo)
+			if !agent.CanHandle(task) {
+				return &schema.ToolResult{
+					Parts: []schema.ToolOutputPart{
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s could not handle the task", input.ID)},
+					},
+				}, nil
+			}
+			result, err := agent.Execute(ctx, task)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal agent information")
+				return &schema.ToolResult{
+					Parts: []schema.ToolOutputPart{
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s failed to not handle the task: %s", input.ID, err)},
+					},
+				}, nil
 			}
 
-			return &schema.ToolResult{Parts: []schema.ToolOutputPart{
-				{Type: schema.ToolPartTypeText, Text: string(infoJSON)},
-			},
-			}, nil
+			return &schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: result.String()}}}, nil
 		},
 	)
 

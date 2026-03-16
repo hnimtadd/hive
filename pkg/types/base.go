@@ -1,5 +1,27 @@
 package types //nolint:revive // this package name is acceptable
 
+import "context"
+
 func Ptr[T any](val T) *T {
 	return &val
+}
+
+type contextKey string
+
+var taskContextKey contextKey = "task"
+
+func ContextWithTask(ctx context.Context, task *HiveTask) context.Context {
+	return context.WithValue(ctx, taskContextKey, task)
+}
+
+func TaskFromContext(ctx context.Context) (*HiveTask, bool) {
+	taskAny := ctx.Value(taskContextKey)
+	if taskAny == nil {
+		return nil, false
+	}
+	task, isTask := taskAny.(*HiveTask)
+	if !isTask {
+		return nil, false
+	}
+	return task, true
 }

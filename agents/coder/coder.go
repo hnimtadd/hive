@@ -9,6 +9,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/internal/tools"
@@ -22,7 +23,7 @@ type Agent struct {
 	id           string
 	reactAgent   *react.Agent
 	tools        []tool.InvokableTool
-	errorHandler *errors.ErrorHandler
+	errorHandler *errors.ErrorHandler[*schema.Message]
 	capabilities []string
 	workspaceDir string
 }
@@ -69,7 +70,7 @@ func NewAgent(chatModel model.ToolCallingChatModel, appConfig *config.Config) (*
 		id:           agentID,
 		reactAgent:   reactAgent,
 		tools:        agentTools,
-		errorHandler: errors.NewErrorHandler(),
+		errorHandler: errors.NewErrorHandler[*schema.Message](),
 		workspaceDir: appConfig.WorkspaceDir,
 		capabilities: []string{
 			"react_reasoning",
@@ -238,12 +239,12 @@ Please init the project if it is not ready and working on the local gitlab proje
 }
 
 // Execute performs the coding task using ReACT pattern with error handling.
-func (a *Agent) Execute(ctx context.Context, task *types.HiveTask) error {
+func (a *Agent) Execute(ctx context.Context, task *types.HiveTask) (*schema.Message, error) {
 	if task == nil {
-		return errors.ErrValidation("task cannot be nil")
+		return nil, errors.ErrValidation("task cannot be nil")
 	}
 	if task.GitlabProjectPath == "" && task.WorkingDir == "" {
-		return errors.ErrValidation("coder task must specified the gitlab project or the current working dir, otherwise agent will not know where to do the task")
+		return nil, errors.ErrValidation("coder task must specified the gitlab project or the current working dir, otherwise agent will not know where to do the task")
 	}
 
 	// Use error handler with retry for resilient execution
@@ -255,7 +256,7 @@ func (a *Agent) Execute(ctx context.Context, task *types.HiveTask) error {
 	}
 	prompt := a.buildExectionPrompt(task)
 
-	_, err := a.errorHandler.WithRetry(ctx, retryConfig, func(ctx context.Context) (any, error) {
+	return a.errorHandler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*schema.Message, error) {
 		// Execute the task using the ReACT agent
 		result, execErr := a.reactAgent.Execute(ctx, prompt)
 		if execErr != nil {
@@ -264,12 +265,8 @@ func (a *Agent) Execute(ctx context.Context, task *types.HiveTask) error {
 
 		// Store result in task (assuming task has a result field)
 		// This would need to be adapted based on actual HiveTask structure
-		_ = result
-
-		return nil, nil
+		return result, nil
 	})
-
-	return err
 }
 
 // Validate performs pre-execution validation

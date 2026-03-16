@@ -32,7 +32,9 @@ func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, re
 		Description: persona,
 		MaxSteps:    3,
 		LLM:         llm,
-		Tools:       []tool.InvokableTool{},
+		Tools: []tool.InvokableTool{
+			agentLookupTool(registry),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -97,19 +99,15 @@ func (s *HiveServer) startAgents(ctx context.Context) error {
 	return nil
 }
 
-// WaitForResponse implements [agent.FeedbackChannel].
-func (s *HiveServer) WaitForResponse(ctx context.Context, taskID string) (string, error) {
-	return s.redisClient.WaitForFeedback(ctx, taskID)
-}
-
 func (s *HiveServer) recordTaskStateHandler(ctx context.Context, task *types.HiveTask) error {
 	return s.redisClient.UpdateTask(ctx, task)
 }
 
 // processTask processes a task through the agent pipeline
 // 1. Find the appropriate execution agent based on analysis
-// 2. Execute the task with the selected agent
+// 2. Execute the task with the selected agent.
 func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) error {
+	s.supervisor.Execute(ctx, task)
 	panic("not implemented")
 }
 
@@ -134,7 +132,7 @@ Available Agents:
 	}
 	yamlBytes, err := yaml.Marshal(prompts)
 	if err != nil {
-		return "", fmt.Errorf("failed to build system prompt")
+		return "", fmt.Errorf("failed to build system prompt: %w", err)
 	}
 	return fmt.Sprintf(persona, string(yamlBytes)), nil
 }
