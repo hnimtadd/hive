@@ -33,7 +33,7 @@ type HiveAgent interface {
 	// Returns error if task cannot be executed due to invalid parameters
 	Validate(task *types.HiveTask) error
 
-	// Description return a self-description about agent capabilities.
+	// Description return a short self-description about agent capabilities.
 	Description() string
 }
 
@@ -45,6 +45,8 @@ type Config struct {
 	Capabilities []string `json:"capabilities"`
 	Description  string   `json:"description"`
 	MaxSteps     int      `json:"max_steps"`
+
+	Persona string `json:"persona"`
 
 	LLM   model.ToolCallingChatModel `json:"-"`
 	Tools []tool.InvokableTool       `json:"-"`
@@ -80,7 +82,7 @@ func NewAgent(config *Config) (HiveAgent, error) {
 
 // CanHandle implements [HiveAgent].
 func (a *agent) CanHandle(task *types.HiveTask) bool {
-	panic("unimplemented")
+	return true
 }
 
 // Description implements [HiveAgent].
