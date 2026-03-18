@@ -1,200 +1,65 @@
-package types //nolint:revive // this package name is acceptable
+package types
 
 import (
-	"context"
-	"time"
+	"encoding/json"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/google/uuid"
 )
 
-// TaskStatus represents the current state of a task.
-type TaskStatus string
+// Status represents the current state of a task.
+type Status string
 
 const (
-	TaskStatusPending    TaskStatus = "pending"
-	TaskStatusInProgress TaskStatus = "in_progress"
-	TaskStatusCompleted  TaskStatus = "completed"
-	TaskStatusFailed     TaskStatus = "failed"
-	TaskStatusPaused     TaskStatus = "paused"
+	TaskStatusNotStarted Status = "not_started"
+	TaskStatusInProgress Status = "in_progress"
+	TaskStatusCompleted  Status = "completed"
+	TaskStatusFailed     Status = "failed"
+	TaskStatusPaused     Status = "paused"
 )
 
-// TaskPriority represents the urgency of a task.
-type TaskPriority string
+type TaskPlan struct {
+	Target string `json:"target" db:"target"`
+	Status Status `json:"status" db:"status"`
+}
 
-const (
-	TaskPriorityLow      TaskPriority = "low"
-	TaskPriorityMedium   TaskPriority = "medium"
-	TaskPriorityHigh     TaskPriority = "high"
-	TaskPriorityCritical TaskPriority = "critical"
-)
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
 
 // HiveTask represents a single task in the distributed system.
 type HiveTask struct {
 	// Core identifiers
-	ID     string `json:"id"      db:"id"`
-	JiraID string `json:"jira_id" db:"jira_id"`
-
-	// Task metadata
-	Title       string       `json:"title"       db:"title"`
-	Description string       `json:"description" db:"description"`
-	Context     string       `json:"contex"      db:"context"`
-	Goal        string       `json:"goal"        db:"goal"`
-	Status      TaskStatus   `json:"status"      db:"status"`
-	Priority    TaskPriority `json:"priority"    db:"priority"`
-
-	// Agent assignment
-	AssignedAgent string `json:"assigned_agent" db:"assigned_agent"`
-	AgentType     string `json:"agent_type"     db:"agent_type"`
-
-	// Execution context
-	Command     string            `json:"command"     db:"command"`
-	WorkingDir  string            `json:"working_dir" db:"working_dir"`
-	Environment map[string]string `json:"environment" db:"environment"`
-
-	// Progress tracking
-	Progress      float64  `json:"progress"       db:"progress"`
-	LinesChanged  int      `json:"lines_changed"  db:"lines_changed"`
-	FilesModified []string `json:"files_modified" db:"files_modified"`
-	TestsPassed   bool     `json:"tests_passed"   db:"tests_passed"`
-
-	// Feedback and interaction
-	RequiresFeedback bool   `json:"requires_feedback" db:"requires_feedback"`
-	FeedbackMessage  string `json:"feedback_message"  db:"feedback_message"`
-	FeedbackResponse string `json:"feedback_response" db:"feedback_response"`
-
-	// Error handling
-	ErrorMessage string `json:"error_message" db:"error_message"`
-	RetryCount   int    `json:"retry_count"   db:"retry_count"`
-	MaxRetries   int    `json:"max_retries"   db:"max_retries"`
-
-	// Timestamps
-	CreatedAt   time.Time  `json:"created_at"   db:"created_at"`
-	StartedAt   *time.Time `json:"started_at"   db:"started_at"`
-	CompletedAt *time.Time `json:"completed_at" db:"completed_at"`
-	UpdatedAt   time.Time  `json:"updated_at"   db:"updated_at"`
-
-	// Execution summary
-	ExecutionSummary string        `json:"execution_summary" db:"execution_summary"`
-	ExecutionTime    time.Duration `json:"execution_time"    db:"execution_time"`
-
-	// GitLab integration fields
-	GitlabProjectPath string `json:"gitlab_project_path" db:"gitlab_project_path"`
-	SourceBranch      string `json:"source_branch"       db:"source_branch"`
-	TargetBranch      string `json:"target_branch"       db:"target_branch"`
-	MergeRequestURL   string `json:"merge_request_url"   db:"merge_request_url"`
-	MergeRequestID    int    `json:"merge_request_id"    db:"merge_request_id"`
-
-	// AI-powered development context
-	FeatureSpec      string   `json:"feature_spec"      db:"feature_spec"`
-	TechnicalContext string   `json:"technical_context" db:"technical_context"`
-	FilesToModify    []string `json:"files_to_modify"   db:"files_to_modify"`
-	FilesToCreate    []string `json:"files_to_create"   db:"files_to_create"`
-
-	// Commit tracking
-	CommitMessages []string `json:"commit_messages" db:"commit_messages"`
-	CommitSHAs     []string `json:"commit_shas"     db:"commit_shas"`
-
-	// AI analysis results
-	AIComplexity    string   `json:"ai_complexity"     db:"ai_complexity"`     // "low", "medium", "high"
-	AIEstimatedTime string   `json:"ai_estimated_time" db:"ai_estimated_time"` // AI's time estimate
-	AIQuestions     []string `json:"ai_questions"      db:"ai_questions"`      // Questions AI needs answered
-
-	RecordState func(ctx context.Context, task *HiveTask) error `json:"-"`
+	ID               string            `json:"id"                    db:"id"          jsonschema:"ID of the task"`
+	Status           Status            `json:"status"                db:"status"      jsonschema:"Current task status"`
+	NextAction       *string           `json:"next_action,omitempty" db:"next_action" jsonschema:"Previous agent suggested next action to complete"`
+	Plan             []TaskPlan        `json:"plan"                  db:"plan"        jsonschema:"Our mastery plan"`
+	Artifacts        map[string]string `json:"artifacts"             db:"artifacts"   jsonschema:"Shared artifacts extracted by other agents that uses for this task life-cycle"`
+	InternalThoughts string            `json:"internal_thoughts"                      jsonschema:"Thoughts of previous agent"`
+	Messages         []Message         `json:"message"               db:"message"     jsonschema:"global conversation"`
+	Context          string            `json:"context"               db:"context"     jsonschema:"Task core context and description"`
 }
 
 // NewHiveTask creates a new task with default values.
-func NewHiveTask(goal, jiraID string) *HiveTask {
-	now := time.Now()
+func NewHiveTask(goal string) *HiveTask {
 	return &HiveTask{
-		ID:               uuid.New().String(),
-		JiraID:           jiraID,
-		Goal:             goal,
-		Status:           TaskStatusPending,
-		Priority:         TaskPriorityMedium,
-		Progress:         0.0,
-		MaxRetries:       3,
-		Environment:      make(map[string]string),
-		FilesModified:    make([]string, 0),
-		RequiresFeedback: false,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-
-		// Initialize GitLab and AI fields
-		TargetBranch:   "main",
-		FilesToModify:  make([]string, 0),
-		FilesToCreate:  make([]string, 0),
-		CommitMessages: make([]string, 0),
-		CommitSHAs:     make([]string, 0),
-		AIQuestions:    make([]string, 0),
+		ID:      uuid.New().String(),
+		Status:  TaskStatusNotStarted,
+		Context: goal,
 	}
 }
 
-func (t *HiveTask) recordState(ctx context.Context) error {
-	if t.RecordState != nil {
-		return t.RecordState(ctx, t)
+func (t *HiveTask) JSONString() string {
+	jsonBytes, err := json.Marshal(t)
+	if err != nil {
+		return "unknow"
 	}
-	return nil
+	return string(jsonBytes)
 }
 
-// IsActive returns true if the task is currently being processed.
-func (t *HiveTask) IsActive() bool {
-	return t.Status == TaskStatusInProgress || t.Status == TaskStatusPaused
-}
-
-// CanRetry returns true if the task can be retried.
-func (t *HiveTask) CanRetry() bool {
-	return t.Status == TaskStatusFailed && t.RetryCount < t.MaxRetries
-}
-
-// MarkStarted updates the task to indicate it has started.
-func (t *HiveTask) MarkStarted(ctx context.Context, agentID string) error {
-	now := time.Now()
-	t.Status = TaskStatusInProgress
-	t.AssignedAgent = agentID
-	t.StartedAt = &now
-	t.UpdatedAt = now
-	return t.recordState(ctx)
-}
-
-// MarkCompleted updates the task to indicate successful completion.
-func (t *HiveTask) MarkCompleted(ctx context.Context, summary string) error {
-	now := time.Now()
-	t.Status = TaskStatusCompleted
-	t.Progress = 100.0
-	t.ExecutionSummary = summary
-	t.CompletedAt = &now
-	t.UpdatedAt = now
-
-	if t.StartedAt != nil {
-		t.ExecutionTime = now.Sub(*t.StartedAt)
-	}
-	return t.recordState(ctx)
-}
-
-// MarkFailed updates the task to indicate failure.
-func (t *HiveTask) MarkFailed(ctx context.Context, errorMsg string) error {
-	now := time.Now()
-	t.Status = TaskStatusFailed
-	t.ErrorMessage = errorMsg
-	t.UpdatedAt = now
-	t.RetryCount++
-	return t.recordState(ctx)
-}
-
-// RequestFeedback marks the task as requiring human interaction.
-func (t *HiveTask) RequestFeedback(ctx context.Context, message string) error {
-	t.Status = TaskStatusPaused
-	t.RequiresFeedback = true
-	t.FeedbackMessage = message
-	t.UpdatedAt = time.Now()
-	return t.recordState(ctx)
-}
-
-// ProvideFeedback provides the human response and resumes the task.
-func (t *HiveTask) ProvideFeedback(ctx context.Context, response string) error {
-	t.Status = TaskStatusInProgress
-	t.RequiresFeedback = false
-	t.FeedbackResponse = response
-	t.UpdatedAt = time.Now()
-	return t.recordState(ctx)
+func TaskSelfDescription() string {
+	schema, _ := jsonschema.For[HiveTask](nil)
+	schemaJSON, _ := schema.MarshalJSON()
+	return string(schemaJSON)
 }

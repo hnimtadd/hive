@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"slices"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -48,10 +47,6 @@ func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, re
 
 func (s *HiveServer) Start(ctx context.Context) error {
 	log.Println("Starting Hive Server")
-	if err := s.startAgents(ctx); err != nil {
-		log.Printf("failed to start agent: %v", err)
-		return err
-	}
 
 	// Main task processing loop
 	for {
@@ -75,40 +70,29 @@ func (s *HiveServer) Start(ctx context.Context) error {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		task.RecordState = s.recordTaskStateHandler
 
 		// Process task through agent pipeline
 		if err = s.processTask(ctx, task); err != nil {
 			log.Printf("Task pipeline failed: %v", err)
-			_ = task.MarkFailed(ctx, err.Error())
+			// _ = task.MarkFailed(ctx, err.Error())
 			_ = s.redisClient.UpdateTask(ctx, task)
 		}
 	}
-}
-
-func (s *HiveServer) startAgents(ctx context.Context) error {
-	agents := s.registry.ListAgents()
-	for a := range slices.Values(agents) {
-		// Register agent
-		if err := s.redisClient.RegisterAgent(ctx, a.GetID(), a.GetType()); err != nil {
-			return fmt.Errorf("failed to register agent: %w", err)
-		}
-	}
-
-	// Start heartbeat goroutine
-	return nil
-}
-
-func (s *HiveServer) recordTaskStateHandler(ctx context.Context, task *types.HiveTask) error {
-	return s.redisClient.UpdateTask(ctx, task)
 }
 
 // processTask processes a task through the agent pipeline
 // 1. Find the appropriate execution agent based on analysis
 // 2. Execute the task with the selected agent.
 func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) error {
-	s.supervisor.Execute(ctx, task)
-	panic("not implemented")
+	ctx = types.ContextWithTask(ctx, task)
+	for task.Status != types.TaskStatusCompleted || task.Status != types.TaskStatusFailed {
+		msg, err := s.supervisor.Execute(ctx, task)
+		if err != nil {
+			return err
+		}
+		fmt.Println(msg)
+	}
+	return nil
 }
 
 func getSupervisorPersona(registry agent.Registry) (string, error) {
@@ -123,6 +107,9 @@ Core Responsibilities:
 		* Output FINISH if the user's goal is met along with the information
         * Output FAILED if the available agents lack the capabilities to proceed or if a logical dead-end is reached.
 Constraint: Do not perform the task yourself. Your only tools are delegation and synthesis.
+This is the task state that you and your team are working with:
+%s
+For each step, let just print out the full next state to pass to the next agent
 Available Agents:
 %s
 `
@@ -134,5 +121,5 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to build system prompt: %w", err)
 	}
-	return fmt.Sprintf(persona, string(yamlBytes)), nil
+	return fmt.Sprintf(persona, types.TaskSelfDescription(), string(yamlBytes)), nil
 }

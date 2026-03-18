@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/hnimtadd/hive/agents/coder"
@@ -51,7 +52,9 @@ func main() {
 		TargetBranch:      "feature",
 	}
 
-	if err = agent.Execute(context.Background(), task); err != nil {
+	msg, err := agent.Execute(context.Background(), task)
+	if err != nil {
 		log.Panic(err)
 	}
+	fmt.Println(msg.String())
 }

@@ -144,7 +144,6 @@ func (c *Client) UpdateTask(ctx context.Context, task *types.HiveTask) error {
 	updateJSON, _ := json.Marshal(map[string]any{
 		"task_id":   task.ID,
 		"status":    task.Status,
-		"progress":  task.Progress,
 		"timestamp": time.Now(),
 		"task":      task,
 	})
@@ -285,10 +284,9 @@ func (c *Client) ListActiveTasks(ctx context.Context) ([]*types.HiveTask, error)
 }
 
 // RegisterAgent registers an agent and starts heartbeat.
-func (c *Client) RegisterAgent(ctx context.Context, agentID, agentType string) error {
+func (c *Client) RegisterAgent(ctx context.Context, agentID string) error {
 	agentInfo := map[string]any{
 		"id":         agentID,
-		"type":       agentType,
 		"registered": time.Now(),
 		"last_seen":  time.Now(),
 		"status":     "active",

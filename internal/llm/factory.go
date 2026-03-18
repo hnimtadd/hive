@@ -3,6 +3,7 @@ package llm
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/hnimtadd/hive/pkg/config"
@@ -52,11 +53,13 @@ func NewLLMToolCallingClient() (model.ToolCallingChatModel, error) {
 func NewLLMToolCallingClientWithConfig(cfg *config.AIConfig) (model.ToolCallingChatModel, error) {
 	switch cfg.Provider {
 	case "claude":
+		log.Println("initializing claude llm")
 		if cfg.Claude == nil {
 			return nil, errors.New("claude configuration is required when provider is 'claude'")
 		}
 		return NewClaudeToolCallingClientWithConfig(cfg.Claude)
 	case "openai":
+		log.Println("initializing openai llm")
 		if cfg.OpenAI == nil {
 			return nil, errors.New("openai configuration is required when provider is 'openai'")
 		}
@@ -65,4 +68,3 @@ func NewLLMToolCallingClientWithConfig(cfg *config.AIConfig) (model.ToolCallingC
 		return nil, fmt.Errorf("unsupported AI provider: %s", cfg.Provider)
 	}
 }
-

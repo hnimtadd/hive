@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/llm"
+	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -32,21 +33,23 @@ func (a *registry) ListAgents() []HiveAgent {
 
 func (a *registry) GetByID(id string) (HiveAgent, bool) {
 	agent, ok := a.agents[id]
-	return agent, ok
 
+	return agent, ok
 }
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(llm model.ToolCallingChatModel, _ *config.Config) ([]HiveAgent, error) {
+func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]HiveAgent, error) {
 	config := &Config{
 		ID:          uuid.New().String(),
-		Description: "You are an assistant agent",
+		Description: "You are an file_system assistant, which can perform read files in the system",
 		MaxSteps:    30,
 		Timeout:     10,
 		MaxTasks:    10,
 		LLM:         llm,
-		Tools:       []tool.InvokableTool{},
+		Tools: []tool.InvokableTool{
+			tools.NewListFilesTool(cfg.WorkspaceDir),
+		},
 	}
 	agent, err := NewAgent(config)
 	if err != nil {
@@ -61,7 +64,7 @@ func NewAgentResitry(appConfig *config.Config) (Registry, error) {
 	}
 	llm, err := llm.NewLLMToolCallingClientWithConfig(&appConfig.AI)
 	if err != nil {
-		return nil, fmt.Errorf("failed to init llm")
+		return nil, fmt.Errorf("failed to init llm: %w", err)
 	}
 	agents, err := reg.scan(llm, appConfig)
 	if err != nil {
@@ -70,5 +73,6 @@ func NewAgentResitry(appConfig *config.Config) (Registry, error) {
 	for _, agent := range agents {
 		reg.agents[agent.GetID()] = agent
 	}
+	fmt.Println(reg.agents)
 	return reg, nil
 }

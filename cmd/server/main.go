@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/hnimtadd/hive/internal/agent"
+	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/pkg/config"
@@ -41,6 +42,11 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	llm, err := llm.NewLLMToolCallingClient()
+	if err != nil {
+		log.Fatalf("faield to create llm: %v", err)
+	}
+
 	// Create agent registry
 	registry, err := agent.NewAgentResitry(appConfig)
 	if err != nil {
@@ -48,7 +54,10 @@ func main() {
 	}
 
 	// Start the Hive server
-	hiveServer := server.NewHiveServer(redisClient, registry)
+	hiveServer, err := server.NewHiveServer(redisClient, llm, registry)
+	if err != nil {
+		log.Fatalf("failed to start server: %v", err)
+	}
 	if err = hiveServer.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("Server execution failed: %v", err)
 	}

@@ -2,11 +2,15 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -60,24 +64,45 @@ type agent struct {
 	timeout      int
 	maxTasks     int
 
+	outputValidator *jsonschema.Resolved
+
 	agent *react.Agent
+}
+
+type AgentOutput struct {
+	Status       types.Status      `json:"status"               jsonschema:"Updated job state, either: not_started, in_progress, completed, failed, paused"`
+	Observations string            `json:"observations"         jsonschema:"What did you find? This will be added to history."`
+	NewArtifacts map[string]string `json:"new_artifacts"        jsonschema:"Any data found (e.g., ticket_details, log_snippet)"`
+	NextSteps    string            `json:"next_steps,omitempty" jsonschema:"Optional suggestion for the supervisor"`
 }
 
 func NewAgent(config *Config) (HiveAgent, error) {
 	reactAgent, err := react.NewWithSystemPrompt(
-		config.ID, config.LLM, config.Tools, config.Description,
+		config.ID,
+		config.LLM,
+		config.Tools,
+		config.Description,
 		config.MaxSteps,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
+	schema, err := jsonschema.For[AgentOutput](nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build agent output schema: %w", err)
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve agent schema: %w", err)
+	}
 	return &agent{
-		id:           config.ID,
-		agent:        reactAgent,
-		prompt:       config.Description,
-		timeout:      config.Timeout,
-		maxTasks:     config.MaxTasks,
-		capabilities: config.Capabilities,
+		id:              config.ID,
+		agent:           reactAgent,
+		prompt:          config.Description,
+		timeout:         config.Timeout,
+		maxTasks:        config.MaxTasks,
+		capabilities:    config.Capabilities,
+		outputValidator: resolved,
 	}, nil
 }
 
@@ -92,30 +117,69 @@ func (a *agent) Description() string {
 }
 
 // Execute implements [HiveAgent].
-func (a *agent) Execute(ctx context.Context, task *types.HiveTask) error {
+func (a *agent) Execute(ctx context.Context, task *types.HiveTask) (*schema.Message, error) {
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   3,
 		InitialDelay:  500,
 		BackoffFactor: 2.0,
 		MaxDelay:      5000,
 	}
-	handler := errors.NewErrorHandler()
-	_, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (any, error) {
+	taskDescription := task.JSONString()
+	handler := errors.NewErrorHandler[*schema.Message]()
+	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
+	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*schema.Message, error) {
 		// Execute the task using the ReACT agent
-		result, execErr := a.agent.Execute(ctx, task.Description)
+		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
 			return nil, execErr
 		}
-
-		_ = result
-		return "", nil
+		content := func() string {
+			if len(result.MultiContent) != 0 {
+				for content := range slices.Values(result.MultiContent) {
+					switch content.Type {
+					case schema.ChatMessagePartTypeText:
+						return content.Text
+						// process agent output update
+					default:
+						continue
+					}
+				}
+			}
+			return result.Content
+		}()
+		var output map[string]any
+		if err := json.Unmarshal([]byte(content), &output); err != nil {
+			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent ouptut schema: %s", err)))
+			return nil, fmt.Errorf("failed to parse output ot agent ouptut schema: %w", err)
+		}
+		if err := a.outputValidator.Validate(output); err != nil {
+			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to validate output schema: %s", err)))
+			return nil, fmt.Errorf("failed to validate output schema: %w", err)
+		}
+		agentOutput := AgentOutput{}
+		if err := json.Unmarshal([]byte(content), &agentOutput); err != nil {
+			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent output schema: %s", err)))
+			return nil, fmt.Errorf("failed to parse output ot agent output schema: %w", err)
+		}
+		maps.Copy(task.Artifacts, agentOutput.NewArtifacts)
+		task.InternalThoughts = ""
+		if len(agentOutput.Observations) != 0 {
+			task.InternalThoughts += fmt.Sprintf("AGENT OBSERVATION:\n%s\n====", agentOutput.Observations)
+		}
+		if result.ReasoningContent != "" {
+			task.InternalThoughts += fmt.Sprintf("AGENT REASONING:\n%s\n=====", result.ReasoningContent)
+		}
+		if len(agentOutput.NextSteps) != 0 {
+			task.NextAction = &agentOutput.NextSteps
+		}
+		task.Status = agentOutput.Status
+		return result, nil
 	})
-	return err
 }
 
 // GetID implements [HiveAgent].
 func (a *agent) GetID() string {
-	panic("unimplemented")
+	return a.id
 }
 
 // GetType implements [HiveAgent].
@@ -125,5 +189,5 @@ func (a *agent) GetType() string {
 
 // Validate implements [HiveAgent].
 func (a *agent) Validate(task *types.HiveTask) error {
-	panic("unimplemented")
+	return nil
 }

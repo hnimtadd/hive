@@ -52,9 +52,7 @@ func executeCommand(command string) error {
 	}
 
 	// Create a new Hive task
-	task := types.NewHiveTask(command, jiraID)
-	task.Command = command
-	task.WorkingDir, _ = os.Getwd()
+	task := types.NewHiveTask(command)
 
 	// Initialize Redis client
 	redisClient, err := redis.NewClient()
@@ -87,34 +85,18 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 	for update := range updates {
 		switch update.Status {
 		case types.TaskStatusInProgress:
-			log.Printf("%s (%.1f%%)\n", update.ExecutionSummary, update.Progress)
+			log.Printf("%s (%.1f%%)\n", update.Status)
 
 		case types.TaskStatusPaused:
-			if update.RequiresFeedback {
-				log.Printf("Task paused - feedback required: %s\n", update.FeedbackMessage)
-				// Handle feedback request
-				if err = handleFeedbackRequest(ctx, redisClient, taskID, update.FeedbackMessage); err != nil {
-					return err
-				}
-			}
 
 		case types.TaskStatusCompleted:
 			log.Printf("Task completed successfully!\n")
-			log.Printf("%s\n", update.ExecutionSummary)
+			log.Printf("%s\n", update.Messages[len(update.Messages)-1])
 			// Show Gitlab-specific information if available
-			if update.MergeRequestURL != "" {
-				log.Printf("Merge Request: %s\n", update.MergeRequestURL)
-			}
-			if len(update.CommitSHAs) > 0 {
-				log.Printf("Commits created: %d\n", len(update.CommitSHAs))
-			}
-			if update.LinesChanged > 0 {
-				log.Printf("Lines changed: ~%d\n", update.LinesChanged)
-			}
 			return nil
 
 		case types.TaskStatusFailed:
-			log.Printf("Task failed: %s\n", update.ErrorMessage)
+			log.Printf("Task failed: %s\n", update.Errors[len(update.Errors)-1])
 			return errors.New("task execution failed")
 		}
 	}
@@ -133,41 +115,6 @@ func handleFeedbackRequest(ctx context.Context, redisClient *redis.Client, taskI
 	}
 
 	return redisClient.ProvideFeedback(ctx, taskID, response)
-}
-
-// statusCmd represents the status command.
-var statusCmd = &cobra.Command{
-	Use:   "status [task-id]",
-	Short: "Check the status of a task",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-		taskID := args[0]
-
-		redisClient, err := redis.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to connect to Redis: %w", err)
-		}
-		defer redisClient.Close()
-
-		task, err := redisClient.GetTask(ctx, taskID)
-		if err != nil {
-			return fmt.Errorf("failed to get task: %w", err)
-		}
-
-		log.Printf("Task ID: %s\n", task.ID)
-		log.Printf("Status: %s\n", task.Status)
-		log.Printf("Goal: %s\n", task.Goal)
-		log.Printf("Progress: %.1f%%\n", task.Progress)
-		if task.AssignedAgent != "" {
-			log.Printf("Assigned Agent: %s\n", task.AssignedAgent)
-		}
-		if task.ErrorMessage != "" {
-			log.Printf("Error: %s\n", task.ErrorMessage)
-		}
-
-		return nil
-	},
 }
 
 // listCmd represents the list command.
@@ -195,8 +142,8 @@ var listCmd = &cobra.Command{
 
 		log.Printf("Active Tasks (%d):\n", len(tasks))
 		for _, task := range tasks {
-			log.Printf("  %s - %s [%s] %.1f%%\n",
-				task.ID[:8], task.Goal, task.Status, task.Progress)
+			log.Printf("  %s  [%s]\n",
+				task.ID[:8], task.Status)
 		}
 
 		return nil
@@ -214,7 +161,6 @@ func init() {
 	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
 
 	// Add subcommands
-	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(listCmd)
 }
 

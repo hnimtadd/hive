@@ -37,9 +37,6 @@ func NewAgent(chatModel model.ToolCallingChatModel, appConfig *config.Config) (*
 	// Create agentTools for the agent
 	agentTools := []tool.InvokableTool{
 		tools.NewExecuteShellTool(""),
-		tools.NewListFilesTool(""),
-		tools.NewLocalFileReadTool(""),
-		tools.NewLocalFileWriteTool(""),
 	}
 	if appConfig != nil && appConfig.Gitlab.Enabled {
 		token := os.Getenv(appConfig.Gitlab.TokenEnv)
