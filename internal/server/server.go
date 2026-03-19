@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -13,6 +12,7 @@ import (
 	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/hnimtadd/hive/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,15 +91,15 @@ func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) erro
 		if err != nil {
 			return err
 		}
-		if len(msg.ToolCalls) == 0 {
-			// there is not agent delegation anymore:
-			fmt.Println(msg.Content)
-		}
-		if content, isFinised := strings.CutPrefix(msg.Content, "FINISHED"); isFinised {
-			fmt.Println(content)
-		}
-		if content, isFinised := strings.CutPrefix(msg.Content, "STOP"); isFinised {
-			fmt.Println(content)
+		switch msg.Status {
+		case "FINISHED":
+			fmt.Println("finished", msg.Content)
+		case "INTERRUPT":
+			fmt.Println("interrupt", msg.Content)
+		case "FAILED":
+			fmt.Println("failed", msg.Content)
+		default:
+			// Handle unexpected "stuck" states
 		}
 	}
 	return nil
@@ -117,9 +117,10 @@ Core Responsibilities:
 		* Output FINISH if the user's goal is met along with the information
         * Output FAILED if the available agents lack the capabilities to proceed or if a logical dead-end is reached.
 Constraint: Do not perform the task yourself. Your only tools are delegation and synthesis.
-This is the task state that you and your team are working with:
+This is the task state, which is your input that you and your team are working with:
 %s
-For each step, let just print out the full next state to pass to the next agent
+%This is the output that you have to return:
+%s
 Available Agents:
 %s
 `
@@ -131,5 +132,9 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to build system prompt: %w", err)
 	}
-	return fmt.Sprintf(persona, types.TaskSelfDescription(), string(yamlBytes)), nil
+	taskDescription, err := utils.DescribeJSONSchema[types.HiveTask]()
+	if err != nil {
+		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
+	}
+	return fmt.Sprintf(persona, taskDescription, string(yamlBytes)), nil
 }

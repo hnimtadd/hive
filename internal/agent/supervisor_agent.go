@@ -136,7 +136,6 @@ func (s *supervisor) Description() string {
 // GetID implements [SupervisorAgent].
 func (s *supervisor) GetID() string {
 	return s.id
-	panic("unimplemented")
 }
 
 // GetType implements [SupervisorAgent].
