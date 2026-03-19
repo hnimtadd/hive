@@ -16,22 +16,22 @@ import (
 // Registry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
-	ListAgents() []HiveAgent
+	ListAgents() []WorkerAgent
 	// GetByID get agent by agent ID
-	GetByID(id string) (HiveAgent, bool)
+	GetByID(id string) (WorkerAgent, bool)
 }
 
 type registry struct {
-	agents map[string]HiveAgent
+	agents map[string]WorkerAgent
 	tools  map[string]tool.InvokableTool
 }
 
 // ListAgents implements [Registry].
-func (a *registry) ListAgents() []HiveAgent {
+func (a *registry) ListAgents() []WorkerAgent {
 	return slices.Collect(maps.Values(a.agents))
 }
 
-func (a *registry) GetByID(id string) (HiveAgent, bool) {
+func (a *registry) GetByID(id string) (WorkerAgent, bool) {
 	agent, ok := a.agents[id]
 
 	return agent, ok
@@ -39,7 +39,7 @@ func (a *registry) GetByID(id string) (HiveAgent, bool) {
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]HiveAgent, error) {
+func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]WorkerAgent, error) {
 	config := &Config{
 		ID:          uuid.New().String(),
 		Description: "You are an file_system assistant, which can perform read files in the system",
@@ -55,12 +55,12 @@ func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]H
 	if err != nil {
 		return nil, err
 	}
-	return []HiveAgent{agent}, nil
+	return []WorkerAgent{agent}, nil
 }
 
 func NewAgentResitry(appConfig *config.Config) (Registry, error) {
 	reg := &registry{
-		agents: make(map[string]HiveAgent),
+		agents: make(map[string]WorkerAgent),
 	}
 	llm, err := llm.NewLLMToolCallingClientWithConfig(&appConfig.AI)
 	if err != nil {

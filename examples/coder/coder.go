@@ -13,7 +13,7 @@ import (
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
-func SetupAgentWorkflow() (agent.HiveAgent, error) {
+func SetupAgentWorkflow() (agent.WorkerAgent, error) {
 	// Create LLM model (assuming Claude or OpenAI)
 	chatModel, err := llm.NewLLMClient()
 	if err != nil {

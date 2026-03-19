@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -18,7 +19,7 @@ import (
 type HiveServer struct {
 	registry    agent.Registry
 	redisClient *redis.Client
-	supervisor  agent.HiveAgent
+	supervisor  agent.SupervisorAgent
 }
 
 func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, registry agent.Registry) (*HiveServer, error) {
@@ -26,7 +27,7 @@ func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, re
 	if err != nil {
 		return nil, err
 	}
-	supervisor, err := agent.NewAgent(&agent.Config{
+	supervisor, err := agent.NewSupervisorAgent(&agent.Config{
 		ID:          uuid.New().String(),
 		Description: persona,
 		MaxSteps:    3,
@@ -90,7 +91,16 @@ func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) erro
 		if err != nil {
 			return err
 		}
-		fmt.Println(msg)
+		if len(msg.ToolCalls) == 0 {
+			// there is not agent delegation anymore:
+			fmt.Println(msg.Content)
+		}
+		if content, isFinised := strings.CutPrefix(msg.Content, "FINISHED"); isFinised {
+			fmt.Println(content)
+		}
+		if content, isFinised := strings.CutPrefix(msg.Content, "STOP"); isFinised {
+			fmt.Println(content)
+		}
 	}
 	return nil
 }

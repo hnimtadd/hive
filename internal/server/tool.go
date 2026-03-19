@@ -12,7 +12,8 @@ import (
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
-// TODO: handle the supervisor to pass context-specific task instead of passing the whole state here, so move the state update logic out of agent and put at server layer
+// TODO: handle the supervisor to pass context-specific task instead of passing
+// the whole state here, so move the state update logic out of agent and put at server layer
 type delegateTaskInput struct {
 	ID string `json:"agent_id"`
 }

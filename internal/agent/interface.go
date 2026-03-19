@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/cloudwego/eino/components/model"
@@ -14,32 +13,37 @@ import (
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/hnimtadd/hive/pkg/utils"
 )
 
-// HiveAgent defines the interface that all Hive agents must implement
-// This interface enables pluggable agents that can be moved to hashicorp gRPC plugins later.
-type HiveAgent interface {
+type BaseAgent interface {
 	// GetID returns the unique identifier for this agent instance
 	GetID() string
 
 	// GetType returns the type/category of this agent (e.g., "code_editor", "test_runner", "deployer")
 	GetType() string
 
+	// Description return a short self-description about agent capabilities.
+	Description() string
+}
+
+// WorkerAgent defines the interface that all Hive agents must implement
+// This interface enables pluggable agents that can be moved to hashicorp gRPC plugins later.
+type WorkerAgent interface {
+	BaseAgent
+
 	// CanHandle determines if this agent can process the given task
-	CanHandle(task *types.HiveTask) bool
+	CanHandle(task *Input) bool
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
 	// For success task, markCompleted will be automatically call with the
 	// summary by the agent, so the caller don't have to handle this manually.
-	Execute(ctx context.Context, task *types.HiveTask) (*schema.Message, error)
+	Execute(ctx context.Context, task *Input) (*Output, error)
 
 	// Validate performs pre-execution validation of the task
 	// Returns error if task cannot be executed due to invalid parameters
-	Validate(task *types.HiveTask) error
-
-	// Description return a short self-description about agent capabilities.
-	Description() string
+	Validate(task Input) error
 }
 
 // Config holds configuration for agent initialization.
@@ -69,25 +73,34 @@ type agent struct {
 	agent *react.Agent
 }
 
-type AgentOutput struct {
+type Output struct {
 	Status       types.Status      `json:"status"               jsonschema:"Updated job state, either: not_started, in_progress, completed, failed, paused"`
 	Observations string            `json:"observations"         jsonschema:"What did you find? This will be added to history."`
 	NewArtifacts map[string]string `json:"new_artifacts"        jsonschema:"Any data found (e.g., ticket_details, log_snippet)"`
 	NextSteps    string            `json:"next_steps,omitempty" jsonschema:"Optional suggestion for the supervisor"`
 }
+type Input struct {
+	Context   string            `json:"status"    jsonschema:"High-level goal for the entire run"`
+	Task      string            `json:"task"      jsonschema:"The exact instruction from the supervisor"`
+	Artifacts map[string]string `json:"artifacts" jsonschema:"specfic data relevant to your task"`
+}
 
-func NewAgent(config *Config) (HiveAgent, error) {
+func NewAgent(config *Config) (WorkerAgent, error) {
+	systemPrompt, err := getSystemPrompt()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system prompt: %w", err)
+	}
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
 		config.Tools,
-		config.Description,
+		config.Description+systemPrompt,
 		config.MaxSteps,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
-	schema, err := jsonschema.For[AgentOutput](nil)
+	schema, err := jsonschema.For[Output](nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build agent output schema: %w", err)
 	}
@@ -106,28 +119,31 @@ func NewAgent(config *Config) (HiveAgent, error) {
 	}, nil
 }
 
-// CanHandle implements [HiveAgent].
-func (a *agent) CanHandle(task *types.HiveTask) bool {
+// CanHandle implements [WorkerAgent].
+func (a *agent) CanHandle(input *Input) bool {
 	return true
 }
 
-// Description implements [HiveAgent].
+// Description implements [WorkerAgent].
 func (a *agent) Description() string {
 	return a.prompt
 }
 
-// Execute implements [HiveAgent].
-func (a *agent) Execute(ctx context.Context, task *types.HiveTask) (*schema.Message, error) {
+// Execute implements [WorkerAgent].
+func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   3,
 		InitialDelay:  500,
 		BackoffFactor: 2.0,
 		MaxDelay:      5000,
 	}
-	taskDescription := task.JSONString()
-	handler := errors.NewErrorHandler[*schema.Message]()
-	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
-	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*schema.Message, error) {
+	taskDescription, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	handler := errors.NewErrorHandler[*Output]()
+	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
+	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
 		// Execute the task using the ReACT agent
 		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
@@ -156,38 +172,45 @@ func (a *agent) Execute(ctx context.Context, task *types.HiveTask) (*schema.Mess
 			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to validate output schema: %s", err)))
 			return nil, fmt.Errorf("failed to validate output schema: %w", err)
 		}
-		agentOutput := AgentOutput{}
+		agentOutput := Output{}
 		if err := json.Unmarshal([]byte(content), &agentOutput); err != nil {
 			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent output schema: %s", err)))
 			return nil, fmt.Errorf("failed to parse output ot agent output schema: %w", err)
 		}
-		maps.Copy(task.Artifacts, agentOutput.NewArtifacts)
-		task.InternalThoughts = ""
-		if len(agentOutput.Observations) != 0 {
-			task.InternalThoughts += fmt.Sprintf("AGENT OBSERVATION:\n%s\n====", agentOutput.Observations)
-		}
-		if result.ReasoningContent != "" {
-			task.InternalThoughts += fmt.Sprintf("AGENT REASONING:\n%s\n=====", result.ReasoningContent)
-		}
-		if len(agentOutput.NextSteps) != 0 {
-			task.NextAction = &agentOutput.NextSteps
-		}
-		task.Status = agentOutput.Status
-		return result, nil
+		return &agentOutput, nil
 	})
 }
 
-// GetID implements [HiveAgent].
+func getSystemPrompt() (string, error) {
+	inputDescription, err := utils.DescribeJSONSchema[Input]()
+	if err != nil {
+		return "", fmt.Errorf("Failed to self describe the input: %w", err)
+	}
+	outputDescription, err := utils.DescribeJSONSchema[Output]()
+	if err != nil {
+		return "", fmt.Errorf("Failed to self describe the output: %w", err)
+	}
+	return fmt.Sprintf(`\nAs a worker agent type, you suppose to handle input and output with these specific formats
+		========= INPUT ========
+		%s
+
+		========= OUTPUT ======
+		%s
+
+		`, inputDescription, outputDescription), nil
+}
+
+// GetID implements [WorkerAgent].
 func (a *agent) GetID() string {
 	return a.id
 }
 
-// GetType implements [HiveAgent].
+// GetType implements [WorkerAgent].
 func (a *agent) GetType() string {
 	panic("unimplemented")
 }
 
-// Validate implements [HiveAgent].
-func (a *agent) Validate(task *types.HiveTask) error {
+// Validate implements [WorkerAgent].
+func (a *agent) Validate(input Input) error {
 	return nil
 }

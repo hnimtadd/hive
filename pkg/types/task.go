@@ -3,7 +3,6 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/google/uuid"
 )
 
@@ -56,10 +55,4 @@ func (t *HiveTask) JSONString() string {
 		return "unknow"
 	}
 	return string(jsonBytes)
-}
-
-func TaskSelfDescription() string {
-	schema, _ := jsonschema.For[HiveTask](nil)
-	schemaJSON, _ := schema.MarshalJSON()
-	return string(schemaJSON)
 }
