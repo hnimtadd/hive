@@ -65,16 +65,6 @@ func (e *HiveError) WithContext(key string, value interface{}) *HiveError {
 	return &newErr
 }
 
-// IsRecoverable determines if the error type is potentially recoverable with retry
-func (e *HiveError) IsRecoverable() bool {
-	switch e.Type {
-	case ErrTypeNetwork, ErrTypeTimeout, ErrTypeRateLimit:
-		return true
-	default:
-		return false
-	}
-}
-
 // RetryConfig defines configuration for retry behavior
 type RetryConfig struct {
 	MaxAttempts   int
@@ -133,13 +123,6 @@ func (h *ErrorHandler[T]) WithRetry(
 		}
 
 		lastErr = err
-
-		// Check if error is recoverable
-		var hiveErr *HiveError
-		if !AsHiveError(err, &hiveErr) || !hiveErr.IsRecoverable() {
-			// Non-recoverable error, don't retry
-			return t, err
-		}
 
 		// Don't sleep on the last attempt
 		if attempt < config.MaxAttempts {

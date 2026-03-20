@@ -12,14 +12,13 @@ import (
 	"github.com/hnimtadd/hive/internal/agent"
 )
 
-// TODO: handle the supervisor to pass context-specific task instead of passing
-// the whole state here, so move the state update logic out of agent and put at server layer
 type delegateTaskInput struct {
-	ID string `json:"agent_id"`
 	agent.Input
+
+	ID string `json:"agent_id"`
 }
 
-func agentLookupTool(registry agent.Registry) tool.InvokableTool {
+func deletegateTool(registry agent.Registry) tool.InvokableTool {
 	// Manually define ToolInfo
 	toolInfo := &schema.ToolInfo{
 		Name: "agent_lookup",
@@ -73,12 +72,11 @@ func agentLookupTool(registry agent.Registry) tool.InvokableTool {
 					},
 				}, nil
 			}
-			fmt.Println("output", output)
 			outputJSON, err := json.Marshal(output)
 			if err != nil {
 				return &schema.ToolResult{
 					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to convert output to a json", input.ID)},
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to convert output to a json: %v", err)},
 					},
 				}, nil
 			}
@@ -86,5 +84,4 @@ func agentLookupTool(registry agent.Registry) tool.InvokableTool {
 			return &schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: string(outputJSON)}}}, nil
 		},
 	)
-
 }

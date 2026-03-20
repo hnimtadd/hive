@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
 
 	"github.com/cloudwego/eino/components/model"
@@ -85,7 +86,7 @@ type Input struct {
 	Artifacts map[string]string `json:"artifacts" jsonschema:"specfic data relevant to your task"`
 }
 
-func NewAgent(config *Config) (WorkerAgent, error) {
+func NewWorkerAgent(config *Config) (WorkerAgent, error) {
 	systemPrompt, err := getSystemPrompt()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
@@ -144,6 +145,8 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	handler := errors.NewErrorHandler[*Output]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
+		log.Println("agent receive:", string(taskDescription))
+		fmt.Println(msgs)
 		// Execute the task using the ReACT agent
 		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
@@ -163,19 +166,21 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 			}
 			return result.Content
 		}()
+		log.Println("agent output:", content)
+		msgs = append(msgs, result)
 		var output map[string]any
-		if err := json.Unmarshal([]byte(content), &output); err != nil {
-			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent ouptut schema: %s", err)))
-			return nil, fmt.Errorf("failed to parse output ot agent ouptut schema: %w", err)
+		if err = json.Unmarshal([]byte(content), &output); err != nil {
+			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output ot agent ouptut schema", err)
 		}
-		if err := a.outputValidator.Validate(output); err != nil {
-			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to validate output schema: %s", err)))
-			return nil, fmt.Errorf("failed to validate output schema: %w", err)
+		if err = a.outputValidator.Validate(output); err != nil {
+			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output is not followed JSON schema: %s", err)))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to validate output schema", err)
 		}
 		agentOutput := Output{}
-		if err := json.Unmarshal([]byte(content), &agentOutput); err != nil {
-			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent output schema: %s", err)))
-			return nil, fmt.Errorf("failed to parse output ot agent output schema: %w", err)
+		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
+			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output ot agent output schema", err)
 		}
 		return &agentOutput, nil
 	})
@@ -192,9 +197,11 @@ func getSystemPrompt() (string, error) {
 	}
 	return fmt.Sprintf(`\nAs a worker agent type, you suppose to handle input and output with these specific formats
 		========= INPUT ========
+		YOU ONLY RECEIVE THIS JSON ONLY AS INPUT
 		%s
 
 		========= OUTPUT ======
+		YOU HAVE TO RESPONSE A RAW JSON THAT FOLLOWS THIS SCHEMA
 		%s
 
 		`, inputDescription, outputDescription), nil

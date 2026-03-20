@@ -96,7 +96,7 @@ func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) 
 			return nil
 
 		case types.TaskStatusFailed:
-			log.Printf("Task failed: %s\n", update.Errors[len(update.Errors)-1])
+			log.Printf("Task failed: %s\n", update.JSONString())
 			return errors.New("task execution failed")
 		}
 	}

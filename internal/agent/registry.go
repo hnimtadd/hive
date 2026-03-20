@@ -51,7 +51,7 @@ func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]W
 			tools.NewListFilesTool(cfg.WorkspaceDir),
 		},
 	}
-	agent, err := NewAgent(config)
+	agent, err := NewWorkerAgent(config)
 	if err != nil {
 		return nil, err
 	}

@@ -174,7 +174,7 @@ func setDefaults() {
 		"ai_code_generation", "feature_development", "gitlab_integration",
 	})
 
-	viper.SetDefault("ai.max_step", 30)
+	viper.SetDefault("ai.max_step", 5)
 
 	// Jira defaults
 	viper.SetDefault("jira.enabled", false)

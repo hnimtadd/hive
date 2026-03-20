@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
 
 	"github.com/cloudwego/eino/schema"
@@ -24,10 +25,10 @@ type SupervisorAgent interface {
 }
 
 type SupervisorOutput struct {
-	Status     string `json:"status"                jsonschema:"Current state: RUNNING, FINISHED, INTERRUPT, FAILED"`
-	Content    string `json:"content"               jsonschema:"The final answer or message for the user"`
-	NextAction string `json:"next_action,omitempty" jsonschema:"next action you want to do"`
-	Thought    string `json:"-"`
+	Status     types.Status `json:"status"                jsonschema:"Current state: not_started, in_progress, completed, failed, pause"`
+	Content    string       `json:"content"               jsonschema:"The final answer or message for the user"`
+	NextAction string       `json:"next_action,omitempty" jsonschema:"next action you want to do"`
+	Thought    string       `json:"-"`
 }
 
 type supervisor struct {
@@ -88,9 +89,11 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	handler := errors.NewErrorHandler[*SupervisorOutput]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*SupervisorOutput, error) {
+		log.Println("supervisor: executing", msgs[len(msgs)-1].String())
 		// Execute the task using the ReACT agent
 		result, execErr := s.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
+			log.Println("execError", execErr)
 			return nil, execErr
 		}
 
@@ -108,21 +111,35 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 			}
 			return result.Content
 		}()
+
+		log.Println("supervisor: output", content)
 		var output map[string]any
 		if err := json.Unmarshal([]byte(content), &output); err != nil {
-			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent ouptut schema: %s", err)))
-			return nil, fmt.Errorf("failed to parse output ot agent ouptut schema: %w", err)
+			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
 		}
 		if err := s.outputValidator.Validate(output); err != nil {
-			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to validate output schema: %s", err)))
-			return nil, fmt.Errorf("failed to validate output schema: %w", err)
+			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}
 		agentOutput := SupervisorOutput{}
 		if err := json.Unmarshal([]byte(content), &agentOutput); err != nil {
-			msgs = append(msgs, schema.SystemMessage(fmt.Sprintf("failed to parse output ot agent output schema: %s", err)))
-			return nil, fmt.Errorf("failed to parse output ot agent output schema: %w", err)
+			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to parse output JSON"))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}
 		agentOutput.Thought = result.ReasoningContent
+
+		switch agentOutput.Status {
+		case types.TaskStatusCompleted,
+			types.TaskStatusFailed,
+			types.TaskStatusInProgress,
+			types.TaskStatusNotStarted,
+			types.TaskStatusPaused:
+			task.Status = agentOutput.Status
+		default:
+			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid task output status: %s", agentOutput.Status)))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid task status", nil)
+		}
 		return &agentOutput, nil
 	})
 	return msg, err

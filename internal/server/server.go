@@ -27,13 +27,14 @@ func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, re
 	if err != nil {
 		return nil, err
 	}
+	log.Println("persona", persona)
 	supervisor, err := agent.NewSupervisorAgent(&agent.Config{
 		ID:          uuid.New().String(),
 		Description: persona,
 		MaxSteps:    3,
 		LLM:         llm,
 		Tools: []tool.InvokableTool{
-			agentLookupTool(registry),
+			deletegateTool(registry),
 		},
 	})
 	if err != nil {
@@ -78,6 +79,7 @@ func (s *HiveServer) Start(ctx context.Context) error {
 			// _ = task.MarkFailed(ctx, err.Error())
 			_ = s.redisClient.UpdateTask(ctx, task)
 		}
+		log.Println(task.JSONString())
 	}
 }
 
@@ -86,19 +88,27 @@ func (s *HiveServer) Start(ctx context.Context) error {
 // 2. Execute the task with the selected agent.
 func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) error {
 	ctx = types.ContextWithTask(ctx, task)
-	for task.Status != types.TaskStatusCompleted || task.Status != types.TaskStatusFailed {
+loop:
+	for {
 		msg, err := s.supervisor.Execute(ctx, task)
 		if err != nil {
 			return err
 		}
 		switch msg.Status {
-		case "FINISHED":
-			fmt.Println("finished", msg.Content)
-		case "INTERRUPT":
-			fmt.Println("interrupt", msg.Content)
-		case "FAILED":
-			fmt.Println("failed", msg.Content)
+		case types.TaskStatusCompleted:
+			log.Println("finished", msg.Content)
+			break loop
+		case types.TaskStatusPaused:
+			log.Println("paused", msg.Content)
+			break loop
+		case types.TaskStatusFailed:
+			log.Println("failed", msg.Content)
+			break loop
+		case types.TaskStatusInProgress:
+			log.Println("inprogress", msg.Content)
 		default:
+			log.Println("unknow state", msg.Status)
+			return fmt.Errorf("unknow state: %s", msg.Status)
 			// Handle unexpected "stuck" states
 		}
 	}
@@ -117,10 +127,13 @@ Core Responsibilities:
 		* Output FINISH if the user's goal is met along with the information
         * Output FAILED if the available agents lack the capabilities to proceed or if a logical dead-end is reached.
 Constraint: Do not perform the task yourself. Your only tools are delegation and synthesis.
+
 This is the task state, which is your input that you and your team are working with:
 %s
-%This is the output that you have to return:
+
+This is the output that your response must follow this schema only, don't return anything except the raw JSON without any formatting.
 %s
+
 Available Agents:
 %s
 `
@@ -136,5 +149,9 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}
-	return fmt.Sprintf(persona, taskDescription, string(yamlBytes)), nil
+	outputDescription, err := utils.DescribeJSONSchema[agent.SupervisorOutput]()
+	if err != nil {
+		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
+	}
+	return fmt.Sprintf(persona, taskDescription, outputDescription, string(yamlBytes)), nil
 }
