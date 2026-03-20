@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -13,20 +13,11 @@ import (
 )
 
 func main() {
-	log.Println("Starting Hive Server Worker...")
+	log.Println("Starting Hive Server...")
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-
-	// Handle shutdown signals gracefully
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		log.Println("Shutdown signal received, stopping agent...")
-	}()
-
 	llm, err := llm.NewLLMToolCallingClient()
 	if err != nil {
 		log.Fatalf("faield to create llm: %v", err)
@@ -44,9 +35,21 @@ func main() {
 		log.Fatalf("failed to start server: %v", err)
 	}
 
-	if err = hiveServer.Serve(cfg.Server.Addr()); err != nil {
-		log.Fatalln(err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	log.Println("Agent worker stopped gracefully")
+	// Handle shutdown signals gracefully
+	go func() {
+		if err = hiveServer.Serve(ctx, cfg.Server.Addr()); err != nil {
+			stop()
+			log.Fatalln(err)
+		}
+	}()
+	<-ctx.Done()
+	if err = ctx.Err(); err != nil {
+		log.Printf("Receive stop signal %v\n", ctx.Err())
+	}
+	log.Println("Graceful exiting...")
+	hiveServer.Stop()
+	log.Println("Graceful exit complete!")
 }

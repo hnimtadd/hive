@@ -24,6 +24,8 @@ type HiveServer struct {
 
 	registry   agent.Registry
 	supervisor agent.SupervisorAgent
+
+	grpcServer *grpc.Server
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
@@ -52,17 +54,24 @@ func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*Hi
 	}, nil
 }
 
-func (s *HiveServer) Serve(addr string) error {
+func (s *HiveServer) Serve(ctx context.Context, addr string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 	grpcServer := grpc.NewServer()
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
+	s.grpcServer = grpcServer
 	if err = grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
 	}
 	return nil
+}
+
+func (s *HiveServer) Stop() {
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
 }
 
 func (s *HiveServer) ExecuteTask(req *agentv1.ExecuteTaskRequest, srv grpc.ServerStreamingServer[agentv1.TaskUpdate]) error {
