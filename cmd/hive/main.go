@@ -7,10 +7,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/hnimtadd/hive/internal/redis"
-	"github.com/hnimtadd/hive/pkg/types"
+	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
@@ -52,102 +53,49 @@ func executeCommand(command string) error {
 	}
 
 	// Create a new Hive task
-	task := types.NewHiveTask(command)
-
-	// Initialize Redis client
-	redisClient, err := redis.NewClient()
+	cc, err := grpc.NewClient("localhost:15052", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return fmt.Errorf("failed to connect to Redis: %w", err)
+		return fmt.Errorf("failed to create connecction to server: %w", err)
 	}
-	defer redisClient.Close()
+	client := agentv1.NewAgentServiceClient(cc)
 
-	// Submit task to the task queue
-	if err = redisClient.SubmitTask(ctx, task); err != nil {
-		return fmt.Errorf("failed to submit task: %w", err)
+	req := &agentv1.ExecuteTaskRequest{
+		GlobalGoal: command,
 	}
-
-	log.Printf("Task submitted successfully with ID: %s\n", task.ID)
+	srv, err := client.ExecuteTask(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to execute task: %w", err)
+	}
 
 	// Start monitoring task progress
-	return monitorTask(ctx, redisClient, task.ID)
+	return monitorTask(srv)
 }
 
 // monitorTask watches task progress and provides real-time updates.
-func monitorTask(ctx context.Context, redisClient *redis.Client, taskID string) error {
-	log.Printf("Monitoring task progress for: %s\n", taskID)
+func monitorTask(srv grpc.ServerStreamingClient[agentv1.TaskUpdate]) error {
+	log.Printf("Monitoring task progress for\n")
 
 	// Subscribe to task updates
-	updates, err := redisClient.SubscribeToTaskUpdates(ctx, taskID)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to task updates: %w", err)
-	}
-
-	for update := range updates {
-		switch update.Status {
-		case types.TaskStatusInProgress:
-			log.Printf("%s (%.1f%%)\n", update.Status)
-
-		case types.TaskStatusPaused:
-
-		case types.TaskStatusCompleted:
-			log.Printf("Task completed successfully!\n")
-			log.Printf("%s\n", update.Messages[len(update.Messages)-1])
-			// Show Gitlab-specific information if available
+	for {
+		update, err := srv.Recv()
+		if err != nil {
+			return err
+		}
+		switch msg := update.GetPayload().(type) {
+		case *agentv1.TaskUpdate_Result:
+			log.Println("Task success", msg.Result.GetContent())
 			return nil
 
-		case types.TaskStatusFailed:
-			log.Printf("Task failed: %v\n", update)
+		case *agentv1.TaskUpdate_Error:
+			log.Printf("Task failed: %v\n", msg.Error.GetMessage())
 			return errors.New("task execution failed")
+		default:
+			log.Println("unexpected")
+			return errors.New("unexpected response")
 		}
 	}
 
 	return nil
-}
-
-// handleFeedbackRequest prompts the user for feedback and sends it back.
-func handleFeedbackRequest(ctx context.Context, redisClient *redis.Client, taskID, message string) error {
-	log.Printf("\nHuman input required:\n%s\n", message)
-	fmt.Print("Your response: ") //nolint: forbidigo // this should be print inline
-
-	var response string
-	if _, err := fmt.Scanln(&response); err != nil {
-		return fmt.Errorf("failed to read user input: %w", err)
-	}
-
-	return redisClient.ProvideFeedback(ctx, taskID, response)
-}
-
-// listCmd represents the list command.
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all active tasks",
-	RunE: func(_ *cobra.Command, _ []string) error {
-		ctx := context.Background()
-
-		redisClient, err := redis.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to connect to Redis: %w", err)
-		}
-		defer redisClient.Close()
-
-		tasks, err := redisClient.ListActiveTasks(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to list tasks: %w", err)
-		}
-
-		if len(tasks) == 0 {
-			log.Println("No active tasks found.")
-			return nil
-		}
-
-		log.Printf("Active Tasks (%d):\n", len(tasks))
-		for _, task := range tasks {
-			log.Printf("  %s  [%s]\n",
-				task.ID[:8], task.Status)
-		}
-
-		return nil
-	},
 }
 
 func init() {
@@ -159,9 +107,6 @@ func init() {
 
 	// Command-specific flags
 	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
-
-	// Add subcommands
-	rootCmd.AddCommand(listCmd)
 }
 
 // initConfig reads in config file and ENV variables if set.

@@ -4,25 +4,30 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
+	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/agent"
-	"github.com/hnimtadd/hive/internal/redis"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 )
 
 type HiveServer struct {
-	registry    agent.Registry
-	redisClient *redis.Client
-	supervisor  agent.SupervisorAgent
+	agentv1.AgentServiceServer
+
+	registry   agent.Registry
+	supervisor agent.SupervisorAgent
 }
 
-func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, registry agent.Registry) (*HiveServer, error) {
+var _ agentv1.AgentServiceServer = &HiveServer{}
+
+func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*HiveServer, error) {
 	persona, err := getSupervisorPersona(registry)
 	if err != nil {
 		return nil, err
@@ -41,53 +46,16 @@ func NewHiveServer(redisClient *redis.Client, llm model.ToolCallingChatModel, re
 		return nil, err
 	}
 	return &HiveServer{
-		registry:    registry,
-		redisClient: redisClient,
-		supervisor:  supervisor,
+		registry:   registry,
+		supervisor: supervisor,
 	}, nil
 }
 
-func (s *HiveServer) Start(ctx context.Context) error {
-	log.Println("Starting Hive Server")
+func (s *HiveServer) ExecuteTask(req *agentv1.ExecuteTaskRequest, srv grpc.ServerStreamingServer[agentv1.TaskUpdate]) error {
+	task := types.NewHiveTask(req.GetGlobalGoal())
+	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
 
-	// Main task processing loop
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("Server shutting down")
-			return ctx.Err()
-		default:
-		}
-
-		// Get next task from queue
-		task, err := s.redisClient.GetNextTask(ctx)
-		if err != nil {
-			log.Printf("Failed to get next task: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		if task == nil {
-			// No tasks available, wait a bit
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// Process task through agent pipeline
-		if err = s.processTask(ctx, task); err != nil {
-			log.Printf("Task pipeline failed: %v", err)
-			// _ = task.MarkFailed(ctx, err.Error())
-			_ = s.redisClient.UpdateTask(ctx, task)
-		}
-		log.Println(task.JSONString())
-	}
-}
-
-// processTask processes a task through the agent pipeline
-// 1. Find the appropriate execution agent based on analysis
-// 2. Execute the task with the selected agent.
-func (s *HiveServer) processTask(ctx context.Context, task *types.HiveTask) error {
-	ctx = types.ContextWithTask(ctx, task)
+	ctx := context.Background()
 loop:
 	for {
 		msg, err := s.supervisor.Execute(ctx, task)
@@ -96,20 +64,35 @@ loop:
 		}
 		switch msg.Status {
 		case types.TaskStatusCompleted:
+			update := &agentv1.TaskUpdate{}
+			update.Payload = &agentv1.TaskUpdate_Result{
+				Result: &agentv1.FinalResult{
+					Content:        msg.Content,
+					CompletionTime: time.Now().String(),
+				},
+			}
+			if err = srv.Send(update); err != nil {
+				log.Println("failed to feedback to user", err)
+				return err
+			}
 			log.Println("finished", msg.Content)
 			break loop
-		case types.TaskStatusPaused:
-			log.Println("paused", msg.Content)
-			break loop
 		case types.TaskStatusFailed:
+			update := &agentv1.TaskUpdate{}
+			update.Payload = &agentv1.TaskUpdate_Error{
+				Error: &agentv1.ErrorNotice{
+					Message: msg.Content,
+				},
+			}
+			if err = srv.Send(update); err != nil {
+				log.Println("failed to feedback to user", err)
+				return err
+			}
 			log.Println("failed", msg.Content)
 			break loop
-		case types.TaskStatusInProgress:
-			log.Println("inprogress", msg.Content)
-		default:
-			log.Println("unknow state", msg.Status)
-			return fmt.Errorf("unknow state: %s", msg.Status)
-			// Handle unexpected "stuck" states
+		case types.TaskStatusPaused, types.TaskStatusInProgress:
+			log.Println(msg.Status, msg.Content)
+			break loop
 		}
 	}
 	return nil

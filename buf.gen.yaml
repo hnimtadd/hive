@@ -1,0 +1,15 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/hnimtadd/hive/gen
+plugins:
+  # generate shared go types
+  - remote: buf.build/protocolbuffers/go:v1.34.0
+    out: gen
+    opt: paths=source_relative
+    # generate grpc server/cleint
+  - remote: buf.build/grpc/go:v1.5.1
+    out: gen
+    opt: paths=source_relative
