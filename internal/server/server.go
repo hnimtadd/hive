@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -49,6 +50,19 @@ func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*Hi
 		registry:   registry,
 		supervisor: supervisor,
 	}, nil
+}
+
+func (s *HiveServer) Serve(addr string) error {
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen: %w", err)
+	}
+	grpcServer := grpc.NewServer()
+	agentv1.RegisterAgentServiceServer(grpcServer, s)
+	if err = grpcServer.Serve(lis); err != nil {
+		return fmt.Errorf("failed to serve: %w", err)
+	}
+	return nil
 }
 
 func (s *HiveServer) ExecuteTask(req *agentv1.ExecuteTaskRequest, srv grpc.ServerStreamingServer[agentv1.TaskUpdate]) error {

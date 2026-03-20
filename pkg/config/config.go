@@ -12,21 +12,12 @@ import (
 
 // Config represents the complete Hive configuration.
 type Config struct {
-	Redis        RedisConfig  `mapstructure:"redis"`
 	AI           AIConfig     `mapstructure:"ai"`
 	Gitlab       GitlabConfig `mapstructure:"gitlab"`
 	Jira         JiraConfig   `mapstructure:"jira"`
 	Agents       AgentsConfig `mapstructure:"agents"`
 	Server       ServerConfig `mapstructure:"server"`
 	WorkspaceDir string       `mapstructure:"workspace"`
-}
-
-// RedisConfig holds Redis connection settings.
-type RedisConfig struct {
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-	PoolSize int    `mapstructure:"pool_size"`
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -104,9 +95,8 @@ type AgentConfig struct {
 
 // ServerConfig holds server-specific settings.
 type ServerConfig struct {
-	Port        int    `mapstructure:"port"`
-	Host        string `mapstructure:"host"`
-	MetricsPort int    `mapstructure:"metrics_port"`
+	Port int    `mapstructure:"port"`
+	Host string `mapstructure:"host"`
 }
 
 // LoadConfig loads configuration from file and environment variables.
@@ -187,25 +177,20 @@ func setDefaults() {
 	viper.SetDefault("workspace", getDefaultWorkspaceDir())
 }
 
-// validateConfig validates the configuration values
+// validateConfig validates the configuration values.
 func validateConfig(config *Config) error {
-	// Validate Redis config
-	if config.Redis.Addr == "" {
-		return fmt.Errorf("redis.addr cannot be empty")
-	}
-
 	// Validate AI config
 	if config.AI.Provider == "" {
-		return fmt.Errorf("ai.provider cannot be empty")
+		return errors.New("ai.provider cannot be empty")
 	}
 
 	switch config.AI.Provider {
 	case "claude":
 		if config.AI.Claude == nil {
-			return fmt.Errorf("ai.claude configuration is required when provider is 'claude'")
+			return errors.New("ai.claude configuration is required when provider is 'claude'")
 		}
 		if config.AI.Claude.APIKeyEnv == "" {
-			return fmt.Errorf("ai.claude.api_key_env cannot be empty")
+			return errors.New("ai.claude.api_key_env cannot be empty")
 		}
 		// Check if API key environment variable exists
 		if os.Getenv(config.AI.Claude.APIKeyEnv) == "" {
@@ -213,10 +198,10 @@ func validateConfig(config *Config) error {
 		}
 	case "openai":
 		if config.AI.OpenAI == nil {
-			return fmt.Errorf("ai.openai configuration is required when provider is 'openai'")
+			return errors.New("ai.openai configuration is required when provider is 'openai'")
 		}
 		if config.AI.OpenAI.APIKeyEnv == "" {
-			return fmt.Errorf("ai.openai.api_key_env cannot be empty")
+			return errors.New("ai.openai.api_key_env cannot be empty")
 		}
 		// Check if API key environment variable exists
 		if os.Getenv(config.AI.OpenAI.APIKeyEnv) == "" {
@@ -249,13 +234,13 @@ func validateConfig(config *Config) error {
 	// Validate Jira config if enabled
 	if config.Jira.Enabled {
 		if config.Jira.BaseURL == "" {
-			return fmt.Errorf("jira.base_url cannot be empty when jira is enabled")
+			return errors.New("jira.base_url cannot be empty when jira is enabled")
 		}
 		if config.Jira.UserName == "" {
-			return fmt.Errorf("jira.username cannot be empty when jira is enabled")
+			return errors.New("jira.username cannot be empty when jira is enabled")
 		}
 		if config.Jira.APITokenEnv == "" {
-			return fmt.Errorf("jira.api_token_env cannot be empty when jira is enabled")
+			return errors.New("jira.api_token_env cannot be empty when jira is enabled")
 		}
 		// Check if API token environment variable exists
 		if os.Getenv(config.Jira.APITokenEnv) == "" {
@@ -278,4 +263,8 @@ func getDefaultWorkspaceDir() string {
 	}
 
 	return filepath.Join(homeDir, ".hive", "workspace")
+}
+
+func (s ServerConfig) Addr() string {
+	return fmt.Sprintf("%s:%d", s.Host, s.Port)
 }

@@ -2,22 +2,19 @@ package main
 
 import (
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
-	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/pkg/config"
-	"google.golang.org/grpc"
 )
 
 func main() {
 	log.Println("Starting Hive Server Worker...")
-	appConfig, err := config.LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -36,7 +33,7 @@ func main() {
 	}
 
 	// Create agent registry
-	registry, err := agent.NewAgentResitry(appConfig)
+	registry, err := agent.NewAgentResitry(cfg)
 	if err != nil {
 		log.Fatalf("failed to init registry: %s", err)
 	}
@@ -46,16 +43,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}
-	port := ":15052"
-	lis, err := net.Listen("tcp", port)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	grpcServer := grpc.NewServer()
-	agentv1.RegisterAgentServiceServer(grpcServer, hiveServer)
 
-	if err = grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+	if err = hiveServer.Serve(cfg.Server.Addr()); err != nil {
+		log.Fatalln(err)
 	}
+
 	log.Println("Agent worker stopped gracefully")
 }
