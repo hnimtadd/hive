@@ -49,10 +49,10 @@ func NewHiveTask(goal string) *HiveTask {
 	}
 }
 
-func (t *HiveTask) JSONString() string {
+func (t *HiveTask) JSONString() (string, error) {
 	jsonBytes, err := json.Marshal(t)
 	if err != nil {
-		return "unknow"
+		return "", err
 	}
-	return string(jsonBytes)
+	return string(jsonBytes), nil
 }

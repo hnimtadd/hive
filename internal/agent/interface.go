@@ -121,7 +121,7 @@ func NewWorkerAgent(config *Config) (WorkerAgent, error) {
 }
 
 // CanHandle implements [WorkerAgent].
-func (a *agent) CanHandle(input *Input) bool {
+func (a *agent) CanHandle(_ *Input) bool {
 	return true
 }
 
@@ -168,6 +168,11 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 		}()
 		log.Println("agent output:", content)
 		msgs = append(msgs, result)
+		content, err = utils.HeristicallyExtractJSONString(content)
+		if err != nil {
+			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output is not a valid JSON: %s", err)))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output ot agent ouptut schema", err)
+		}
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))

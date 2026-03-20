@@ -12,6 +12,7 @@ import (
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/hnimtadd/hive/pkg/utils"
 )
 
 type SupervisorAgent interface {
@@ -85,9 +86,12 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 		BackoffFactor: 2.0,
 		MaxDelay:      5000,
 	}
-	taskDescription := task.JSONString()
+	taskDescription, err := task.JSONString()
+	if err != nil {
+		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
+	}
 	handler := errors.NewErrorHandler[*SupervisorOutput]()
-	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
+	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*SupervisorOutput, error) {
 		log.Println("supervisor: executing", msgs[len(msgs)-1].String())
 		// Execute the task using the ReACT agent
@@ -111,23 +115,31 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 			}
 			return result.Content
 		}()
+		msgs = append(msgs, result)
 
-		log.Println("supervisor: output", content)
-		var output map[string]any
-		if err := json.Unmarshal([]byte(content), &output); err != nil {
+		content, err = utils.HeristicallyExtractJSONString(content)
+		if err != nil {
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
 		}
-		if err := s.outputValidator.Validate(output); err != nil {
+		var output map[string]any
+		if err = json.Unmarshal([]byte(content), &output); err != nil {
+			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to map output to an object"))
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
+		}
+
+		if err = s.outputValidator.Validate(output); err != nil {
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}
 		agentOutput := SupervisorOutput{}
-		if err := json.Unmarshal([]byte(content), &agentOutput); err != nil {
+		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to parse output JSON"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}
-		agentOutput.Thought = result.ReasoningContent
+		if len(result.ReasoningContent) > 0 {
+			agentOutput.Thought += fmt.Sprintf("system thought: %s", result.ReasoningContent)
+		}
 
 		switch agentOutput.Status {
 		case types.TaskStatusCompleted,
@@ -147,7 +159,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 
 // Description implements [SupervisorAgent].
 func (s *supervisor) Description() string {
-	return s.Description()
+	return s.prompt
 }
 
 // GetID implements [SupervisorAgent].
