@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -53,21 +54,29 @@ func executeCommand(command string) error {
 	}
 	client := agentv1.NewAgentServiceClient(cc)
 
-	req := &agentv1.ExecuteTaskRequest{
-		GlobalGoal: command,
-	}
-	srv, err := client.ExecuteTask(ctx, req)
+	srv, err := client.ExecuteTask(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to execute task: %w", err)
 	}
 
 	// Start monitoring task progress
-	return monitorTask(srv)
+	return handleTask(srv, command)
 }
 
 // monitorTask watches task progress and provides real-time updates.
-func monitorTask(srv grpc.ServerStreamingClient[agentv1.TaskUpdate]) error {
+func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.ServerMessage], command string) error {
 	log.Printf("Monitoring task progress for\n")
+
+	req := &agentv1.ClientMessage{
+		Payload: &agentv1.ClientMessage_Request{
+			Request: &agentv1.TaskRequest{
+				GlobalGoal: command,
+			},
+		},
+	}
+	if err := srv.Send(req); err != nil {
+		return fmt.Errorf("failed to send message to server: %w", err)
+	}
 
 	// Subscribe to task updates
 	for {
@@ -76,13 +85,41 @@ func monitorTask(srv grpc.ServerStreamingClient[agentv1.TaskUpdate]) error {
 			return err
 		}
 		switch msg := update.GetPayload().(type) {
-		case *agentv1.TaskUpdate_Result:
-			log.Println("Task success", msg.Result.GetContent())
+		case *agentv1.ServerMessage_Success:
+			log.Println("Task success", msg.Success.GetContent())
 			return nil
 
-		case *agentv1.TaskUpdate_Error:
+		case *agentv1.ServerMessage_Error:
 			log.Printf("Task failed: %v\n", msg.Error.GetMessage())
 			return errors.New("task execution failed")
+
+		case *agentv1.ServerMessage_Update:
+			log.Printf("Server update: %v\n", msg.Update.String())
+			continue
+
+		case *agentv1.ServerMessage_Feedback:
+			log.Printf("Server feedback: %v\n", msg.Feedback.String())
+			var response string
+
+			log.Print("Enter your answer: ")
+			// Use & to pass the variable by reference so Scanln can modify it
+			_, err = fmt.Scanln(&response)
+			if err != nil {
+				return fmt.Errorf("error reading input: %w", err)
+			}
+			resp := &agentv1.ClientMessage{
+				At: timestamppb.Now(),
+				Payload: &agentv1.ClientMessage_Feedback{
+					Feedback: &agentv1.UserFeedback{
+						Feedback: response,
+					},
+				},
+			}
+			if err = srv.Send(resp); err != nil {
+				log.Printf("Failed to resposne to server: %s", err)
+				return fmt.Errorf("failed to resposne to server: %w", err)
+			}
+
 		default:
 			log.Println("unexpected")
 			return errors.New("unexpected response")

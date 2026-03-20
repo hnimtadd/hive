@@ -2,17 +2,18 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
 	"net"
-	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/agent"
+	"github.com/hnimtadd/hive/internal/mapper"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
 	"google.golang.org/grpc"
@@ -54,7 +55,7 @@ func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*Hi
 	}, nil
 }
 
-func (s *HiveServer) Serve(ctx context.Context, addr string) error {
+func (s *HiveServer) Serve(addr string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -74,47 +75,76 @@ func (s *HiveServer) Stop() {
 	}
 }
 
-func (s *HiveServer) ExecuteTask(req *agentv1.ExecuteTaskRequest, srv grpc.ServerStreamingServer[agentv1.TaskUpdate]) error {
+func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMessage, agentv1.ServerMessage]) error {
+	msg, err := srv.Recv()
+	if err != nil {
+		return err
+	}
+	req := msg.GetRequest()
+	if req == nil {
+		return errors.New("first message must be a task request")
+	}
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
 
 	ctx := context.Background()
 loop:
 	for {
-		msg, err := s.supervisor.Execute(ctx, task)
+		output, err := s.supervisor.Execute(ctx, task)
 		if err != nil {
 			return err
 		}
-		switch msg.Status {
+		switch output.Status {
 		case types.TaskStatusCompleted:
-			update := &agentv1.TaskUpdate{}
-			update.Payload = &agentv1.TaskUpdate_Result{
-				Result: &agentv1.FinalResult{
-					Content:        msg.Content,
-					CompletionTime: time.Now().String(),
-				},
-			}
+			update := mapper.ToTaskUpdateSuccess(output)
 			if err = srv.Send(update); err != nil {
 				log.Println("failed to feedback to user", err)
 				return err
 			}
-			log.Println("finished", msg.Content)
+			log.Println("finished", output.Content)
 			break loop
+
 		case types.TaskStatusFailed:
-			update := &agentv1.TaskUpdate{}
-			update.Payload = &agentv1.TaskUpdate_Error{
-				Error: &agentv1.ErrorNotice{
-					Message: msg.Content,
-				},
-			}
+			update := mapper.ToTaskUpdateFailed(output)
 			if err = srv.Send(update); err != nil {
 				log.Println("failed to feedback to user", err)
 				return err
 			}
-			log.Println("failed", msg.Content)
+			log.Println("failed", output.Content)
 			break loop
-		case types.TaskStatusPaused, types.TaskStatusInProgress:
-			log.Println(msg.Status, msg.Content)
+
+		case types.TaskStatusPaused:
+			update := mapper.ToTaskUpdateRequireFeedback(output)
+			if err = srv.Send(update); err != nil {
+				log.Printf("failed to require feedback from user: %v\n", err)
+				return err
+			}
+			for {
+				var msg *agentv1.ClientMessage
+				msg, err = srv.Recv()
+				if err != nil {
+					log.Printf("failed to receive message from user: %s\n", err)
+					return err
+				}
+				feedback := msg.GetFeedback()
+				if feedback == nil {
+					log.Printf("feedback user is required")
+					continue
+				}
+				// TODO: feed feedback to model
+				log.Println("user feedback", feedback.String())
+				break
+			}
+
+		// TODO: mock the event stream to the internal model so client could have a visibility on tool calling and thoughts here
+		case types.TaskStatusInProgress:
+			update := mapper.ToTaskUpdateInProgress(output)
+			if err = srv.Send(update); err != nil {
+				log.Printf("failed to sent in progress from user: %v\n", err)
+				return err
+			}
+
+			log.Println(output.Status, output.Content)
 			break loop
 		}
 	}

@@ -40,7 +40,7 @@ func main() {
 
 	// Handle shutdown signals gracefully
 	go func() {
-		if err = hiveServer.Serve(ctx, cfg.Server.Addr()); err != nil {
+		if err = hiveServer.Serve(cfg.Server.Addr()); err != nil {
 			stop()
 			log.Fatalln(err)
 		}

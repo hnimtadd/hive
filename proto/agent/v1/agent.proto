@@ -2,33 +2,55 @@ syntax = "proto3";
 
 package agent.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "gen/agent/v1;agentv1";
 
 // The AgentService handles the lifecycle of a supervisor-led task.
 service AgentService {
   // ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
-  rpc ExecuteTask(ExecuteTaskRequest) returns (stream TaskUpdate);
+  rpc ExecuteTask(stream ClientMessage) returns (stream ServerMessage);
 }
+message ClientMessage {
+  google.protobuf.Timestamp at = 1;
 
-message ExecuteTaskRequest {
-  string global_goal = 1;
-  map<string, string> initial_artifacts = 2;
-}
-
-// TaskUpdate is a polymorphic message representing different events in the agent loop.
-message TaskUpdate {
   oneof payload {
-    Thought thought = 1;          // The Supervisor's reasoning
-    WorkerAction delegation = 2;  // Information about a sub-task starting
-    ArtifactFound artifact = 3;   // New data merged into the state
-    FinalResult result = 4;       // The final output to the user
-    ErrorNotice error = 5;        // Non-fatal or fatal error details
+    TaskRequest     request = 2;        // Sent first to begin the loop
+    UserFeedback    feedback = 3;       // Sent when the supervisor ask a question
+    Cancel          cancel = 4;         // Sent if the user cancel the CLI request
   }
 }
 
-message Thought {
+message TaskRequest {
+  string                global_goal = 1;
+  map<string, string>   initial_artifacts = 2;
+}
+
+message UserFeedback {
+  string feedback = 1;
+}
+
+message Cancel {}
+
+// TaskUpdate is a polymorphic message representing different events in the agent loop.
+message ServerMessage {
+  google.protobuf.Timestamp at = 1;
+
+  oneof payload {
+    InProgressUpdate    update = 2;         // The Supervisor's reasoning
+    SuccessUpdate       success = 3;        // The final output to the user
+    ErrorUpdate         error = 4;          // Non-fatal or fatal error details
+    FeedbackRequire     feedback = 5;       // in the middle feedback require
+  }
+}
+
+message InProgressUpdate {
   string content = 1;
   string status = 2; // e.g., "PLANNING", "ANALYZING"
+}
+
+message FeedbackRequire {
+  string question = 1;
 }
 
 message WorkerAction {
@@ -41,12 +63,10 @@ message ArtifactFound {
   string summary = 2; // A short description of the new data
 }
 
-message FinalResult {
+message SuccessUpdate {
   string content = 1;
-  string completion_time = 2;
 }
 
-message ErrorNotice {
+message ErrorUpdate {
   string message = 1;
-  bool is_fatal = 2;
 }

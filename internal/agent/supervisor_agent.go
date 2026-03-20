@@ -32,6 +32,7 @@ type SupervisorOutput struct {
 	Thought    string       `json:"-"`
 }
 
+// make this stateful as we also want to make the server have a feedback update on this
 type supervisor struct {
 	id           string
 	prompt       string
