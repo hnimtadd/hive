@@ -2,13 +2,14 @@ package agent
 
 import (
 	"fmt"
+	"log"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/llm"
-	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -39,24 +40,47 @@ func (a *registry) GetByID(id string) (WorkerAgent, bool) {
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
 func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
-	llm, err := llm.NewLLMToolCallingClientWithConfig(&cfg.AI)
+	entries, err := os.ReadDir(cfg.Agents.Dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to init llm: %w", err)
+		log.Printf("failed to read agents home: %s\n", err)
+		return []WorkerAgent{}, nil
 	}
-	config := &Config{
-		ID:          uuid.New().String(),
-		Description: "You are an file_system assistant, which can perform read files in the system",
-		MaxSteps:    30,
-		Timeout:     10,
-		MaxTasks:    10,
-		LLM:         llm,
-		Tools:       []tool.InvokableTool{tools.NewListFilesTool(cfg.WorkspaceDir)},
+	agents := []WorkerAgent{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		mdPath := filepath.Join(cfg.Agents.Dir, entry.Name(), "agent.md")
+		config, err := LoadAgentConfig(mdPath) //nolint: govet// ignore lint
+		if err != nil {
+			log.Printf("failed to load agent configuration from :%s, err: %s\n", mdPath, err)
+		}
+
+		llm, err := llm.NewLLMToolCallingClientWithConfig(&cfg.AI)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init llm: %w", err)
+		}
+		tools := []tool.InvokableTool{}
+		for _, required := range config.RequiredTools {
+			tool, ok := a.tools[required]
+			if !ok {
+				log.Printf("tools not found, let install it first: %s\n", required)
+				continue
+			}
+			tools = append(tools, tool)
+		}
+		config.ID = entry.Name() + config.ID
+		config.Tools = tools
+		config.LLM = llm
+		workerAgent, err := NewWorkerAgent(config)
+		if err != nil {
+			log.Printf("failed to init worker agent: %s", err)
+			continue
+		}
+		agents = append(agents, workerAgent)
 	}
-	workerAgent, err := NewWorkerAgent(config)
-	if err != nil {
-		return nil, err
-	}
-	return []WorkerAgent{workerAgent}, nil
+	log.Printf("successfully scanned %d agents\n", len(agents))
+	return agents, nil
 }
 
 func NewAgentResitry(appConfig *config.Config) (Registry, error) {

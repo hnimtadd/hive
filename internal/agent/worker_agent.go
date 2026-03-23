@@ -105,7 +105,6 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
 		log.Println("agent receive:", string(taskDescription))
-		fmt.Println(msgs)
 		// Execute the task using the ReACT agent
 		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
@@ -125,6 +124,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 			}
 			return result.Content
 		}()
+
 		log.Println("agent output:", content)
 		msgs = append(msgs, result)
 		content, err = utils.HeristicallyExtractJSONString(content)

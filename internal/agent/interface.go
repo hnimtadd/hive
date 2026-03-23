@@ -19,17 +19,19 @@ type BaseAgent interface {
 
 // Config holds configuration for agent initialization.
 type Config struct {
-	ID           string   `json:"id"`
-	MaxTasks     int      `json:"max_tasks"`
-	Timeout      int      `json:"timeout_seconds"`
-	Capabilities []string `json:"capabilities"`
-	Description  string   `json:"description"`
-	MaxSteps     int      `json:"max_steps"`
+	ID           string   `json:"id"              yaml:"id"`
+	MaxTasks     int      `json:"max_tasks"       yaml:"max_task"`
+	Timeout      int      `json:"timeout_seconds" yaml:"timeout_seconds"`
+	Capabilities []string `json:"capabilities"    yaml:"capabilities"`
+	MaxSteps     int      `json:"max_steps"       yaml:"max_steps"`
 
-	Persona string `json:"persona"`
+	RequiredTools []string `json:"tools"       yaml:"tools"`
+	ModelName     string   `json:"model_name"  yaml:"model_name"`
+	Description   string   `json:"description" yaml:"description"`
+	Persona       string   `json:"persona"     yaml:"-"`
 
-	LLM   model.ToolCallingChatModel `json:"-"`
-	Tools []tool.InvokableTool       `json:"-"`
+	LLM   model.ToolCallingChatModel `json:"-" yaml:"-"`
+	Tools []tool.InvokableTool       `json:"-" yaml:"-"`
 }
 
 type Output struct {

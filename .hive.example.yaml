@@ -24,10 +24,10 @@ gitlab:
 # Jira Integration
 # Enable this to allow the agent to auto-discover task information from Jira tickets
 jira:
-  enabled: false  # Set to true to enable Jira integration
+  enabled: false # Set to true to enable Jira integration
   base_url: "https://your-company.atlassian.net"
   username: "your-email@company.com"
-  api_token_env: "JIRA_API_TOKEN"  # Environment variable containing Jira API token
+  api_token_env: "JIRA_API_TOKEN" # Environment variable containing Jira API token
 
   # Custom fields to extract from Jira tickets
   # Map your organization's custom field IDs to friendly names
@@ -40,18 +40,7 @@ jira:
     # customfield_zzzzz: "Business Requirements"
 
 agents:
-  max_concurrent: 5
-  timeout_seconds: 300
-
-  ai_code_editor:
-    enabled: true
-    max_tasks: 2
-    capabilities:
-      - "ai_code_generation"
-      - "feature_development"
-      - "gitlab_integration"
-      - "automated_commits"
-      - "merge_request_creation"
+  home: "~/.hive/agents"
 
 server:
   port: 8080

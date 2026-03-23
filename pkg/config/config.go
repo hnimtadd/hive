@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
+	"github.com/hnimtadd/hive/pkg/utils"
 	"github.com/spf13/viper"
 )
 
@@ -16,9 +17,9 @@ type Config struct {
 	AI           AIConfig     `mapstructure:"ai"`
 	Gitlab       GitlabConfig `mapstructure:"gitlab"`
 	Jira         JiraConfig   `mapstructure:"jira"`
-	Agents       AgentsConfig `mapstructure:"agents"`
 	Server       ServerConfig `mapstructure:"server"`
 	WorkspaceDir string       `mapstructure:"workspace"`
+	Agents       AgentConfig  `mapstructure:"agents"`
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -27,6 +28,9 @@ type AIConfig struct {
 	Claude   *ClaudeConfig `mapstructure:"claude"`
 	OpenAI   *OpenAIConfig `mapstructure:"openai"`
 	MaxStep  int           `mapstructure:"max_step"`
+}
+type AgentConfig struct {
+	Dir string `mapstructure:"home"`
 }
 
 type ClaudeProvider string
@@ -70,29 +74,6 @@ type JiraConfig struct {
 	APITokenEnv  string            `mapstructure:"api_token_env"`
 	Enabled      bool              `mapstructure:"enabled"`
 	CustomFields map[string]string `mapstructure:"custom_fields"` // Map of field ID to friendly name
-}
-
-// AgentsConfig holds agent-specific settings.
-type AgentsConfig struct {
-	MaxConcurrent int                    `mapstructure:"max_concurrent"`
-	Timeout       int                    `mapstructure:"timeout_seconds"`
-	AICodeEditor  AICodeEditorConfig     `mapstructure:"ai_code_editor"`
-	Types         map[string]AgentConfig `mapstructure:"types"`
-}
-
-// AICodeEditorConfig holds specific settings for AI Code Editor agent.
-type AICodeEditorConfig struct {
-	Enabled      bool     `mapstructure:"enabled"`
-	MaxTasks     int      `mapstructure:"max_tasks"`
-	Capabilities []string `mapstructure:"capabilities"`
-}
-
-// AgentConfig holds generic agent configuration.
-type AgentConfig struct {
-	Enabled      bool              `mapstructure:"enabled"`
-	MaxTasks     int               `mapstructure:"max_tasks"`
-	Environment  map[string]string `mapstructure:"environment"`
-	Capabilities []string          `mapstructure:"capabilities"`
 }
 
 // ServerConfig holds server-specific settings.
@@ -160,11 +141,6 @@ func setDefaults() {
 	// Agent defaults
 	viper.SetDefault("agents.max_concurrent", 5)
 	viper.SetDefault("agents.timeout_seconds", 300)
-	viper.SetDefault("agents.ai_code_editor.enabled", true)
-	viper.SetDefault("agents.ai_code_editor.max_tasks", 2)
-	viper.SetDefault("agents.ai_code_editor.capabilities", []string{
-		"ai_code_generation", "feature_development", "gitlab_integration",
-	})
 
 	viper.SetDefault("ai.max_step", 5)
 
@@ -176,7 +152,9 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
 	viper.SetDefault("server.metrics_port", 9090)
-	viper.SetDefault("workspace", getDefaultWorkspaceDir())
+	hiveSpace := getDefaultHiveSpace()
+	viper.SetDefault("workspace", hiveSpace+"/workspace")
+	viper.SetDefault("agents.home", hiveSpace+"/agents")
 }
 
 // validateConfig validates the configuration values.
@@ -227,10 +205,25 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("environment variable %s is not set", config.Gitlab.TokenEnv)
 	}
 
+	workspaceDir, err := utils.ExpandPath(config.WorkspaceDir)
+	if err != nil {
+		return fmt.Errorf("failed to expand path: %w", err)
+	}
+	config.WorkspaceDir = workspaceDir
 	// Ensure workspace directory exists
-	if err := os.MkdirAll(config.WorkspaceDir, 0750); err != nil {
+	if err = os.MkdirAll(config.WorkspaceDir, 0750); err != nil {
 		return fmt.Errorf("failed to create workspace directory %s: %w",
 			config.WorkspaceDir, err)
+	}
+
+	agentHomes, err := utils.ExpandPath(config.Agents.Dir)
+	if err != nil {
+		return fmt.Errorf("failed to expand path: %w", err)
+	}
+
+	config.Agents.Dir = agentHomes
+	if err = os.MkdirAll(config.Agents.Dir, 0750); err != nil {
+		return fmt.Errorf("failed to create agent home %s: %w", config.Agents.Dir, err)
 	}
 
 	// Validate Jira config if enabled
@@ -253,18 +246,18 @@ func validateConfig(config *Config) error {
 	return nil
 }
 
-// getDefaultWorkspaceDir returns the default workspace directory.
-func getDefaultWorkspaceDir() string {
+// getDefaultHiveSpace returns the default workspace directory.
+func getDefaultHiveSpace() string {
 	if dir := os.Getenv("HIVE_WORKSPACE_DIR"); dir != "" {
 		return dir
 	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "/tmp/hive-workspace"
+		return "/tmp/hive"
 	}
 
-	return filepath.Join(homeDir, ".hive", "workspace")
+	return filepath.Join(homeDir, ".hive")
 }
 
 func (s ServerConfig) Addr() string {

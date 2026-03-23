@@ -23,6 +23,8 @@ require (
 	cloud.google.com/go/auth v0.7.2 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
+	github.com/BurntSushi/toml v0.3.1 // indirect
+	github.com/adrg/frontmatter v0.2.0 // indirect
 	github.com/anthropics/anthropic-sdk-go v1.4.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.33.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.3 // indirect
@@ -116,4 +118,5 @@ require (
 	google.golang.org/api v0.189.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240722135656-d784300faade // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
