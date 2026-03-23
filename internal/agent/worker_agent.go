@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -35,7 +36,8 @@ type WorkerAgent interface {
 
 type agent struct {
 	id           string
-	prompt       string
+	persona      string
+	description  string
 	capabilities []string
 	timeout      int
 	maxTasks     int
@@ -43,10 +45,12 @@ type agent struct {
 	outputValidator *jsonschema.Resolved
 
 	agent *react.Agent
+
+	config *Config
 }
 
 func NewWorkerAgent(config *Config) (WorkerAgent, error) {
-	systemPrompt, err := getSystemPrompt()
+	systemPrompt, err := getSystemPrompt(config.Persona)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
 	}
@@ -54,7 +58,7 @@ func NewWorkerAgent(config *Config) (WorkerAgent, error) {
 		config.ID,
 		config.LLM,
 		config.Tools,
-		config.Description+systemPrompt,
+		systemPrompt,
 		config.MaxSteps,
 	)
 	if err != nil {
@@ -71,11 +75,11 @@ func NewWorkerAgent(config *Config) (WorkerAgent, error) {
 	return &agent{
 		id:              config.ID,
 		agent:           reactAgent,
-		prompt:          config.Description,
-		timeout:         config.Timeout,
-		maxTasks:        config.MaxTasks,
+		persona:         config.Persona,
+		description:     config.Description,
 		capabilities:    config.Capabilities,
 		outputValidator: resolved,
+		config:          config,
 	}, nil
 }
 
@@ -86,13 +90,17 @@ func (a *agent) CanHandle(_ *Input) bool {
 
 // Description implements [WorkerAgent].
 func (a *agent) Description() string {
-	return a.prompt
+	return a.description
+}
+
+func (a *agent) Capabilities() []string {
+	return a.capabilities
 }
 
 // Execute implements [WorkerAgent].
 func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	retryConfig := errors.RetryConfig{
-		MaxAttempts:   3,
+		MaxAttempts:   a.config.MaxSteps,
 		InitialDelay:  500,
 		BackoffFactor: 2.0,
 		MaxDelay:      5000,
@@ -101,6 +109,9 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(a.config.Timeout)*time.Second)
+	defer cancel()
 	handler := errors.NewErrorHandler[*Output]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
@@ -150,16 +161,17 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	})
 }
 
-func getSystemPrompt() (string, error) {
+func getSystemPrompt(persona string) (string, error) {
 	inputDescription, err := utils.DescribeJSONSchema[Input]()
 	if err != nil {
-		return "", fmt.Errorf("Failed to self describe the input: %w", err)
+		return "", fmt.Errorf("failed to self describe the input: %w", err)
 	}
 	outputDescription, err := utils.DescribeJSONSchema[Output]()
 	if err != nil {
-		return "", fmt.Errorf("Failed to self describe the output: %w", err)
+		return "", fmt.Errorf("failed to self describe the output: %w", err)
 	}
-	return fmt.Sprintf(`\nAs a worker agent type, you suppose to handle input and output with these specific formats
+	return fmt.Sprintf(`%s
+		You suppose to handle input and output with these specific formats
 		========= INPUT ========
 		YOU ONLY RECEIVE THIS JSON ONLY AS INPUT
 		%s
@@ -168,7 +180,7 @@ func getSystemPrompt() (string, error) {
 		YOU HAVE TO RESPONSE A RAW JSON THAT FOLLOWS THIS SCHEMA
 		%s
 
-		`, inputDescription, outputDescription), nil
+		`, persona, inputDescription, outputDescription), nil
 }
 
 // GetID implements [WorkerAgent].

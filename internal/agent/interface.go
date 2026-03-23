@@ -15,12 +15,14 @@ type BaseAgent interface {
 
 	// Description return a short self-description about agent capabilities.
 	Description() string
+
+	// Capabilities return capabilities of current agent
+	Capabilities() []string
 }
 
 // Config holds configuration for agent initialization.
 type Config struct {
 	ID           string   `json:"id"              yaml:"id"`
-	MaxTasks     int      `json:"max_tasks"       yaml:"max_task"`
 	Timeout      int      `json:"timeout_seconds" yaml:"timeout_seconds"`
 	Capabilities []string `json:"capabilities"    yaml:"capabilities"`
 	MaxSteps     int      `json:"max_steps"       yaml:"max_steps"`

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
@@ -35,26 +36,26 @@ type SupervisorOutput struct {
 // make this stateful as we also want to make the server have a feedback update on this
 type supervisor struct {
 	id           string
-	prompt       string
+	persona      string
 	capabilities []string
-	timeout      int
-	maxTasks     int
 
 	outputValidator *jsonschema.Resolved
 
-	agent *react.Agent
+	agent  *react.Agent
+	config *Config
+}
+
+// Capabilities implements [SupervisorAgent].
+func (s *supervisor) Capabilities() []string {
+	panic("unimplemented")
 }
 
 func NewSupervisorAgent(config *Config) (SupervisorAgent, error) {
-	systemPrompt, err := getSystemPrompt()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system prompt: %w", err)
-	}
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
 		config.Tools,
-		config.Description+systemPrompt,
+		config.Persona,
 		config.MaxSteps,
 	)
 	if err != nil {
@@ -71,18 +72,17 @@ func NewSupervisorAgent(config *Config) (SupervisorAgent, error) {
 	return &supervisor{
 		id:              config.ID,
 		agent:           reactAgent,
-		prompt:          config.Description,
-		timeout:         config.Timeout,
-		maxTasks:        config.MaxTasks,
+		persona:         config.Persona,
 		capabilities:    config.Capabilities,
 		outputValidator: resolved,
+		config:          config,
 	}, nil
 }
 
 // Execute implements [SupervisorAgent].
 func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*SupervisorOutput, error) {
 	retryConfig := errors.RetryConfig{
-		MaxAttempts:   3,
+		MaxAttempts:   s.config.MaxSteps,
 		InitialDelay:  500,
 		BackoffFactor: 2.0,
 		MaxDelay:      5000,
@@ -91,6 +91,9 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	if err != nil {
 		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.Timeout)*time.Second)
+	defer cancel()
+
 	handler := errors.NewErrorHandler[*SupervisorOutput]()
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*SupervisorOutput, error) {
@@ -160,7 +163,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 
 // Description implements [SupervisorAgent].
 func (s *supervisor) Description() string {
-	return s.prompt
+	return s.persona
 }
 
 // GetID implements [SupervisorAgent].

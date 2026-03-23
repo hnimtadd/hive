@@ -37,11 +37,11 @@ func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*Hi
 		return nil, err
 	}
 	supervisor, err := agent.NewSupervisorAgent(&agent.Config{
-		ID:          uuid.New().String(),
-		Description: persona,
-		MaxSteps:    3,
-		LLM:         llm,
-		Tools:       []tool.InvokableTool{agent.DelegateTool(registry)},
+		ID:       uuid.New().String(),
+		Persona:  persona,
+		MaxSteps: 3,
+		LLM:      llm,
+		Tools:    []tool.InvokableTool{agent.DelegateTool(registry)},
 	})
 	if err != nil {
 		return nil, err
