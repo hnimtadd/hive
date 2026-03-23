@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	jira "github.com/andygrunwald/go-jira"
@@ -63,16 +64,19 @@ func (t *JiraTool) InvokableRun(ctx context.Context, argumentsInJSON string, opt
 	}
 
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
+		log.Printf("failed to parse arguments: %s, args: %s\n", err, argumentsInJSON)
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
 	if args.TicketKey == "" {
+		log.Printf("ticket key is empty")
 		return "", fmt.Errorf("ticket_key is required")
 	}
 
 	// Fetch ticket information
 	ticket, _, err := t.client.Issue.Get(args.TicketKey, nil)
 	if err != nil {
+		log.Printf("failed to fetch Jira ticket: %s", err)
 		return "", fmt.Errorf("failed to fetch Jira ticket %s: %w", args.TicketKey, err)
 	}
 
@@ -80,8 +84,8 @@ func (t *JiraTool) InvokableRun(ctx context.Context, argumentsInJSON string, opt
 	// Focus on CONTENT that helps understand what to build, not metadata
 	var response strings.Builder
 
-	response.WriteString(fmt.Sprintf("=== JIRA TICKET %s ===\n\n", ticket.Key))
-	response.WriteString(fmt.Sprintf("Summary: %s\n\n", ticket.Fields.Summary))
+	fmt.Fprintf(&response, "=== JIRA TICKET %s ===\n\n", ticket.Key)
+	fmt.Fprintf(&response, "Summary: %s\n\n", ticket.Fields.Summary)
 
 	// Description (already processed by go-jira client as plain text)
 	if ticket.Fields.Description != "" {
@@ -96,7 +100,7 @@ func (t *JiraTool) InvokableRun(ctx context.Context, argumentsInJSON string, opt
 	if len(customFields) > 0 {
 		response.WriteString("Additional Context:\n")
 		for fieldName, fieldValue := range customFields {
-			response.WriteString(fmt.Sprintf("\n--- %s ---\n", fieldName))
+			fmt.Fprintf(&response, "\n--- %s ---\n", fieldName)
 			response.WriteString(fieldValue)
 			response.WriteString("\n")
 		}
@@ -106,16 +110,16 @@ func (t *JiraTool) InvokableRun(ctx context.Context, argumentsInJSON string, opt
 	// Basic metadata (keep it minimal)
 	response.WriteString("Metadata:\n")
 	if ticket.Fields.Type.Name != "" {
-		response.WriteString(fmt.Sprintf("- Type: %s\n", ticket.Fields.Type.Name))
+		fmt.Fprintf(&response, "- Type: %s\n", ticket.Fields.Type.Name)
 	}
 	if ticket.Fields.Status.Name != "" {
-		response.WriteString(fmt.Sprintf("- Status: %s\n", ticket.Fields.Status.Name))
+		fmt.Fprintf(&response, "- Status: %s\n", ticket.Fields.Status.Name)
 	}
 	if ticket.Fields.Priority.Name != "" {
-		response.WriteString(fmt.Sprintf("- Priority: %s\n", ticket.Fields.Priority.Name))
+		fmt.Fprintf(&response, "- Priority: %s\n", ticket.Fields.Priority.Name)
 	}
 	if ticket.Fields.Assignee != nil && ticket.Fields.Assignee.DisplayName != "" {
-		response.WriteString(fmt.Sprintf("- Assignee: %s\n", ticket.Fields.Assignee.DisplayName))
+		fmt.Fprintf(&response, "- Assignee: %s\n", ticket.Fields.Assignee.DisplayName)
 	}
 	response.WriteString("\n")
 

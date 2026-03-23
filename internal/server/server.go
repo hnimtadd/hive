@@ -37,11 +37,12 @@ func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*Hi
 		return nil, err
 	}
 	supervisor, err := agent.NewSupervisorAgent(&agent.Config{
-		ID:       uuid.New().String(),
-		Persona:  persona,
-		MaxSteps: 3,
-		LLM:      llm,
-		Tools:    []tool.InvokableTool{agent.DelegateTool(registry)},
+		ID:           uuid.New().String(),
+		Persona:      persona,
+		MaxSteps:     3,
+		TimeoutInSec: 60,
+		LLM:          llm,
+		Tools:        []tool.InvokableTool{agent.DelegateTool(registry)},
 	})
 	if err != nil {
 		return nil, err
@@ -170,11 +171,12 @@ This is the output that your response must follow this schema only, don't return
 Available Agents:
 %s
 `
-	prompts := map[string]string{}
+	agentsDescription := map[string]string{}
 	for _, agent := range agents {
-		prompts[agent.GetID()] = agent.Description()
+		agentsDescription[agent.GetID()] = agent.Description()
 	}
-	yamlBytes, err := yaml.Marshal(prompts)
+	log.Println(agentsDescription)
+	yamlBytes, err := yaml.Marshal(agentsDescription)
 	if err != nil {
 		return "", fmt.Errorf("failed to build system prompt: %w", err)
 	}

@@ -15,14 +15,14 @@ func LoadAgentConfig(path string) (*Config, error) {
 
 	var cfg Config
 	// This reads the --- YAML --- block into 'cfg'
-	// and returns the remaining Markdown as 'prompt'
-	prompt, err := frontmatter.Parse(f, &cfg)
+	// and returns the remaining Markdown as 'persona'
+	persona, err := frontmatter.Parse(f, &cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// Set the Markdown body as the Description/Persona
-	cfg.Description = string(prompt)
+	cfg.Persona = string(persona)
 
 	return &cfg, nil
 }

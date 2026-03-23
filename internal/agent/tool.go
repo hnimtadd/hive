@@ -39,7 +39,7 @@ func DelegateTool(registry Registry) tool.InvokableTool {
 				log.Println("agent with ID not found", input.ID)
 				return &schema.ToolResult{
 					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s not found", input.ID)},
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %", input.ID)},
 					},
 				}, nil
 			}

@@ -72,6 +72,7 @@ func NewWorkerAgent(config *Config) (WorkerAgent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve agent schema: %w", err)
 	}
+
 	return &agent{
 		id:              config.ID,
 		agent:           reactAgent,
@@ -110,7 +111,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(a.config.Timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(a.config.TimeoutInSec)*time.Second)
 	defer cancel()
 	handler := errors.NewErrorHandler[*Output]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}

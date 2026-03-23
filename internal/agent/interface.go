@@ -23,7 +23,7 @@ type BaseAgent interface {
 // Config holds configuration for agent initialization.
 type Config struct {
 	ID           string   `json:"id"              yaml:"id"`
-	Timeout      int      `json:"timeout_seconds" yaml:"timeout_seconds"`
+	TimeoutInSec int      `json:"timeout_seconds" yaml:"timeout_seconds"`
 	Capabilities []string `json:"capabilities"    yaml:"capabilities"`
 	MaxSteps     int      `json:"max_steps"       yaml:"max_steps"`
 

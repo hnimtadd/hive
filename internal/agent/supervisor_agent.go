@@ -91,7 +91,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	if err != nil {
 		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.Timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.TimeoutInSec)*time.Second)
 	defer cancel()
 
 	handler := errors.NewErrorHandler[*SupervisorOutput]()
@@ -163,7 +163,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 
 // Description implements [SupervisorAgent].
 func (s *supervisor) Description() string {
-	return s.persona
+	return s.config.Description
 }
 
 // GetID implements [SupervisorAgent].

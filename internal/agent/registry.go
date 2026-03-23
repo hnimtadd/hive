@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"maps"
@@ -8,9 +9,12 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/andygrunwald/go-jira"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/hnimtadd/hive/internal/llm"
+	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/pkg/errors"
 )
 
 // Registry manages available agents in the system.
@@ -67,9 +71,10 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
 				log.Printf("tools not found, let install it first: %s\n", required)
 				continue
 			}
+			log.Printf("attached tool: %s", required)
 			tools = append(tools, tool)
 		}
-		config.ID = entry.Name() + config.ID
+		config.ID = entry.Name() + "-" + config.ID
 		config.Tools = tools
 		config.LLM = llm
 		workerAgent, err := NewWorkerAgent(config)
@@ -84,8 +89,38 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
 }
 
 func NewAgentResitry(appConfig *config.Config) (Registry, error) {
+	agentTools := map[string]tool.InvokableTool{}
+	if appConfig.Jira.Enabled {
+		// Get API token from environment
+		apiToken := os.Getenv(appConfig.Jira.APITokenEnv)
+		if apiToken == "" {
+			return nil, fmt.Errorf("jira API token not found in environment variable %s", appConfig.Jira.APITokenEnv)
+		}
+
+		tp := jira.BasicAuthTransport{
+			Username: appConfig.Jira.UserName,
+			Password: apiToken,
+		}
+		// Create Jira client and wrap it in a tool
+		jiraClient, err := jira.NewClient(tp.Client(), appConfig.Jira.BaseURL)
+		if err != nil {
+			return nil, errors.ErrInternal("failed to create jira client", err)
+		}
+		jiraTool := tools.NewJiraTool(jiraClient, appConfig.Jira.CustomFields)
+		info, _ := jiraTool.Info(context.Background())
+		agentTools[info.Name] = jiraTool
+
+		log.Printf("Jira integration enabled for analyzer agent: %s\n", appConfig.Jira.BaseURL)
+	}
+	{
+		fsTool := tools.NewListFilesTool(appConfig.WorkspaceDir)
+		info, _ := fsTool.Info(context.Background())
+		agentTools[info.Name] = fsTool
+	}
+	log.Println("available tools", agentTools)
 	reg := &registry{
 		agents: make(map[string]WorkerAgent),
+		tools:  agentTools,
 	}
 	agents, err := reg.scan(appConfig)
 	if err != nil {
