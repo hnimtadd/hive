@@ -300,7 +300,7 @@ func (a *Agent) detail(t *types.HiveTask) (string, error) {
 		Goal:             t.Goal,
 		Description:      t.Description,
 		JiraID:           t.JiraID,
-		Context:          t.Context,
+		Context:          t.Goal,
 		TechnicalContext: t.TechnicalContext,
 		FeatureSpec:      t.FeatureSpec,
 		FilesToModify:    t.FilesToModify,

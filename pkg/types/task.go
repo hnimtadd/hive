@@ -37,15 +37,16 @@ type HiveTask struct {
 	Artifacts        map[string]string `json:"artifacts"             db:"artifacts"   jsonschema:"Shared artifacts extracted by other agents that uses for this task life-cycle"`
 	InternalThoughts string            `json:"internal_thoughts"                      jsonschema:"Thoughts of previous agent"`
 	Messages         []Message         `json:"message"               db:"message"     jsonschema:"global conversation"`
-	Context          string            `json:"context"               db:"context"     jsonschema:"Task core context and description"`
+	Goal             string            `json:"context"               db:"context"     jsonschema:"Task core context and description"`
 }
 
 // NewHiveTask creates a new task with default values.
 func NewHiveTask(goal string) *HiveTask {
 	return &HiveTask{
-		ID:      uuid.New().String(),
-		Status:  TaskStatusNotStarted,
-		Context: goal,
+		ID:        uuid.New().String(),
+		Status:    TaskStatusNotStarted,
+		Goal:      goal,
+		Artifacts: make(map[string]string),
 	}
 }
 

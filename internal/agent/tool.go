@@ -1,4 +1,4 @@
-package server
+package agent
 
 import (
 	"context"
@@ -9,20 +9,19 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/hnimtadd/hive/internal/agent"
 )
 
 type delegateTaskInput struct {
-	agent.Input
+	Input
 
 	ID string `json:"agent_id"`
 }
 
-func deletegateTool(registry agent.Registry) tool.InvokableTool {
+func DelegateTool(registry Registry) tool.InvokableTool {
 	// Manually define ToolInfo
 	toolInfo := &schema.ToolInfo{
-		Name: "agent_lookup",
-		Desc: "Look up if an agent with ID is exists",
+		Name: "delegate_agent",
+		Desc: "Look up if an agent with ID is exists and delegate task to that agent",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"agent_id": {Type: "string", Desc: "Agent ID"},
 			"context":  {Type: "string", Desc: "The global context that the agent need to be aware about"},
@@ -44,12 +43,7 @@ func deletegateTool(registry agent.Registry) tool.InvokableTool {
 					},
 				}, nil
 			}
-			// task, found := types.TaskFromContext(ctx)
-			// if !found {
-			// 	log.Println("task not found")
-			// 	return nil, fmt.Errorf("task not found from context")
-			// }
-			i := &agent.Input{
+			i := &Input{
 				Context:   input.Context,
 				Artifacts: input.Artifacts,
 				Task:      input.Task,

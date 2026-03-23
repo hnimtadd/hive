@@ -8,6 +8,7 @@ import (
 
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -58,21 +59,27 @@ func executeCommand(command string) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute task: %w", err)
 	}
+	task := types.NewHiveTask(command)
+	if jiraID != "" {
+		task.Artifacts["Jira_Ticket_ID"] = jiraID
+	}
 
 	// Start monitoring task progress
-	return handleTask(srv, command)
+	return handleTask(srv, task)
 }
 
 // monitorTask watches task progress and provides real-time updates.
-func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.ServerMessage], command string) error {
+func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.ServerMessage], task *types.HiveTask) error {
 	log.Printf("Monitoring task progress for\n")
 
 	req := &agentv1.ClientMessage{
 		Payload: &agentv1.ClientMessage_Request{
 			Request: &agentv1.TaskRequest{
-				GlobalGoal: command,
+				GlobalGoal:       task.Goal,
+				InitialArtifacts: task.Artifacts,
 			},
 		},
+		At: timestamppb.Now(),
 	}
 	if err := srv.Send(req); err != nil {
 		return fmt.Errorf("failed to send message to server: %w", err)

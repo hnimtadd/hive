@@ -117,4 +117,3 @@ func prepareClaudeConfig(conf config.ClaudeConfig) (*claude.Config, error) {
 
 	return claudeConfig, nil
 }
-

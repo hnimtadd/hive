@@ -5,7 +5,6 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/llm"
@@ -39,7 +38,11 @@ func (a *registry) GetByID(id string) (WorkerAgent, bool) {
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]WorkerAgent, error) {
+func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
+	llm, err := llm.NewLLMToolCallingClientWithConfig(&cfg.AI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init llm: %w", err)
+	}
 	config := &Config{
 		ID:          uuid.New().String(),
 		Description: "You are an file_system assistant, which can perform read files in the system",
@@ -47,32 +50,25 @@ func (a *registry) scan(llm model.ToolCallingChatModel, cfg *config.Config) ([]W
 		Timeout:     10,
 		MaxTasks:    10,
 		LLM:         llm,
-		Tools: []tool.InvokableTool{
-			tools.NewListFilesTool(cfg.WorkspaceDir),
-		},
+		Tools:       []tool.InvokableTool{tools.NewListFilesTool(cfg.WorkspaceDir)},
 	}
-	agent, err := NewWorkerAgent(config)
+	workerAgent, err := NewWorkerAgent(config)
 	if err != nil {
 		return nil, err
 	}
-	return []WorkerAgent{agent}, nil
+	return []WorkerAgent{workerAgent}, nil
 }
 
 func NewAgentResitry(appConfig *config.Config) (Registry, error) {
 	reg := &registry{
 		agents: make(map[string]WorkerAgent),
 	}
-	llm, err := llm.NewLLMToolCallingClientWithConfig(&appConfig.AI)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init llm: %w", err)
-	}
-	agents, err := reg.scan(llm, appConfig)
+	agents, err := reg.scan(appConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan agents: %w", err)
 	}
 	for _, agent := range agents {
 		reg.agents[agent.GetID()] = agent
 	}
-	fmt.Println(reg.agents)
 	return reg, nil
 }

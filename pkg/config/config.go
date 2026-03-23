@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/spf13/viper"
 )
 
@@ -48,10 +49,11 @@ type ClaudeConfig struct {
 
 // OpenAIConfig holds OpenAI-specific configuration.
 type OpenAIConfig struct {
-	Model       string         `mapstructure:"model"`
-	APIKeyEnv   string         `mapstructure:"api_key_env"`
-	BaseURL     string         `mapstructure:"base_url"`
-	ExtraFields map[string]any `mapstructure:"extra_fields"`
+	Model                string         `mapstructure:"model"`
+	APIKeyEnv            string         `mapstructure:"api_key_env"`
+	BaseURL              string         `mapstructure:"base_url"`
+	ExtraFields          map[string]any `mapstructure:"extra_fields"`
+	PreferResponseSchema *openai.ChatCompletionResponseFormat
 }
 
 // GitlabConfig holds GitLab integration settings.
