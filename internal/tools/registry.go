@@ -45,7 +45,7 @@ func (r *registry) scan() (map[string]tool.InvokableTool, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		mdPath := filepath.Join(r.path, entry.Name(), "tool.md")
+		mdPath := filepath.Join(r.path, entry.Name(), "tool.yaml")
 		config, err := LoadToolConfig(mdPath) //nolint: govet// ignore lint
 		if err != nil {
 			log.Printf("failed to load tool configuration from :%s, err: %s\n", mdPath, err)

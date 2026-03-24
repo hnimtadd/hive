@@ -222,6 +222,7 @@ func validateConfig(config *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to expand path: %w", err)
 	}
+	fmt.Println("<====", beehiveDir)
 
 	config.BeeHiveDir = beehiveDir
 	if err = os.MkdirAll(config.BeeHiveDir, 0750); err != nil {

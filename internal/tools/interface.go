@@ -18,12 +18,12 @@ import (
 )
 
 type Config struct {
-	Name         string
-	Description  string
-	Parameters   map[string]any
-	Runtime      string
-	Entrypoint   string
-	TimeoutInSec int
+	Name         string         `json:"name"        yaml:"name"`
+	Description  string         `json:"description" yaml:"description"`
+	Parameters   map[string]any `json:"parameters"  yaml:"parameters"`
+	Runtime      string         `json:"runtime"     yaml:"runtime"`
+	Entrypoint   string         `json:"entrypoint"  yaml:"entrypoint"`
+	TimeoutInSec int            `json:"timeout"     yaml:"timeout"`
 
 	path string
 }
@@ -88,6 +88,7 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 		if stderr.Len() > 0 {
 			log.Printf("Tool debug: %s\n", stderr.String())
 		}
+		log.Printf("Tool output: %s\n", stdout.String())
 		return stdout.String(), nil
 
 	default:
