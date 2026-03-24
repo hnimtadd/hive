@@ -19,7 +19,9 @@ type Config struct {
 	Jira         JiraConfig   `mapstructure:"jira"`
 	Server       ServerConfig `mapstructure:"server"`
 	WorkspaceDir string       `mapstructure:"workspace"`
-	Agents       AgentConfig  `mapstructure:"agents"`
+	BeeHiveDir   string       `mapstructure:"beehive"`
+	ToolsDir     string
+	BeesDir      string
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -154,7 +156,7 @@ func setDefaults() {
 	viper.SetDefault("server.metrics_port", 9090)
 	hiveSpace := getDefaultHiveSpace()
 	viper.SetDefault("workspace", hiveSpace+"/workspace")
-	viper.SetDefault("agents.home", hiveSpace+"/agents")
+	viper.SetDefault("beehive", hiveSpace+"/behive")
 }
 
 // validateConfig validates the configuration values.
@@ -216,14 +218,23 @@ func validateConfig(config *Config) error {
 			config.WorkspaceDir, err)
 	}
 
-	agentHomes, err := utils.ExpandPath(config.Agents.Dir)
+	beehiveDir, err := utils.ExpandPath(config.BeeHiveDir)
 	if err != nil {
 		return fmt.Errorf("failed to expand path: %w", err)
 	}
 
-	config.Agents.Dir = agentHomes
-	if err = os.MkdirAll(config.Agents.Dir, 0750); err != nil {
-		return fmt.Errorf("failed to create agent home %s: %w", config.Agents.Dir, err)
+	config.BeeHiveDir = beehiveDir
+	if err = os.MkdirAll(config.BeeHiveDir, 0750); err != nil {
+		return fmt.Errorf("failed to create bees home %s: %w", config.BeeHiveDir, err)
+	}
+	config.BeesDir = filepath.Join(config.BeeHiveDir, "bees")
+	if err = os.MkdirAll(config.BeesDir, 0750); err != nil {
+		return fmt.Errorf("failed to create bees home %s: %w", config.BeesDir, err)
+	}
+
+	config.ToolsDir = filepath.Join(config.BeeHiveDir, "tools")
+	if err = os.MkdirAll(config.ToolsDir, 0750); err != nil {
+		return fmt.Errorf("failed to create tools dir %s: %w", config.ToolsDir, err)
 	}
 
 	// Validate Jira config if enabled

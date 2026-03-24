@@ -9,6 +9,7 @@ import (
 	"github.com/hnimtadd/hive/internal/agent"
 	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/server"
+	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -22,15 +23,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("faield to create llm: %v", err)
 	}
+	toolRegistry, err := tools.NewRegistry(cfg)
+	if err != nil {
+		log.Fatalf("failed to init tool registry: %s", err)
+	}
 
-	// Create agent registry
-	registry, err := agent.NewAgentResitry(cfg)
+	// Create agent agentRegistry
+	agentRegistry, err := agent.NewAgentResitry(cfg, toolRegistry)
 	if err != nil {
 		log.Fatalf("failed to init registry: %s", err)
 	}
 
 	// Start the Hive server
-	hiveServer, err := server.NewHiveServer(llm, registry)
+	hiveServer, err := server.NewHiveServer(llm, agentRegistry)
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}

@@ -3,10 +3,13 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -26,50 +29,68 @@ type Config struct {
 }
 
 type hiveTool struct {
-	config Config
+	config *Config
+	schema *jsonschema.Schema
 }
 
-func NewHiveTool(config Config) tool.InvokableTool {
-	return hiveTool{config: config}
+func NewHiveTool(config *Config) (tool.InvokableTool, error) {
+	schemaBytes, err := json.Marshal(config.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tool parameters: %w", err)
+	}
+
+	schema := &jsonschema.Schema{}
+	if err = schema.UnmarshalJSON(schemaBytes); err != nil {
+		return nil, fmt.Errorf("failed to parse jsonschema of tool parameters: %w", err)
+	}
+	return hiveTool{
+		config: config,
+		schema: schema,
+	}, nil
 }
 
 // Info implements [tool.InvokableTool].
-func (h hiveTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+func (h hiveTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name:        h.config.Name,
 		Desc:        h.config.Description,
-		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.Reflect(h.config.Parameters)),
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(h.schema),
 	}, nil
 }
 
 // InvokableRun implements [tool.InvokableTool].
-func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
 	switch h.config.Runtime {
 	case "native":
-		ctx, cancel := context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
 		defer cancel()
 
-		cmd := exec.CommandContext(ctx, h.config.Entrypoint)
+		executionPath := filepath.Join(h.config.path, h.config.Entrypoint)
+		st, err := os.Stat(executionPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", errors.New("tool didn't exists, install it first")
+			}
+			return "", fmt.Errorf("failed to find tool: %w", err)
+		}
+		if st.Mode().Perm()&0100 == 0 {
+			return "", errors.New("tools is not executable")
+		}
+		cmd := exec.CommandContext(ctx, executionPath)
+		var stdout, stderr bytes.Buffer
 		cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
-		soR, soW := io.Pipe()
-		cmd.Stdout = soW
-		seR, seW := io.Pipe()
-		cmd.Stderr = seW
-		if err := cmd.Run(); err != nil {
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err = cmd.Run(); err != nil {
 			return "", fmt.Errorf("failed to execute tools: %w", err)
 		}
-		outputBytes, err := io.ReadAll(soR)
-		if err != nil {
-			return "", fmt.Errorf("failed to read stdout output: %w", err)
+		if stderr.Len() > 0 {
+			log.Printf("Tool debug: %s\n", stderr.String())
 		}
-		debugBytes, err := io.ReadAll(seR)
-		if err != nil {
-			return "", fmt.Errorf("failed to read stderr output: %w", err)
-		}
-		log.Printf("Tool debug: %s\n", string(debugBytes))
-		return string(outputBytes), nil
+		return stdout.String(), nil
 
 	default:
-		return "", fmt.Errorf("Not supported runtime")
+		return "", fmt.Errorf("not supported runtime: %s", h.config.Runtime)
 	}
 }
