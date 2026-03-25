@@ -54,6 +54,7 @@ func (r *registry) scan() (map[string]tool.InvokableTool, error) {
 		for _, secret := range config.Secret {
 			if !secret.IsValid() {
 				log.Printf("failed to load tool: %s, secret is not fullfilled:\n%s", entry.Name(), secret.String())
+				return nil, fmt.Errorf("failed to load tool: %s, secret is not fullfilled", entry.Name())
 			}
 		}
 		tool, err := NewHiveTool(config)

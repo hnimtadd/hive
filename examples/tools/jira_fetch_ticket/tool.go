@@ -204,17 +204,20 @@ func main() {
 	}
 	jiraClient, err := jira.NewClient(tp.Client(), baseURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to init jira client: %s", err)
+		fmt.Fprintf(os.Stdout, "failed to init jira client: %s", err)
+		return
 	}
 	tool := NewJiraTool(jiraClient)
 
 	stdinBytes, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to read input: %s", err)
+		fmt.Fprintf(os.Stdout, "failed to read input: %s", err)
+		return
 	}
 	output, err := tool.InvokableRun(string(stdinBytes))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to invoke tool: %s", err)
+		fmt.Fprintf(os.Stdout, "failed to invoke tool: %s", err)
+		return
 	}
 	fmt.Fprint(os.Stdout, output)
 	fmt.Fprintln(os.Stderr, "success")
