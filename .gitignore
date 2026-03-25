@@ -75,3 +75,4 @@ config.json
 /references/
 /workspace/
 /server
+.envrc
