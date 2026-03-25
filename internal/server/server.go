@@ -40,11 +40,8 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 		return nil, err
 	}
 
-	// Use configured default timeout, capped at max timeout
-	timeout := cfg.Server.DefaultBeeTimeout
-	if timeout > cfg.Server.MaxBeeTimeout {
-		timeout = cfg.Server.MaxBeeTimeout
-	}
+	// Use configured execution timeout for supervisor
+	timeout := cfg.Tasks.Timeout
 
 	supervisor, err := bee.NewSupervisorAgent(&bee.Config{
 		ID:           uuid.New().String(),
@@ -70,15 +67,16 @@ func (s *HiveServer) Serve(addr string) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	// Create gRPC server with timeout interceptor
+	// Create gRPC server with timeout interceptor (uses max execution timeout)
+	maxTimeout := s.config.Server.MaxTimeout
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(timeoutUnaryInterceptor(s.config.Server.MaxBeeTimeout)),
-		grpc.StreamInterceptor(timeoutStreamInterceptor(s.config.Server.MaxBeeTimeout)),
+		grpc.UnaryInterceptor(timeoutUnaryInterceptor(maxTimeout)),
+		grpc.StreamInterceptor(timeoutStreamInterceptor(maxTimeout)),
 	)
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
 	s.grpcServer = grpcServer
 
-	log.Printf("HiveServer starting on %s with max request timeout %s", addr, s.config.Server.MaxBeeTimeout)
+	log.Printf("HiveServer starting on %s with max request timeout %s", addr, maxTimeout)
 
 	if err = grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
@@ -142,6 +140,7 @@ func timeoutStreamInterceptor(timeout time.Duration) grpc.StreamServerIntercepto
 
 type timeoutServerStream struct {
 	grpc.ServerStream
+
 	ctx context.Context
 }
 
@@ -159,8 +158,8 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 		return errors.New("first message must be a task request")
 	}
 
-	// Use configured timeout (could be extended to extract from request metadata)
-	timeout := s.config.Server.DefaultBeeTimeout
+	// Use configured default execution timeout
+	timeout := s.config.Tasks.Timeout
 
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())

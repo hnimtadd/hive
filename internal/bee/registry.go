@@ -47,23 +47,40 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 		log.Printf("failed to read agents home: %s\n", err)
 		return []WorkerBee{}, nil
 	}
+
+	// Use execution config for agent timeouts
+	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
+	maxTimeoutSec := int(cfg.Tasks.Timeout.Seconds())
+
 	agents := []WorkerBee{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		mdPath := filepath.Join(a.path, entry.Name(), "agent.md")
-		config, err := LoadAgentConfig(mdPath) //nolint: govet// ignore lint
+		beeConfig, err := LoadAgentConfig(mdPath) //nolint: govet// ignore lint
 		if err != nil {
 			log.Printf("failed to load agent configuration from :%s, err: %s\n", mdPath, err)
+			continue
 		}
 
+		// Apply default timeout if not specified, cap at max
+		if beeConfig.TimeoutInSec <= 0 {
+			beeConfig.TimeoutInSec = defaultTimeoutSec
+			log.Printf("Agent %s: using default timeout %ds", entry.Name(), defaultTimeoutSec)
+		} else if beeConfig.TimeoutInSec > maxTimeoutSec {
+			log.Printf("Agent %s: timeout %ds exceeds max %ds, capping",
+				entry.Name(), beeConfig.TimeoutInSec, maxTimeoutSec)
+			beeConfig.TimeoutInSec = maxTimeoutSec
+		} else {
+			log.Printf("Agent %s: using configured timeout %ds", entry.Name(), beeConfig.TimeoutInSec)
+		}
 		llm, err := llm.NewLLMToolCallingClientWithConfig(&cfg.AI)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init llm: %w", err)
 		}
 		tools := []tool.InvokableTool{}
-		for _, required := range config.RequiredTools {
+		for _, required := range beeConfig.RequiredTools {
 			tool, ok := a.tools[required]
 			if !ok {
 				log.Printf("tools not found, let install it first: %s\n", required)
@@ -72,10 +89,10 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 			log.Printf("attached tool: %s", required)
 			tools = append(tools, tool)
 		}
-		config.ID = entry.Name() + "-" + config.ID
-		config.Tools = tools
-		config.LLM = llm
-		workerAgent, err := NewWorkerBee(config)
+		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
+		beeConfig.Tools = tools
+		beeConfig.LLM = llm
+		workerAgent, err := NewWorkerBee(beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
 			continue
@@ -92,7 +109,7 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 	reg := &registry{
 		agents: make(map[string]WorkerBee),
 		tools:  agentTools,
-		path:   appConfig.BeesDir,
+		path:   appConfig.Bees.Dir,
 	}
 	agents, err := reg.scan(appConfig)
 	if err != nil {

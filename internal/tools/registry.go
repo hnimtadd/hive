@@ -24,7 +24,7 @@ type registry struct {
 func NewRegistry(appConfig *config.Config) (Registry, error) {
 	r := &registry{
 		config: appConfig,
-		path:   appConfig.ToolsDir,
+		path:   appConfig.Tools.Dir,
 	}
 	tools, err := r.scan()
 	if err != nil {
