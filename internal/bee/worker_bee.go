@@ -120,6 +120,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 		// Execute the task using the ReACT agent
 		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
+			log.Println("agent exec error", execErr)
 			return nil, execErr
 		}
 		content := func() string {

@@ -10,6 +10,6 @@ parameters:
   type: "object"
   properties:
     length:
-      type: "int"
+      type: "integer"
       description: "length of random string"
   required: ["length"]

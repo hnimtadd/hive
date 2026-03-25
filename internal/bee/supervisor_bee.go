@@ -122,16 +122,19 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 
 		content, err = utils.HeristicallyExtractJSONString(content)
 		if err != nil {
+			log.Printf("failed to extract JSON string: %s\n", err)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
 		}
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
+			log.Printf("failed to unmarshal JSON string: %s\n", err)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to map output to an object"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
 		}
 
 		if err = s.outputValidator.Validate(output); err != nil {
+			log.Printf("failed to validate JSON agains output schema: %s\n", err)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}

@@ -98,8 +98,37 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 		}
 		log.Printf("Tool output: %s\n", stdout.String())
 		return stdout.String(), nil
+	case "python":
+		log.Println("triggering python tool")
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
+		defer cancel()
+
+		executionPath := filepath.Join(h.config.path, h.config.Entrypoint)
+
+		log.Println("triggering python tool", "python", executionPath)
+		cmd := exec.CommandContext(ctx, "python", executionPath)
+		env := []string{}
+		secrets := h.config.ResolveSecret()
+		for key, secret := range secrets {
+			env = append(env, fmt.Sprintf("%s=%s", key, secret))
+		}
+		cmd.Env = env
+		var stdout, stderr bytes.Buffer
+		cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("failed to execute tools: %w", err)
+		}
+		if stderr.Len() > 0 {
+			log.Printf("Tool debug: %s\n", stderr.String())
+		}
+		log.Printf("Tool output: %s\n", stdout.String())
+		return stdout.String(), nil
 
 	default:
+		log.Printf("not supported runtime: %s", h.config.Runtime)
 		return "", fmt.Errorf("not supported runtime: %s", h.config.Runtime)
 	}
 }
