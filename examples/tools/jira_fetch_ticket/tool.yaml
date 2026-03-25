@@ -1,0 +1,29 @@
+name: "jira_fetch_ticket"
+description: >
+  Fetch comprehensive information from a Jira ticket including summary, description, status,
+  priority, sub-tasks, linked issues (dependencies), attachments, time tracking, comments,
+  and all other relevant data. Use this when you need detailed context about a Jira ticket.
+runtime: "native"
+entrypoint: "fetch_ticket"
+timeout: 30
+
+parameters:
+  type: "object"
+  properties:
+    ticket_key:
+      type: "string"
+      description: "The Jira ticket key (e.g, 'JIRA-1301', 'PROJ-123')"
+  required: ["ticket_key"]
+secret:
+  - key: "JIRA_BASE_URL"
+    description: "Base URL of the Jira server"
+    example: "https://jira.atlassian.net"
+    required: true
+  - key: "JIRA_USERNAME"
+    description: "Jira username"
+    example: "user@email.com"
+    required: true
+  - key: "JIRA_ACCESS_TOKEN"
+    description: "Jira access token"
+    example: ""
+    required: true

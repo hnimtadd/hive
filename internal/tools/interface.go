@@ -15,15 +15,17 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/hnimtadd/hive/internal/secret"
 )
 
 type Config struct {
-	Name         string         `json:"name"        yaml:"name"`
-	Description  string         `json:"description" yaml:"description"`
-	Parameters   map[string]any `json:"parameters"  yaml:"parameters"`
-	Runtime      string         `json:"runtime"     yaml:"runtime"`
-	Entrypoint   string         `json:"entrypoint"  yaml:"entrypoint"`
-	TimeoutInSec int            `json:"timeout"     yaml:"timeout"`
+	Name         string               `json:"name"        yaml:"name"`
+	Description  string               `json:"description" yaml:"description"`
+	Parameters   map[string]any       `json:"parameters"  yaml:"parameters"`
+	Runtime      string               `json:"runtime"     yaml:"runtime"`
+	Entrypoint   string               `json:"entrypoint"  yaml:"entrypoint"`
+	TimeoutInSec int                  `json:"timeout"     yaml:"timeout"`
+	Secret       []secret.Requirement `json:"secret"      yaml:"secret"`
 
 	path string
 }
@@ -78,6 +80,12 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 			return "", errors.New("tools is not executable")
 		}
 		cmd := exec.CommandContext(ctx, executionPath)
+		env := []string{}
+		secrets := h.config.ResolveSecret()
+		for key, secret := range secrets {
+			env = append(env, fmt.Sprintf("%s=%s", key, secret))
+		}
+		cmd.Env = env
 		var stdout, stderr bytes.Buffer
 		cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
 		cmd.Stdout = &stdout
@@ -94,4 +102,12 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 	default:
 		return "", fmt.Errorf("not supported runtime: %s", h.config.Runtime)
 	}
+}
+
+func (c Config) ResolveSecret() map[string]string {
+	secret := map[string]string{}
+	for _, required := range c.Secret {
+		secret[required.Key] = os.Getenv(required.Key)
+	}
+	return secret
 }
