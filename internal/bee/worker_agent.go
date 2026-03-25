@@ -1,4 +1,4 @@
-package agent
+package bee
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 	"github.com/hnimtadd/hive/pkg/utils"
 )
 
-// WorkerAgent defines the interface that all Hive agents must implement
+// WorkerBee defines the interface that all Hive agents must implement
 // This interface enables pluggable agents that can be moved to hashicorp gRPC plugins later.
-type WorkerAgent interface {
-	BaseAgent
+type WorkerBee interface {
+	BaseBee
 
 	// CanHandle determines if this agent can process the given task
 	CanHandle(task *Input) bool
@@ -49,7 +49,7 @@ type agent struct {
 	config *Config
 }
 
-func NewWorkerAgent(config *Config) (WorkerAgent, error) {
+func NewWorkerBee(config *Config) (WorkerBee, error) {
 	systemPrompt, err := getSystemPrompt(config.Persona)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
@@ -84,12 +84,12 @@ func NewWorkerAgent(config *Config) (WorkerAgent, error) {
 	}, nil
 }
 
-// CanHandle implements [WorkerAgent].
+// CanHandle implements [WorkerBee].
 func (a *agent) CanHandle(_ *Input) bool {
 	return true
 }
 
-// Description implements [WorkerAgent].
+// Description implements [WorkerBee].
 func (a *agent) Description() string {
 	return a.description
 }
@@ -98,7 +98,7 @@ func (a *agent) Capabilities() []string {
 	return a.capabilities
 }
 
-// Execute implements [WorkerAgent].
+// Execute implements [WorkerBee].
 func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   a.config.MaxSteps,
@@ -184,17 +184,17 @@ func getSystemPrompt(persona string) (string, error) {
 		`, persona, inputDescription, outputDescription), nil
 }
 
-// GetID implements [WorkerAgent].
+// GetID implements [WorkerBee].
 func (a *agent) GetID() string {
 	return a.id
 }
 
-// GetType implements [WorkerAgent].
+// GetType implements [WorkerBee].
 func (a *agent) GetType() string {
 	panic("unimplemented")
 }
 
-// Validate implements [WorkerAgent].
+// Validate implements [WorkerBee].
 func (a *agent) Validate(input Input) error {
 	return nil
 }

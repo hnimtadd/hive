@@ -1,4 +1,4 @@
-package agent
+package bee
 
 import (
 	"context"
@@ -12,12 +12,13 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/agent/react"
 	"github.com/hnimtadd/hive/pkg/errors"
+	"github.com/hnimtadd/hive/pkg/timeout"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
 )
 
-type SupervisorAgent interface {
-	BaseAgent
+type SupervisorBee interface {
+	BaseBee
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
@@ -33,7 +34,6 @@ type SupervisorOutput struct {
 	Thought    string       `json:"-"`
 }
 
-// make this stateful as we also want to make the server have a feedback update on this
 type supervisor struct {
 	id           string
 	persona      string
@@ -41,16 +41,16 @@ type supervisor struct {
 
 	outputValidator *jsonschema.Resolved
 
-	agent  *react.Agent
-	config *Config
+	reactAgent *react.Agent
+	config     *Config
 }
 
-// Capabilities implements [SupervisorAgent].
+// Capabilities implements [SupervisorBee].
 func (s *supervisor) Capabilities() []string {
 	panic("unimplemented")
 }
 
-func NewSupervisorAgent(config *Config) (SupervisorAgent, error) {
+func NewSupervisorAgent(config *Config) (SupervisorBee, error) {
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
@@ -71,7 +71,7 @@ func NewSupervisorAgent(config *Config) (SupervisorAgent, error) {
 	}
 	return &supervisor{
 		id:              config.ID,
-		agent:           reactAgent,
+		reactAgent:      reactAgent,
 		persona:         config.Persona,
 		capabilities:    config.Capabilities,
 		outputValidator: resolved,
@@ -79,8 +79,12 @@ func NewSupervisorAgent(config *Config) (SupervisorAgent, error) {
 	}, nil
 }
 
-// Execute implements [SupervisorAgent].
+// Execute implements [SupervisorBee].
 func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*SupervisorOutput, error) {
+	// Create timeout budget for the entire task
+	budget := timeout.NewBudget(time.Duration(s.config.TimeoutInSec) * time.Second)
+	log.Printf("Supervisor %s starting with budget: %s", s.id, budget.String())
+
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   s.config.MaxSteps,
 		InitialDelay:  500,
@@ -91,19 +95,33 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	if err != nil {
 		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.TimeoutInSec)*time.Second)
-	defer cancel()
 
 	handler := errors.NewErrorHandler[*SupervisorOutput]()
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*SupervisorOutput, error) {
-		log.Println("supervisor: executing", msgs[len(msgs)-1].String())
+		// Allocate budget for this iteration (distribute evenly across max steps)
+		allocPercent := 100.0 / float64(s.config.MaxSteps)
+		operation, ok := budget.StartOperation(0) // Will use percentage allocation
+		if !ok {
+			return nil, errors.ErrTimeout(budget.Remaining()).WithContext("phase", "budget_exhausted")
+		}
+
+		allocated, _ := budget.AllocatePercent(allocPercent)
+		execCtx, cancel := context.WithTimeout(ctx, allocated)
+		defer cancel()
+
+		log.Printf("supervisor: executing with allocated timeout %s (remaining budget: %s)",
+			allocated, budget.Remaining())
+
 		// Execute the task using the ReACT agent
-		result, execErr := s.agent.ExecuteWithMessages(ctx, msgs)
+		start := time.Now()
+		result, execErr := s.reactAgent.ExecuteWithMessages(execCtx, msgs)
 		if execErr != nil {
 			log.Println("execError", execErr)
 			return nil, execErr
 		}
+		// Release unused budget back to pool
+		operation.Release(time.Since(start))
 
 		content := func() string {
 			if len(result.MultiContent) != 0 {
@@ -161,17 +179,17 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	return msg, err
 }
 
-// Description implements [SupervisorAgent].
+// Description implements [SupervisorBee].
 func (s *supervisor) Description() string {
 	return s.config.Description
 }
 
-// GetID implements [SupervisorAgent].
+// GetID implements [SupervisorBee].
 func (s *supervisor) GetID() string {
 	return s.id
 }
 
-// GetType implements [SupervisorAgent].
+// GetType implements [SupervisorBee].
 func (s *supervisor) GetType() string {
 	panic("unimplemented")
 }

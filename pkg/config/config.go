@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/hnimtadd/hive/pkg/utils"
@@ -80,8 +81,12 @@ type JiraConfig struct {
 
 // ServerConfig holds server-specific settings.
 type ServerConfig struct {
-	Port int    `mapstructure:"port"`
-	Host string `mapstructure:"host"`
+	Port                    int           `mapstructure:"port"`
+	Host                    string        `mapstructure:"host"`
+	DefaultBeeTimeout       time.Duration `mapstructure:"default_bee_timeout"`
+	MaxBeeTimeout           time.Duration `mapstructure:"max_bee_timeout"`
+	LLMTimeout              time.Duration `mapstructure:"llm_timeout"`
+	GracefulShutdownTimeout time.Duration `mapstructure:"graceful_shutdown_timeout"`
 }
 
 // LoadConfig loads configuration from file and environment variables.
@@ -134,7 +139,7 @@ func setDefaults() {
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("redis.pool_size", 10)
 
-	// AI defaults - supporting both standard Anthropic and company GrabGPT setup
+	// AI defaults - supporting both standard Anthropic and company setup
 	viper.SetDefault("ai.provider", "claude")
 	viper.SetDefault("ai.model", "claude-3-5-sonnet-20241022")
 
@@ -154,6 +159,13 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
 	viper.SetDefault("server.metrics_port", 9090)
+
+	// Timeout defaults
+	viper.SetDefault("server.default_bee_timeout", 2*time.Minute)
+	viper.SetDefault("server.max_bee_timeout", 10*time.Minute)
+	viper.SetDefault("server.llm_timeout", 30*time.Second)
+	viper.SetDefault("server.graceful_shutdown_timeout", 30*time.Second)
+
 	hiveSpace := getDefaultHiveSpace()
 	viper.SetDefault("workspace", hiveSpace+"/workspace")
 	viper.SetDefault("beehive", hiveSpace+"/behive")
@@ -236,6 +248,20 @@ func validateConfig(config *Config) error {
 	config.ToolsDir = filepath.Join(config.BeeHiveDir, "tools")
 	if err = os.MkdirAll(config.ToolsDir, 0750); err != nil {
 		return fmt.Errorf("failed to create tools dir %s: %w", config.ToolsDir, err)
+	}
+
+	// Validate timeout configuration
+	if config.Server.DefaultBeeTimeout <= 0 {
+		return errors.New("server.default_bee_timeout must be positive")
+	}
+	if config.Server.MaxBeeTimeout <= 0 {
+		return errors.New("server.max_bee_timeout must be positive")
+	}
+	if config.Server.DefaultBeeTimeout > config.Server.MaxBeeTimeout {
+		return errors.New("server.default_bee_timeout cannot exceed server.max_bee_timeout")
+	}
+	if config.Server.LLMTimeout <= 0 {
+		return errors.New("server.llm_timeout must be positive")
 	}
 
 	// Validate Jira config if enabled

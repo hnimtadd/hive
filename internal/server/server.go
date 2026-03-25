@@ -7,13 +7,15 @@ import (
 	"log"
 	"maps"
 	"net"
+	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
-	"github.com/hnimtadd/hive/internal/agent"
+	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/mapper"
+	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
 	"google.golang.org/grpc"
@@ -23,26 +25,34 @@ import (
 type HiveServer struct {
 	agentv1.AgentServiceServer
 
-	registry   agent.Registry
-	supervisor agent.SupervisorAgent
+	registry   bee.Registry
+	supervisor bee.SupervisorBee
+	config     *config.Config
 
 	grpcServer *grpc.Server
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry bee.Registry) (*HiveServer, error) {
 	persona, err := getSupervisorPersona(registry)
 	if err != nil {
 		return nil, err
 	}
-	supervisor, err := agent.NewSupervisorAgent(&agent.Config{
+
+	// Use configured default timeout, capped at max timeout
+	timeout := cfg.Server.DefaultBeeTimeout
+	if timeout > cfg.Server.MaxBeeTimeout {
+		timeout = cfg.Server.MaxBeeTimeout
+	}
+
+	supervisor, err := bee.NewSupervisorAgent(&bee.Config{
 		ID:           uuid.New().String(),
 		Persona:      persona,
 		MaxSteps:     3,
-		TimeoutInSec: 60,
+		TimeoutInSec: int(timeout.Seconds()),
 		LLM:          llm,
-		Tools:        []tool.InvokableTool{agent.DelegateTool(registry)},
+		Tools:        []tool.InvokableTool{bee.DelegateTool(registry)},
 	})
 	if err != nil {
 		return nil, err
@@ -50,6 +60,7 @@ func NewHiveServer(llm model.ToolCallingChatModel, registry agent.Registry) (*Hi
 	return &HiveServer{
 		registry:   registry,
 		supervisor: supervisor,
+		config:     cfg,
 	}, nil
 }
 
@@ -58,9 +69,17 @@ func (s *HiveServer) Serve(addr string) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
-	grpcServer := grpc.NewServer()
+
+	// Create gRPC server with timeout interceptor
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(timeoutUnaryInterceptor(s.config.Server.MaxBeeTimeout)),
+		grpc.StreamInterceptor(timeoutStreamInterceptor(s.config.Server.MaxBeeTimeout)),
+	)
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
 	s.grpcServer = grpcServer
+
+	log.Printf("HiveServer starting on %s with max request timeout %s", addr, s.config.Server.MaxBeeTimeout)
+
 	if err = grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
 	}
@@ -68,9 +87,66 @@ func (s *HiveServer) Serve(addr string) error {
 }
 
 func (s *HiveServer) Stop() {
-	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
+	if s.grpcServer == nil {
+		return
 	}
+
+	// Use configured graceful shutdown timeout
+	timeout := s.config.Server.GracefulShutdownTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Attempt graceful shutdown with timeout
+	done := make(chan struct{})
+	go func() {
+		s.grpcServer.GracefulStop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("Graceful shutdown completed")
+	case <-ctx.Done():
+		log.Println("Graceful shutdown timeout exceeded, forcing stop")
+		s.grpcServer.Stop()
+	}
+}
+
+// timeoutUnaryInterceptor adds timeout to unary RPCs
+func timeoutUnaryInterceptor(timeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return handler(ctx, req)
+	}
+}
+
+// timeoutStreamInterceptor adds timeout to streaming RPCs
+func timeoutStreamInterceptor(timeout time.Duration) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx, cancel := context.WithTimeout(stream.Context(), timeout)
+		defer cancel()
+
+		// Wrap the stream with the new context
+		wrapped := &timeoutServerStream{
+			ServerStream: stream,
+			ctx:          ctx,
+		}
+		return handler(srv, wrapped)
+	}
+}
+
+type timeoutServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *timeoutServerStream) Context() context.Context {
+	return s.ctx
 }
 
 func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMessage, agentv1.ServerMessage]) error {
@@ -82,16 +158,38 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	if req == nil {
 		return errors.New("first message must be a task request")
 	}
+
+	// Use configured timeout (could be extended to extract from request metadata)
+	timeout := s.config.Server.DefaultBeeTimeout
+
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
 
-	ctx := context.Background()
+	// Use request context which includes the timeout from interceptor
+	ctx := srv.Context()
 loop:
 	for {
-		output, err := s.supervisor.Execute(ctx, task)
+		var output *bee.SupervisorOutput
+
+		// Create a timeout context for each supervisor execution iteration
+		execCtx, cancel := context.WithTimeout(ctx, timeout)
+		output, err = s.supervisor.Execute(execCtx, task)
+		cancel() // Release context resources immediately
 		if err != nil {
+			// Check for timeout errors
+			if ctx.Err() == context.DeadlineExceeded || execCtx.Err() == context.DeadlineExceeded {
+				log.Printf("Task execution timed out after %s", timeout)
+				timeoutUpdate := mapper.ToTaskUpdateFailed(&bee.SupervisorOutput{
+					Status:  types.TaskStatusFailed,
+					Content: fmt.Sprintf("Task execution timed out after %s", timeout),
+				})
+				if sendErr := srv.Send(timeoutUpdate); sendErr != nil {
+					log.Printf("Failed to send timeout update: %v", sendErr)
+				}
+			}
 			return err
 		}
+		log.Println("supervisor output", output)
 		switch output.Status {
 		case types.TaskStatusCompleted:
 			update := mapper.ToTaskUpdateSuccess(output)
@@ -118,7 +216,6 @@ loop:
 				return err
 			}
 			for {
-				var msg *agentv1.ClientMessage
 				msg, err = srv.Recv()
 				if err != nil {
 					log.Printf("failed to receive message from user: %s\n", err)
@@ -149,7 +246,7 @@ loop:
 	return nil
 }
 
-func getSupervisorPersona(registry agent.Registry) (string, error) {
+func getSupervisorPersona(registry bee.Registry) (string, error) {
 	agents := registry.ListAgents()
 	persona := `
 Role: You are the Central Orchestrator for a multi-agent swarm. Your goal is to navigate a complex task to completion by delegating to specialized workers.
@@ -184,7 +281,7 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}
-	outputDescription, err := utils.DescribeJSONSchema[agent.SupervisorOutput]()
+	outputDescription, err := utils.DescribeJSONSchema[bee.SupervisorOutput]()
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}

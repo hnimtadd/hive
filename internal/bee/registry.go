@@ -1,4 +1,4 @@
-package agent
+package bee
 
 import (
 	"fmt"
@@ -17,23 +17,23 @@ import (
 // Registry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
-	ListAgents() []WorkerAgent
+	ListAgents() []WorkerBee
 	// GetByID get agent by agent ID
-	GetByID(id string) (WorkerAgent, bool)
+	GetByID(id string) (WorkerBee, bool)
 }
 
 type registry struct {
-	agents map[string]WorkerAgent
+	agents map[string]WorkerBee
 	tools  map[string]tool.InvokableTool
 	path   string
 }
 
 // ListAgents implements [Registry].
-func (a *registry) ListAgents() []WorkerAgent {
+func (a *registry) ListAgents() []WorkerBee {
 	return slices.Collect(maps.Values(a.agents))
 }
 
-func (a *registry) GetByID(id string) (WorkerAgent, bool) {
+func (a *registry) GetByID(id string) (WorkerBee, bool) {
 	agent, ok := a.agents[id]
 
 	return agent, ok
@@ -41,13 +41,13 @@ func (a *registry) GetByID(id string) (WorkerAgent, bool) {
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
+func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 	entries, err := os.ReadDir(a.path)
 	if err != nil {
 		log.Printf("failed to read agents home: %s\n", err)
-		return []WorkerAgent{}, nil
+		return []WorkerBee{}, nil
 	}
-	agents := []WorkerAgent{}
+	agents := []WorkerBee{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -75,7 +75,7 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
 		config.ID = entry.Name() + "-" + config.ID
 		config.Tools = tools
 		config.LLM = llm
-		workerAgent, err := NewWorkerAgent(config)
+		workerAgent, err := NewWorkerBee(config)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
 			continue
@@ -86,11 +86,11 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerAgent, error) {
 	return agents, nil
 }
 
-func NewAgentResitry(appConfig *config.Config, tools tools.Registry) (Registry, error) {
+func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, error) {
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
-		agents: make(map[string]WorkerAgent),
+		agents: make(map[string]WorkerBee),
 		tools:  agentTools,
 		path:   appConfig.BeesDir,
 	}

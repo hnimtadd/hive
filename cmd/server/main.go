@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hnimtadd/hive/internal/agent"
+	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/internal/tools"
@@ -29,13 +29,13 @@ func main() {
 	}
 
 	// Create agent agentRegistry
-	agentRegistry, err := agent.NewAgentResitry(cfg, toolRegistry)
+	agentRegistry, err := bee.NewBeeResitry(cfg, toolRegistry)
 	if err != nil {
 		log.Fatalf("failed to init registry: %s", err)
 	}
 
 	// Start the Hive server
-	hiveServer, err := server.NewHiveServer(llm, agentRegistry)
+	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry)
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}

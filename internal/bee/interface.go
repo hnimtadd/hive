@@ -1,4 +1,4 @@
-package agent
+package bee
 
 import (
 	"github.com/cloudwego/eino/components/model"
@@ -6,7 +6,7 @@ import (
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
-type BaseAgent interface {
+type BaseBee interface {
 	// GetID returns the unique identifier for this agent instance
 	GetID() string
 

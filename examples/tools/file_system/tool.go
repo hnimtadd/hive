@@ -140,6 +140,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to invoke tool: %s", err)
 	}
 	fmt.Fprint(os.Stdout, output)
-	fmt.Fprintln(os.Stderr, "tool output", output)
 	fmt.Fprintln(os.Stderr, "success")
 }
