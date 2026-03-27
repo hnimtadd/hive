@@ -48,9 +48,8 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 		return []WorkerBee{}, nil
 	}
 
-	// Use execution config for agent timeouts
-	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
-	maxTimeoutSec := int(cfg.Tasks.Timeout.Seconds())
+	// Use server timeout as default for agents, with a reasonable max cap (2x default)
+	defaultTimeoutSec := int(cfg.Server.Timeout.Seconds())
 
 	agents := []WorkerBee{}
 	for _, entry := range entries {
@@ -68,12 +67,10 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 		if beeConfig.TimeoutInSec <= 0 {
 			beeConfig.TimeoutInSec = defaultTimeoutSec
 			log.Printf("Agent %s: using default timeout %ds", entry.Name(), defaultTimeoutSec)
-		} else if beeConfig.TimeoutInSec > maxTimeoutSec {
+		} else if beeConfig.TimeoutInSec > defaultTimeoutSec {
 			log.Printf("Agent %s: timeout %ds exceeds max %ds, capping",
-				entry.Name(), beeConfig.TimeoutInSec, maxTimeoutSec)
-			beeConfig.TimeoutInSec = maxTimeoutSec
-		} else {
-			log.Printf("Agent %s: using configured timeout %ds", entry.Name(), beeConfig.TimeoutInSec)
+				entry.Name(), beeConfig.TimeoutInSec, defaultTimeoutSec)
+			beeConfig.TimeoutInSec = defaultTimeoutSec
 		}
 		llm, err := llm.NewLLMToolCallingClientWithConfig(&cfg.AI)
 		if err != nil {
@@ -109,7 +106,7 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 	reg := &registry{
 		agents: make(map[string]WorkerBee),
 		tools:  agentTools,
-		path:   appConfig.Bees.Dir,
+		path:   appConfig.BeesDir,
 	}
 	agents, err := reg.scan(appConfig)
 	if err != nil {

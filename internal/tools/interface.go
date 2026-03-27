@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -23,7 +21,7 @@ type Config struct {
 	Description  string               `json:"description" yaml:"description"`
 	Parameters   map[string]any       `json:"parameters"  yaml:"parameters"`
 	Runtime      string               `json:"runtime"     yaml:"runtime"`
-	Entrypoint   string               `json:"entrypoint"  yaml:"entrypoint"`
+	Entrypoint   []string             `json:"entrypoint"  yaml:"entrypoint"`
 	TimeoutInSec int                  `json:"timeout"     yaml:"timeout"`
 	Secret       []secret.Requirement `json:"secret"      yaml:"secret"`
 
@@ -68,46 +66,8 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
 		defer cancel()
 
-		executionPath := filepath.Join(h.config.path, h.config.Entrypoint)
-		st, err := os.Stat(executionPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return "", errors.New("tool didn't exists, install it first")
-			}
-			return "", fmt.Errorf("failed to find tool: %w", err)
-		}
-		if st.Mode().Perm()&0100 == 0 {
-			return "", errors.New("tools is not executable")
-		}
-		cmd := exec.CommandContext(ctx, executionPath)
-		env := []string{}
-		secrets := h.config.ResolveSecret()
-		for key, secret := range secrets {
-			env = append(env, fmt.Sprintf("%s=%s", key, secret))
-		}
-		cmd.Env = env
-		var stdout, stderr bytes.Buffer
-		cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err = cmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to execute tools: %w", err)
-		}
-		if stderr.Len() > 0 {
-			log.Printf("Tool debug: %s\n", stderr.String())
-		}
-		log.Printf("Tool output: %s\n", stdout.String())
-		return stdout.String(), nil
-	case "python":
-		log.Println("triggering python tool")
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
-		defer cancel()
-
-		executionPath := filepath.Join(h.config.path, h.config.Entrypoint)
-
-		log.Println("triggering python tool", "python", executionPath)
-		cmd := exec.CommandContext(ctx, "python", executionPath)
+		cmd := exec.CommandContext(ctx, h.config.Entrypoint[0], h.config.Entrypoint[1:]...)
+		cmd.Path = h.config.path
 		env := []string{}
 		secrets := h.config.ResolveSecret()
 		for key, secret := range secrets {

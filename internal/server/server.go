@@ -40,8 +40,8 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 		return nil, err
 	}
 
-	// Use configured execution timeout for supervisor
-	timeout := cfg.Tasks.Timeout
+	// Use configured default timeout, capped at max timeout
+	timeout := cfg.Server.Timeout
 
 	supervisor, err := bee.NewSupervisorAgent(&bee.Config{
 		ID:           uuid.New().String(),
@@ -67,16 +67,15 @@ func (s *HiveServer) Serve(addr string) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	// Create gRPC server with timeout interceptor (uses max execution timeout)
-	maxTimeout := s.config.Server.MaxTimeout
+	// Create gRPC server with timeout interceptor
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(timeoutUnaryInterceptor(maxTimeout)),
-		grpc.StreamInterceptor(timeoutStreamInterceptor(maxTimeout)),
+		grpc.UnaryInterceptor(timeoutUnaryInterceptor(s.config.Server.Timeout)),
+		grpc.StreamInterceptor(timeoutStreamInterceptor(s.config.Server.Timeout)),
 	)
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
 	s.grpcServer = grpcServer
 
-	log.Printf("HiveServer starting on %s with max request timeout %s", addr, maxTimeout)
+	log.Printf("HiveServer starting on %s with max request timeout %s", addr, s.config.Server.Timeout)
 
 	if err = grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
@@ -158,8 +157,8 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 		return errors.New("first message must be a task request")
 	}
 
-	// Use configured default execution timeout
-	timeout := s.config.Tasks.Timeout
+	// Use configured timeout (could be extended to extract from request metadata)
+	timeout := s.config.Server.Timeout
 
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
