@@ -49,7 +49,7 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 	}
 
 	// Use server timeout as default for agents, with a reasonable max cap (2x default)
-	defaultTimeoutSec := int(cfg.Server.Timeout.Seconds())
+	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
 
 	agents := []WorkerBee{}
 	for _, entry := range entries {
@@ -106,7 +106,7 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 	reg := &registry{
 		agents: make(map[string]WorkerBee),
 		tools:  agentTools,
-		path:   appConfig.BeesDir,
+		path:   appConfig.Bees.Dir,
 	}
 	agents, err := reg.scan(appConfig)
 	if err != nil {

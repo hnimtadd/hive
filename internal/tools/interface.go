@@ -66,13 +66,16 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
 		defer cancel()
 
+		fmt.Println(h.config.Entrypoint)
 		cmd := exec.CommandContext(ctx, h.config.Entrypoint[0], h.config.Entrypoint[1:]...)
-		cmd.Path = h.config.path
+		fmt.Println(h.config.path)
+		cmd.Dir = h.config.path
 		env := []string{}
 		secrets := h.config.ResolveSecret()
 		for key, secret := range secrets {
 			env = append(env, fmt.Sprintf("%s=%s", key, secret))
 		}
+		env = append(env, fmt.Sprintf("PATH=%s", os.Getenv("PATH")))
 		cmd.Env = env
 		var stdout, stderr bytes.Buffer
 		cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
