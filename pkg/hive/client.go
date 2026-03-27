@@ -100,4 +100,3 @@ func (c *ToolClient) send(ctx context.Context, req *Request) (*Response, error) 
 		return r.resp, r.err
 	}
 }
-

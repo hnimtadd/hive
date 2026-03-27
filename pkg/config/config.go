@@ -15,16 +15,17 @@ import (
 
 // Config represents the complete Hive configuration.
 type Config struct {
-	AI           AIConfig        `mapstructure:"ai"`
-	Gitlab       GitlabConfig    `mapstructure:"gitlab"`
-	Jira         JiraConfig      `mapstructure:"jira"`
-	Server       ServerConfig    `mapstructure:"server"`
-	Execution    ExecutionConfig `mapstructure:"execution"`
-	WorkspaceDir string          `mapstructure:"workspace"`
-	BeeHiveDir   string          `mapstructure:"beehive"`
-	Bees         BeeConfig       `mapstructure:"bee"`
-	Tools        ToolConfig      `mapstructure:"tool"`
-	Tasks        TaskConfig      `mapstructure:"task"`
+	AI              AIConfig     `mapstructure:"ai"`
+	Gitlab          GitlabConfig `mapstructure:"gitlab"`
+	Jira            JiraConfig   `mapstructure:"jira"`
+	Server          ServerConfig `mapstructure:"server"`
+	Redis           RedisConfig  `mapstructure:"redis"`
+	Tools           ToolsConfig  `mapstructure:"tools"`
+	WorkspaceDir    string       `mapstructure:"workspace"`
+	BeeHiveDir      string       `mapstructure:"beehive"`
+	ToolsDir        string
+	BeesDir         string
+	WorkflowTimeout time.Duration `mapstructure:"workflow_timeout"`
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -34,18 +35,8 @@ type AIConfig struct {
 	OpenAI   *OpenAIConfig `mapstructure:"openai"`
 	MaxStep  int           `mapstructure:"max_step"`
 }
-type BeeConfig struct {
-	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
-	Dir            string
-}
-
-type ToolConfig struct {
-	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
-	Dir            string
-}
-
-type TaskConfig struct {
-	Timeout time.Duration `mapstructure:"timeout"`
+type AgentConfig struct {
+	Dir string `mapstructure:"home"`
 }
 
 type ClaudeProvider string
@@ -93,17 +84,23 @@ type JiraConfig struct {
 
 // ServerConfig holds server-specific settings.
 type ServerConfig struct {
-	Port int    `mapstructure:"port"`
-	Host string `mapstructure:"host"`
-	// MaxTimeout is the maximum allowed timeout for any workflow
-	MaxTimeout time.Duration `mapstructure:"max_timeout"`
-	// GracefulShutdownTimeout is the timeout for graceful server shutdown
+	Port                    int           `mapstructure:"port"`
+	Host                    string        `mapstructure:"host"`
+	Timeout                 time.Duration `mapstructure:"timeout"`
 	GracefulShutdownTimeout time.Duration `mapstructure:"graceful_shutdown_timeout"`
 }
 
-// ExecutionConfig holds workflow execution settings.
-type ExecutionConfig struct {
-	// DefaultTimeout is the default timeout for bee workflows
+// RedisConfig holds Redis connection settings.
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+	PoolSize int    `mapstructure:"pool_size"`
+}
+
+// ToolsConfig holds tool settings.
+type ToolsConfig struct {
+	Dir string `mapstructure:"dir"`
 }
 
 // LoadConfig loads configuration from file and environment variables.
@@ -176,13 +173,10 @@ func setDefaults() {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
 	viper.SetDefault("server.metrics_port", 9090)
-	viper.SetDefault("server.max_timeout", 10*time.Minute)
-	viper.SetDefault("server.graceful_shutdown_timeout", 30*time.Second)
 
-	// Tasks defaults
-	viper.SetDefault("task.timeout", 10*time.Minute)
-	viper.SetDefault("bee.default_timeout", 2*time.Minute)
-	viper.SetDefault("tool.default_timeout", 1*time.Minute)
+	// Timeout defaults
+	viper.SetDefault("server.timeout", 2*time.Minute)
+	viper.SetDefault("server.graceful_shutdown_timeout", 30*time.Second)
 
 	hiveSpace := getDefaultHiveSpace()
 	viper.SetDefault("workspace", hiveSpace+"/workspace")
@@ -257,22 +251,17 @@ func validateConfig(config *Config) error {
 	if err = os.MkdirAll(config.BeeHiveDir, 0750); err != nil {
 		return fmt.Errorf("failed to create bees home %s: %w", config.BeeHiveDir, err)
 	}
-	beesDir := filepath.Join(config.BeeHiveDir, "bees")
-	if err = os.MkdirAll(beesDir, 0750); err != nil {
-		return fmt.Errorf("failed to create bees home %s: %w", beesDir, err)
+	config.BeesDir = filepath.Join(config.BeeHiveDir, "bees")
+	if err = os.MkdirAll(config.BeesDir, 0750); err != nil {
+		return fmt.Errorf("failed to create bees home %s: %w", config.BeesDir, err)
 	}
-	config.Bees.Dir = beesDir
 
-	toolsDir := filepath.Join(config.BeeHiveDir, "tools")
-	if err = os.MkdirAll(toolsDir, 0750); err != nil {
-		return fmt.Errorf("failed to create tools dir %s: %w", toolsDir, err)
+	config.ToolsDir = filepath.Join(config.BeeHiveDir, "tools")
+	if err = os.MkdirAll(config.ToolsDir, 0750); err != nil {
+		return fmt.Errorf("failed to create tools dir %s: %w", config.ToolsDir, err)
 	}
-	config.Tools.Dir = toolsDir
 
-	// Validate execution configuration
-	if config.Tasks.Timeout <= 0 {
-		return errors.New("task.timeout must be positive")
-	}
+	// No timeout validation needed for server config
 
 	// Validate Jira config if enabled
 	if config.Jira.Enabled {

@@ -58,17 +58,6 @@ func (t *Tool[I, O]) WithTimeout(timeout time.Duration) *Tool[I, O] {
 	return t
 }
 
-// WithIO sets custom input/output (useful for testing).
-func (t *Tool[I, O]) WithIO(reader io.Reader, writer io.Writer) *Tool[I, O] {
-	if br, ok := reader.(*bufio.Reader); ok {
-		t.reader = br
-	} else {
-		t.reader = bufio.NewReader(reader)
-	}
-	t.writer = writer
-	return t
-}
-
 // Name returns the tool name.
 func (t *Tool[I, O]) Name() string {
 	return t.name
@@ -147,4 +136,3 @@ func (t *Tool[I, O]) handleInspect(req *Request) *Response {
 		"schema":      t.schema,
 	})
 }
-
