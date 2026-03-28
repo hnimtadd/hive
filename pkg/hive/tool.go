@@ -1,7 +1,6 @@
 package hive
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,7 +20,7 @@ type Tool[I, O any] struct {
 	schema      *jsonschema.Schema
 	handler     func(ctx context.Context, input I) (O, error)
 	timeout     time.Duration
-	reader      *bufio.Reader
+	reader      io.Reader
 	writer      io.Writer
 }
 
@@ -47,7 +46,7 @@ func NewTool[I, O any](
 		schema:      schema,
 		handler:     handler,
 		timeout:     30 * time.Second,
-		reader:      bufio.NewReader(os.Stdin),
+		reader:      os.Stdin,
 		writer:      os.Stdout,
 	}, nil
 }

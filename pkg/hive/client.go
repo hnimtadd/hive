@@ -1,7 +1,6 @@
 package hive
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,22 +10,15 @@ import (
 
 // ToolClient communicates with a tool process via stdin/stdout.
 type ToolClient struct {
-	reader  *bufio.Reader
-	writer  io.Writer
+	reader  io.ReadCloser
+	writer  io.WriteCloser
 	timeout time.Duration
 }
 
 // NewToolClient creates a client for tool communication.
-func NewToolClient(reader io.Reader, writer io.Writer) *ToolClient {
-	var r *bufio.Reader
-	if br, ok := reader.(*bufio.Reader); ok {
-		r = br
-	} else {
-		r = bufio.NewReader(reader)
-	}
-
+func NewToolClient(reader io.ReadCloser, writer io.WriteCloser) *ToolClient {
 	return &ToolClient{
-		reader:  r,
+		reader:  reader,
 		writer:  writer,
 		timeout: 30 * time.Second,
 	}
@@ -38,19 +30,8 @@ func (c *ToolClient) WithTimeout(timeout time.Duration) *ToolClient {
 	return c
 }
 
-// Invoke sends an invoke request to the tool.
-func (c *ToolClient) Invoke(ctx context.Context, input interface{}) (*Response, error) {
-	payload, err := json.Marshal(input)
-	if err != nil {
-		return nil, fmt.Errorf("marshal error: %w", err)
-	}
-
-	req := &Request{Action: "invoke", Payload: payload}
-	return c.send(ctx, req)
-}
-
-// InvokeRaw sends an invoke request with raw JSON payload.
-func (c *ToolClient) InvokeRaw(ctx context.Context, payload json.RawMessage) (*Response, error) {
+// Invoke sends an invoke request with raw JSON payload.
+func (c *ToolClient) Invoke(ctx context.Context, payload json.RawMessage) (*Response, error) {
 	req := &Request{Action: "invoke", Payload: payload}
 	return c.send(ctx, req)
 }
@@ -62,18 +43,15 @@ func (c *ToolClient) Inspect(ctx context.Context) (*Response, error) {
 }
 
 func (c *ToolClient) send(ctx context.Context, req *Request) (*Response, error) {
-	if deadline, ok := ctx.Deadline(); ok {
-		c.timeout = time.Until(deadline)
-	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	// Send request
-	data, err := json.Marshal(req)
-	if err != nil {
+	if err := json.NewEncoder(c.writer).Encode(req); err != nil {
 		return nil, err
 	}
-	if _, err := fmt.Fprintf(c.writer, "%s\n", data); err != nil {
+
+	if err := c.writer.Close(); err != nil {
 		return nil, err
 	}
 
@@ -90,6 +68,7 @@ func (c *ToolClient) send(ctx context.Context, req *Request) (*Response, error) 
 			ch <- result{err: err}
 			return
 		}
+
 		ch <- result{resp: &resp}
 	}()
 
