@@ -1,0 +1,17 @@
+name: "read_file"
+description: Read the contents of a local file from the filesystem. Returns the complete file content.
+
+# Execution Contract
+runtime: "native"
+entrypoint: "read_file" # The name of your compiled Go binary
+timeout: 15
+
+# JSON Schema for LLM Parameter Injection
+parameters:
+  type: "object"
+  properties:
+    path:
+      type: "string"
+      description: "The file path to list. Supports relative and absolute paths."
+  required:
+    - "path"

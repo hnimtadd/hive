@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"time"
 
 	"github.com/hnimtadd/hive/pkg/hive"
 	"github.com/spf13/cobra"
@@ -19,22 +20,18 @@ var (
 	verbose bool
 )
 
-// rootCmd represents the base command
+// rootCmd represents the base command.
 var rootCmd = &cobra.Command{
 	Use:   "hive-tool --method [inspect|invoke] [--input '{...}'] <tool-path>",
 	Short: "CLI tool for interacting with Hive tools",
 	Long: `hive-tool is a CLI application that allows you to interact with Hive tools.
-
 It supports two methods:
   - inspect: Retrieves tool metadata (name, description, schema)
-  - invoke:  Executes the tool with provided input
-
-Examples:
-  # Inspect a tool
-  hive-tool --method inspect ./examples/tools/hive/tool.go
-
-  # Invoke a tool with input
-  hive-tool --method invoke --input '{"name":"World"}' ./examples/tools/hive/tool.go`,
+  - invoke:  Executes the tool with provided input`,
+	Example: `	# Inspect a tool:
+		hive-tool --method invoke --input '{"name":"World"}' ./examples/tools/hive/tool.go
+	# Invoke a tool with input:
+		hive-tool --method inspect go run ./examples/tools/hive/tool.go`,
 	RunE: func(_ *cobra.Command, entrypoint []string) error {
 		return executeTool(entrypoint)
 	},
@@ -46,22 +43,16 @@ func executeTool(entrypoint []string) error {
 		log.Printf("Method: %s\n", method)
 	}
 
-	// Validate method
-	if method != "inspect" && method != "invoke" {
-		return fmt.Errorf("invalid method: %s. Must be 'inspect' or 'invoke'", method)
-	}
-
-	// If method is invoke, input is required
-	if method == "invoke" && input == "" {
-		return fmt.Errorf("input is required for 'invoke' method. Use --input flag")
-	}
-
 	// Run the tool as a subprocess
 	if verbose {
 		log.Printf("Running tool: %s\n", entrypoint)
 	}
+	path, err := exec.LookPath(entrypoint[0])
+	if err != nil {
+		return fmt.Errorf("command is not executable: %s", entrypoint[0])
+	}
 
-	cmd := exec.Command(entrypoint[0], entrypoint[1:]...)
+	cmd := exec.Command(path, entrypoint[1:]...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdin pipe: %w", err)
@@ -70,16 +61,25 @@ func executeTool(entrypoint []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
-
-	if err := cmd.Start(); err != nil {
+	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start tool: %w", err)
 	}
-	defer cmd.Wait() // nolint: errcheck
 
 	// Create client to communicate with the tool
 	client := hive.NewToolClient(stdout, stdin)
 
-	ctx := context.Background()
+	switch method {
+	case "inspect":
+	case "invoke":
+		if input == "" {
+			return errors.New("input is required for 'invoke' method")
+		}
+	default:
+		return fmt.Errorf("unsupported method: %s", method)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
 	var resp *hive.Response
 
 	switch method {
@@ -88,19 +88,20 @@ func executeTool(entrypoint []string) error {
 		if err != nil {
 			return fmt.Errorf("inspect failed: %w", err)
 		}
+
+		defer cmd.Wait() //nolint: errcheck // this is acceptable
+
 	case "invoke":
 		var inputData json.RawMessage
-		if err := json.Unmarshal([]byte(input), &inputData); err != nil {
+		if err = json.Unmarshal([]byte(input), &inputData); err != nil {
 			return fmt.Errorf("invalid input JSON: %w", err)
 		}
-		resp, err = client.InvokeRaw(ctx, inputData)
+		resp, err = client.Invoke(ctx, inputData)
 		if err != nil {
 			return fmt.Errorf("invoke failed: %w", err)
 		}
+		defer cmd.Wait() //nolint: errcheck // this is acceptable
 	}
-
-	// Close stdin to signal we're done
-	stdin.Close()
 
 	// Print response
 	output, err := json.MarshalIndent(resp, "", "  ")
@@ -108,25 +109,8 @@ func executeTool(entrypoint []string) error {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	fmt.Println(string(output))
+	fmt.Println(string(output)) //nolint: forbidigo// this is accepted
 	return nil
-}
-
-// compileTool compiles a Go tool file and returns the path to the binary
-func compileTool(toolPath string) (string, error) {
-	// Create temporary file for the binary
-	tmpDir := os.TempDir()
-	binaryName := fmt.Sprintf("hive-tool-%d", os.Getpid())
-	binaryPath := filepath.Join(tmpDir, binaryName)
-
-	// Build the tool
-	cmd := exec.Command("go", "build", "-o", binaryPath, toolPath)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("build failed: %w", err)
-	}
-
-	return binaryPath, nil
 }
 
 func main() {
@@ -138,6 +122,6 @@ func main() {
 	rootCmd.Flags().StringVarP(&input, "input", "i", "", "JSON input for 'invoke' method")
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		os.Exit(1)
 	}
 }

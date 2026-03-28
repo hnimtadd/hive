@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/hnimtadd/hive/pkg/hive"
 )
@@ -26,7 +27,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		panic(err)
+		log.Println(err)
 	}
 
 	// Start serving requests via stdin/stdout
