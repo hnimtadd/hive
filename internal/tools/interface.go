@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -165,16 +164,14 @@ func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (s
 		return "", fmt.Errorf("failed to start tools: %w", err)
 	}
 
-	client := hive.NewToolClient(stdout, stdin)
+	client := hive.NewToolClient(stdout, stdin, stderr)
 	var input json.RawMessage
 	if err = json.Unmarshal([]byte(argumentsInJSON), &input); err != nil {
 		return "", fmt.Errorf("invalid input JSON: %w", err)
 	}
 	resp, err := client.Invoke(ctx, input)
 	if err != nil {
-		bytes, _ := io.ReadAll(stderr)
-		log.Println(string(bytes))
-		return "", fmt.Errorf("invoke tool failed: %w", err)
+		return "", fmt.Errorf("invoke tool failed: %w, debug logs: %s", err, client.DebugLog())
 	}
 	if !resp.Success {
 		return resp.Error, nil
