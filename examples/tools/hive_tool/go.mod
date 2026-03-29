@@ -2,7 +2,7 @@ module hive.example.com
 
 go 1.25.7
 
-require github.com/hnimtadd/hive v0.0.1
+require github.com/hnimtadd/hive v0.0.2
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -34,5 +34,3 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/hnimtadd/hive v0.0.1 => ../../../
