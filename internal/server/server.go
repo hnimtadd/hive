@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"maps"
 	"net"
 	"time"
@@ -15,6 +16,7 @@ import (
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/mapper"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
@@ -67,10 +69,16 @@ func (s *HiveServer) Serve(addr string) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
-	// Create gRPC server with timeout interceptor
+	// Create gRPC server with timeout and tracing interceptors
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(timeoutUnaryInterceptor(s.config.Server.MaxTimeout)),
-		grpc.StreamInterceptor(timeoutStreamInterceptor(s.config.Server.MaxTimeout)),
+		grpc.ChainUnaryInterceptor(
+			timeoutUnaryInterceptor(s.config.Server.MaxTimeout),
+			trace.UnaryServerInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
+			timeoutStreamInterceptor(s.config.Server.MaxTimeout),
+			trace.StreamServerInterceptor(),
+		),
 	)
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
 	s.grpcServer = grpcServer
@@ -148,12 +156,17 @@ func (s *timeoutServerStream) Context() context.Context {
 }
 
 func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMessage, agentv1.ServerMessage]) error {
+	// Use request context which includes the timeout from interceptor
+	ctx := srv.Context()
+	logger := trace.Logger(ctx)
 	msg, err := srv.Recv()
 	if err != nil {
+		logger.Error("failed to recevie initial message", slog.Any("error", err))
 		return err
 	}
 	req := msg.GetRequest()
 	if req == nil {
+		logger.Error("first message must be a task request")
 		return errors.New("first message must be a task request")
 	}
 
@@ -163,8 +176,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
 
-	// Use request context which includes the timeout from interceptor
-	ctx := srv.Context()
+	logger.Info("task created", slog.String("task_id", task.ID), slog.String("goal", task.Goal), slog.Int("artifact_count", len(task.Artifacts)))
 loop:
 	for {
 		var output *bee.SupervisorOutput
@@ -176,56 +188,68 @@ loop:
 		if err != nil {
 			// Check for timeout errors
 			if ctx.Err() == context.DeadlineExceeded || execCtx.Err() == context.DeadlineExceeded {
-				log.Printf("Task execution timed out after %s", timeout)
+				logger.Error("task execution timed out", slog.String("task_id", task.ID), slog.Duration("timeout", timeout))
 				timeoutUpdate := mapper.ToTaskUpdateFailed(&bee.SupervisorOutput{
 					Status:  types.TaskStatusFailed,
 					Content: fmt.Sprintf("Task execution timed out after %s", timeout),
 				})
 				if sendErr := srv.Send(timeoutUpdate); sendErr != nil {
-					log.Printf("Failed to send timeout update: %v", sendErr)
+					logger.Error("failed to send timeout update", slog.Any("error", sendErr))
 				}
 			}
 			return err
 		}
-		log.Println("supervisor output", output)
+
+		logger.Debug("supervisor iteration completed", slog.String("task_id", task.ID), slog.String("status", string(output.Status)))
 		switch output.Status {
 		case types.TaskStatusCompleted:
+			trace.Logger(ctx).Info("task completed successfully",
+				slog.String("task_id", task.ID),
+			)
 			update := mapper.ToTaskUpdateSuccess(output)
 			if err = srv.Send(update); err != nil {
-				log.Println("failed to feedback to user", err)
+				logger.Error("failed to send success update", slog.Any("error", err))
 				return err
 			}
-			log.Println("finished", output.Content)
+			logger.Info("task finished", slog.String("content", output.Content))
 			break loop
 
 		case types.TaskStatusFailed:
+			trace.Logger(ctx).Error("task failed",
+				slog.String("task_id", task.ID),
+				slog.String("reason", output.Content),
+			)
 			update := mapper.ToTaskUpdateFailed(output)
 			if err = srv.Send(update); err != nil {
-				log.Println("failed to feedback to user", err)
+				logger.Error("failed to send failure update", slog.Any("error", err))
 				return err
 			}
-			log.Println("failed", output.Content)
+			logger.Error("task failed", slog.String("content", output.Content))
 			break loop
 
 		case types.TaskStatusPaused:
+			trace.Logger(ctx).Error("task paused",
+				slog.String("task_id", task.ID),
+				slog.String("reason", output.Content),
+			)
 			update := mapper.ToTaskUpdateRequireFeedback(output)
 			if err = srv.Send(update); err != nil {
-				log.Printf("failed to require feedback from user: %v\n", err)
+				logger.Error("failed to require feedback from user", slog.Any("error", err))
 				return err
 			}
 			for {
 				msg, err = srv.Recv()
 				if err != nil {
-					log.Printf("failed to receive message from user: %s\n", err)
+					logger.Error("failed to receive feedback from user", slog.Any("error", err))
 					return err
 				}
 				feedback := msg.GetFeedback()
 				if feedback == nil {
-					log.Printf("feedback user is required")
+					logger.Warn("feedback from user is required")
 					continue
 				}
 				// TODO: feed feedback to model
-				log.Println("user feedback", feedback.String())
+				logger.Info("user feedback received", slog.String("feedback", feedback.String()))
 				break
 			}
 
@@ -233,11 +257,11 @@ loop:
 		case types.TaskStatusInProgress:
 			update := mapper.ToTaskUpdateInProgress(output)
 			if err = srv.Send(update); err != nil {
-				log.Printf("failed to sent in progress from user: %v\n", err)
+				logger.Error("failed to send in progress update", slog.Any("error", err))
 				return err
 			}
 
-			log.Println(output.Status, output.Content)
+			logger.Info("task in progress", slog.String("status", string(output.Status)), slog.String("content", output.Content))
 			break loop
 		}
 	}

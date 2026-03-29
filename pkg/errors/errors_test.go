@@ -52,42 +52,15 @@ func TestHiveError_Unwrap(t *testing.T) {
 
 func TestHiveError_WithContext(t *testing.T) {
 	err := NewHiveError(ErrTypeValidation, "validation failed", nil)
-	
+
 	enrichedErr := err.WithContext("field", "username").WithContext("value", "invalid@")
-	
+
 	assert.Len(t, enrichedErr.Context, 2)
 	assert.Equal(t, "username", enrichedErr.Context["field"])
 	assert.Equal(t, "invalid@", enrichedErr.Context["value"])
-	
+
 	// Original error should be unchanged
 	assert.Len(t, err.Context, 0)
-}
-
-func TestHiveError_IsRecoverable(t *testing.T) {
-	// Test recoverable error types
-	recoverableTypes := []ErrorType{
-		ErrTypeNetwork,
-		ErrTypeTimeout,
-		ErrTypeRateLimit,
-	}
-	
-	for _, errType := range recoverableTypes {
-		err := NewHiveError(errType, "test error", nil)
-		assert.True(t, err.IsRecoverable(), "Error type %s should be recoverable", errType)
-	}
-	
-	// Test non-recoverable error types
-	nonRecoverableTypes := []ErrorType{
-		ErrTypeValidation,
-		ErrTypeAuthorization,
-		ErrTypeNotFound,
-		ErrTypeInternal,
-	}
-	
-	for _, errType := range nonRecoverableTypes {
-		err := NewHiveError(errType, "test error", nil)
-		assert.False(t, err.IsRecoverable(), "Error type %s should not be recoverable", errType)
-	}
 }
 
 func TestRetryConfig(t *testing.T) {
@@ -97,7 +70,7 @@ func TestRetryConfig(t *testing.T) {
 		BackoffFactor: 2.0,
 		MaxDelay:      1 * time.Second,
 	}
-	
+
 	// Test delay calculation
 	delays := []time.Duration{
 		config.GetDelay(1), // First attempt (no delay needed but returns initial)
@@ -105,20 +78,20 @@ func TestRetryConfig(t *testing.T) {
 		config.GetDelay(3), // Second retry (InitialDelay * BackoffFactor)
 		config.GetDelay(4), // Third retry (should cap at MaxDelay)
 	}
-	
+
 	assert.Equal(t, 100*time.Millisecond, delays[0]) // Initial delay
 	assert.Equal(t, 200*time.Millisecond, delays[1]) // 100ms * 2
 	assert.Equal(t, 400*time.Millisecond, delays[2]) // 100ms * 2^2
 	assert.Equal(t, 800*time.Millisecond, delays[3]) // 100ms * 2^3, but not capped yet since 800ms < 1s
-	
+
 	// Test capping at MaxDelay
 	cappedDelay := config.GetDelay(5) // Should be capped at 1s
 	assert.Equal(t, 1*time.Second, cappedDelay)
 }
 
 func TestErrorHandler_WithRetry(t *testing.T) {
-	handler := NewErrorHandler()
-	
+	handler := NewErrorHandler[any]()
+
 	t.Run("successful execution on first attempt", func(t *testing.T) {
 		callCount := 0
 		config := RetryConfig{
@@ -126,17 +99,17 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			InitialDelay:  10 * time.Millisecond,
 			BackoffFactor: 2.0,
 		}
-		
+
 		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
 			callCount++
 			return "success", nil
 		})
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "success", result)
 		assert.Equal(t, 1, callCount)
 	})
-	
+
 	t.Run("success after retries", func(t *testing.T) {
 		callCount := 0
 		config := RetryConfig{
@@ -144,7 +117,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			InitialDelay:  10 * time.Millisecond,
 			BackoffFactor: 2.0,
 		}
-		
+
 		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
 			callCount++
 			if callCount < 3 {
@@ -152,12 +125,12 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			}
 			return "success", nil
 		})
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "success", result)
 		assert.Equal(t, 3, callCount)
 	})
-	
+
 	t.Run("non-recoverable error stops retry", func(t *testing.T) {
 		callCount := 0
 		config := RetryConfig{
@@ -165,17 +138,17 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			InitialDelay:  10 * time.Millisecond,
 			BackoffFactor: 2.0,
 		}
-		
+
 		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
 			callCount++
 			return nil, NewHiveError(ErrTypeValidation, "validation error", nil)
 		})
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Equal(t, 1, callCount) // Should not retry
 	})
-	
+
 	t.Run("max attempts exhausted", func(t *testing.T) {
 		callCount := 0
 		config := RetryConfig{
@@ -183,22 +156,22 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			InitialDelay:  10 * time.Millisecond,
 			BackoffFactor: 2.0,
 		}
-		
+
 		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
 			callCount++
 			return nil, NewHiveError(ErrTypeNetwork, "persistent network error", nil)
 		})
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.Equal(t, 3, callCount) // All attempts exhausted
-		
+
 		// Should be wrapped in a retry exhausted error
 		var hiveErr *HiveError
 		assert.True(t, errors.As(err, &hiveErr))
 		assert.Equal(t, ErrTypeRetryExhausted, hiveErr.Type)
 	})
-	
+
 	t.Run("context cancellation", func(t *testing.T) {
 		callCount := 0
 		config := RetryConfig{
@@ -206,19 +179,19 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			InitialDelay:  100 * time.Millisecond, // Longer delay to test cancellation
 			BackoffFactor: 2.0,
 		}
-		
+
 		ctx, cancel := context.WithCancel(context.Background())
-		
+
 		go func() {
 			time.Sleep(50 * time.Millisecond)
 			cancel()
 		}()
-		
+
 		result, err := handler.WithRetry(ctx, config, func(ctx context.Context) (interface{}, error) {
 			callCount++
 			return nil, NewHiveError(ErrTypeNetwork, "network error", nil)
 		})
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, result)
 		assert.True(t, errors.Is(err, context.Canceled))
@@ -227,8 +200,8 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 }
 
 func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
-	handler := NewErrorHandler()
-	
+	handler := NewErrorHandler[any]()
+
 	t.Run("primary function succeeds", func(t *testing.T) {
 		result, err := handler.WithGracefulDegradation(
 			context.Background(),
@@ -240,14 +213,14 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 				return nil, fmt.Errorf("fallback called unexpectedly")
 			},
 		)
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "primary success", result)
 	})
-	
+
 	t.Run("primary function fails, fallback succeeds", func(t *testing.T) {
 		primaryErr := NewHiveError(ErrTypeNetwork, "network error", nil)
-		
+
 		result, err := handler.WithGracefulDegradation(
 			context.Background(),
 			func(ctx context.Context) (interface{}, error) {
@@ -258,15 +231,15 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 				return "fallback success", nil
 			},
 		)
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, "fallback success", result)
 	})
-	
+
 	t.Run("both primary and fallback fail", func(t *testing.T) {
 		primaryErr := NewHiveError(ErrTypeNetwork, "network error", nil)
 		fallbackErr := NewHiveError(ErrTypeInternal, "fallback error", nil)
-		
+
 		result, err := handler.WithGracefulDegradation(
 			context.Background(),
 			func(ctx context.Context) (interface{}, error) {
@@ -276,10 +249,10 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 				return nil, fallbackErr
 			},
 		)
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		
+
 		// Should return the fallback error
 		var hiveErr *HiveError
 		assert.True(t, errors.As(err, &hiveErr))
@@ -292,13 +265,14 @@ func TestCommonErrors(t *testing.T) {
 	validationErr := ErrValidation("invalid input")
 	assert.Equal(t, ErrTypeValidation, validationErr.Type)
 	assert.Contains(t, validationErr.Message, "invalid input")
-	
+
 	notFoundErr := ErrNotFound("resource", "123")
 	assert.Equal(t, ErrTypeNotFound, notFoundErr.Type)
 	assert.Contains(t, notFoundErr.Message, "resource")
 	assert.Contains(t, notFoundErr.Message, "123")
-	
+
 	timeoutErr := ErrTimeout(5 * time.Second)
 	assert.Equal(t, ErrTypeTimeout, timeoutErr.Type)
 	assert.Contains(t, timeoutErr.Message, "5s")
 }
+

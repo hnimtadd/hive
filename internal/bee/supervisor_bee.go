@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/agent/react"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
@@ -80,6 +81,13 @@ func NewSupervisorAgent(config *Config) (SupervisorBee, error) {
 
 // Execute implements [SupervisorBee].
 func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*SupervisorOutput, error) {
+	logger := trace.Logger(ctx)
+	logger.Info("supervisor execution started",
+		slog.String("supervisor_id", s.id),
+		slog.String("task_id", task.ID),
+		slog.String("task_status", string(task.Status)),
+	)
+
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   s.config.MaxSteps,
 		InitialDelay:  500,
@@ -88,6 +96,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	}
 	taskDescription, err := task.JSONString()
 	if err != nil {
+		logger.Error("failed to serialize task to JSON", slog.Any("error", err))
 		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.TimeoutInSec)*time.Second)
@@ -96,11 +105,11 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	handler := errors.NewErrorHandler[*SupervisorOutput]()
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*SupervisorOutput, error) {
-		log.Println("supervisor: executing", msgs[len(msgs)-1].String())
+		trace.Logger(ctx).Debug("supervisor executing", slog.Int("message_count", len(msgs)))
 		// Execute the task using the ReACT agent
 		result, execErr := s.reactAgent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
-			log.Println("execError", execErr)
+			trace.Logger(ctx).Error("supervisor ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr
 		}
 
@@ -122,19 +131,19 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 
 		content, err = utils.HeristicallyExtractJSONString(content)
 		if err != nil {
-			log.Printf("failed to extract JSON string: %s\n", err)
+			trace.Logger(ctx).Debug("failed to extract JSON string", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
 		}
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
-			log.Printf("failed to unmarshal JSON string: %s\n", err)
+			trace.Logger(ctx).Debug("failed to unmarshal JSON string", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to map output to an object"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
 		}
 
 		if err = s.outputValidator.Validate(output); err != nil {
-			log.Printf("failed to validate JSON agains output schema: %s\n", err)
+			trace.Logger(ctx).Debug("failed to validate JSON against output schema", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}
@@ -160,6 +169,19 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 		}
 		return &agentOutput, nil
 	})
+
+	if err != nil {
+		logger.Error("supervisor execution failed",
+			slog.String("task_id", task.ID),
+			slog.Any("error", err),
+		)
+	} else {
+		logger.Info("supervisor execution completed",
+			slog.String("task_id", task.ID),
+			slog.String("status", string(msg.Status)),
+		)
+	}
+
 	return msg, err
 }
 

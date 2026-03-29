@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/hnimtadd/hive/internal/llm"
 	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/internal/tools"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -19,6 +21,29 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Initialize tracing
+	if cfg.Tracing.Enabled {
+		logOutput := os.Stdout
+		if cfg.Tracing.LogFile != "" {
+			f, err := os.OpenFile(cfg.Tracing.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				log.Fatalf("failed to open log file: %v", err)
+			}
+			defer f.Close()
+			logOutput = f
+		}
+
+		trace.InitLogger(&trace.LogConfig{
+			Level:     trace.ParseLogLevel(cfg.Tracing.LogLevel),
+			Format:    cfg.Tracing.LogFormat,
+			Output:    logOutput,
+			AddSource: cfg.Tracing.AddSource,
+		})
+
+		log.Printf("Tracing initialized: level=%s format=%s", cfg.Tracing.LogLevel, cfg.Tracing.LogFormat)
+	}
+
 	llm, err := llm.NewLLMToolCallingClient()
 	if err != nil {
 		log.Fatalf("faield to create llm: %v", err)

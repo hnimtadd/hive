@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/hive"
 	"github.com/hnimtadd/hive/pkg/secret"
 )
@@ -61,17 +62,40 @@ func (h hiveTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 
 // InvokableRun implements [tool.InvokableTool].
 func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	logger := trace.Logger(ctx)
+	logger.Info("tool execution started",
+		slog.String("tool", h.config.Name),
+		slog.String("runtime", h.config.Runtime),
+	)
+
+	var result string
+	var err error
+
 	switch h.config.Runtime {
 	case "native":
-		return h.handleNativeTool(ctx, argumentsInJSON)
+		result, err = h.handleNativeTool(ctx, argumentsInJSON)
 
 	case "hive":
-		return h.handleHiveTool(ctx, argumentsInJSON)
+		result, err = h.handleHiveTool(ctx, argumentsInJSON)
 
 	default:
-		log.Printf("not supported runtime: %s", h.config.Runtime)
+		logger.Error("unsupported runtime", slog.String("runtime", h.config.Runtime))
 		return "", fmt.Errorf("not supported runtime: %s", h.config.Runtime)
 	}
+
+	if err != nil {
+		logger.Error("tool execution failed",
+			slog.String("tool", h.config.Name),
+			slog.Any("error", err),
+		)
+	} else {
+		logger.Info("tool execution completed",
+			slog.String("tool", h.config.Name),
+			slog.Int("output_length", len(result)),
+		)
+	}
+
+	return result, err
 }
 
 func (c Config) ResolveSecret() map[string]string {
@@ -79,7 +103,6 @@ func (c Config) ResolveSecret() map[string]string {
 	for _, required := range c.Secret {
 		secret[required.Key] = os.Getenv(required.Key)
 	}
-	log.Println("resolved to", secret)
 	return secret
 }
 
@@ -92,7 +115,7 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 	defer cancel()
 	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
 	if err != nil {
-		log.Printf("tool is not executable: %s", err)
+		trace.Logger(ctx).Error("tool is not executable", slog.Any("error", err))
 		return "", fmt.Errorf("tool is not executable: %w", err)
 	}
 
@@ -113,9 +136,9 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 		return "", fmt.Errorf("failed to execute tools: %w", err)
 	}
 	if stderr.Len() > 0 {
-		log.Printf("Tool debug: %s\n", stderr.String())
+		trace.Logger(ctx).Debug("tool stderr output", slog.String("stderr", stderr.String()))
 	}
-	log.Printf("Tool output: %s\n", stdout.String())
+	trace.Logger(ctx).Debug("tool stdout output", slog.Int("output_length", stdout.Len()))
 	return stdout.String(), nil
 }
 
@@ -129,7 +152,7 @@ func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (s
 	defer cancel()
 	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
 	if err != nil {
-		log.Printf("tool is not executable: %s", err)
+		trace.Logger(ctx).Error("tool is not executable", slog.Any("error", err))
 		return "", fmt.Errorf("tool is not executable: %w", err)
 	}
 

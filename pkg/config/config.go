@@ -24,6 +24,7 @@ type Config struct {
 	Bees         BeeConfig    `mapstructure:"bee"`
 	Tools        ToolConfig   `mapstructure:"tool"`
 	Tasks        TaskConfig   `mapstructure:"task"`
+	Tracing      TraceConfig  `mapstructure:"tracing"`
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -98,6 +99,14 @@ type ServerConfig struct {
 	MaxTimeout time.Duration `mapstructure:"max_timeout"`
 	// GracefulShutdownTimeout is the timeout for graceful server shutdown
 	GracefulShutdownTimeout time.Duration `mapstructure:"graceful_shutdown_timeout"`
+}
+
+type TraceConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	LogLevel  string `mapstructure:"log_level"`
+	LogFormat string `mapstructure:"log_format"`
+	LogFile   string `mapstructure:"log_file"`
+	AddSource bool   `mapstructure:"add_source"`
 }
 
 // LoadConfig loads configuration from file and environment variables.
@@ -181,6 +190,12 @@ func setDefaults() {
 	hiveSpace := getDefaultHiveSpace()
 	viper.SetDefault("workspace", hiveSpace+"/workspace")
 	viper.SetDefault("beehive", hiveSpace+"/behive")
+
+	viper.SetDefault("tracing.enabled", true)
+	viper.SetDefault("tracing.log_level", "info")
+	viper.SetDefault("tracing.log_format", "json")
+	viper.SetDefault("tracing.log_file", "")
+	viper.SetDefault("tracing.add_source", false)
 }
 
 // validateConfig validates the configuration values.

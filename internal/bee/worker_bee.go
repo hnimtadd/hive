@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/agent/react"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/utils"
 )
@@ -100,6 +101,12 @@ func (a *agent) Capabilities() []string {
 
 // Execute implements [WorkerBee].
 func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
+	logger := trace.Logger(ctx)
+	logger.Info("worker execution started",
+		slog.String("agent_id", a.id),
+		slog.String("task", input.Task),
+	)
+
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   a.config.MaxSteps,
 		InitialDelay:  500,
@@ -108,6 +115,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	}
 	taskDescription, err := json.Marshal(input)
 	if err != nil {
+		logger.Error("failed to marshal task input", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -115,12 +123,12 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	defer cancel()
 	handler := errors.NewErrorHandler[*Output]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
-	return handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
-		log.Println("agent receive:", string(taskDescription))
+	output, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
+		trace.Logger(ctx).Debug("worker executing", slog.String("agent_id", a.id))
 		// Execute the task using the ReACT agent
 		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
-			log.Println("agent exec error", execErr)
+			trace.Logger(ctx).Error("worker ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr
 		}
 		content := func() string {
@@ -138,7 +146,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 			return result.Content
 		}()
 
-		log.Println("agent output:", content)
+		trace.Logger(ctx).Debug("worker output received", slog.Int("content_length", len(content)))
 		msgs = append(msgs, result)
 		content, err = utils.HeristicallyExtractJSONString(content)
 		if err != nil {
@@ -161,6 +169,20 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 		}
 		return &agentOutput, nil
 	})
+
+	if err != nil {
+		logger.Error("worker execution failed",
+			slog.String("agent_id", a.id),
+			slog.Any("error", err),
+		)
+	} else {
+		logger.Info("worker execution completed",
+			slog.String("agent_id", a.id),
+			slog.String("status", string(output.Status)),
+		)
+	}
+
+	return output, err
 }
 
 func getSystemPrompt(persona string) (string, error) {

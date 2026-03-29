@@ -3,13 +3,14 @@ package react
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	einoreact "github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"github.com/hnimtadd/hive/internal/trace"
 )
 
 // Agent is a simplified ReACT agent wrapper.
@@ -46,13 +47,28 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 	config.ToolsConfig.ToolCallMiddlewares = append(config.ToolsConfig.ToolCallMiddlewares, compose.ToolMiddleware{
 		Invokable: func(ite compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-				log.Println("Calling tool", input.Name, "with argument", input.Arguments)
+				trace.Logger(ctx).Info("tool invocation started",
+					slog.String("tool", input.Name),
+					slog.String("call_id", input.CallID),
+					slog.Int("args_length", len(input.Arguments)),
+				)
+
 				output, err := ite(ctx, input)
+
 				if err != nil {
-					log.Printf("[%s] Calling tool failed: %s, err: %s\n", input.CallID, input.Name, err)
+					trace.Logger(ctx).Error("tool invocation failed",
+						slog.String("tool", input.Name),
+						slog.String("call_id", input.CallID),
+						slog.Any("error", err),
+					)
 					return output, err
 				}
-				log.Printf("[%s] Calling tool success: %s, output: %s\n", input.CallID, input.Name, output)
+
+				trace.Logger(ctx).Info("tool invocation completed",
+					slog.String("tool", input.Name),
+					slog.String("call_id", input.CallID),
+					slog.Int("output_length", len(output.Result)),
+				)
 				return output, nil
 			}
 		},
@@ -75,7 +91,26 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 
 // ExecuteWithMessages runs the ReACT agent with conversation history.
 func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
-	return a.agent.Generate(ctx, messages)
+	trace.Logger(ctx).Debug("ReACT agent generating",
+		slog.String("agent_id", a.id),
+		slog.Int("message_count", len(messages)),
+	)
+
+	result, err := a.agent.Generate(ctx, messages)
+
+	if err != nil {
+		trace.Logger(ctx).Error("ReACT generation failed",
+			slog.String("agent_id", a.id),
+			slog.Any("error", err),
+		)
+	} else {
+		trace.Logger(ctx).Debug("ReACT generation completed",
+			slog.String("agent_id", a.id),
+			slog.Int("response_length", len(result.Content)),
+		)
+	}
+
+	return result, err
 }
 
 // Execute runs the ReACT agent with stateful message
