@@ -191,7 +191,8 @@ func (t *Tool[I, O]) handleInspect(req *Request) *Response {
 	return req.Success(map[string]any{
 		"name":        t.name,
 		"description": t.description,
-		"paramters":   t.schema,
+		"parameters":  t.schema,
+		"entrypoint":  []string{"go", "run", "."},
 		"runtime":     "hive",
 		"timeout":     int(t.timeout.Seconds()),
 		"secret":      t.secret,

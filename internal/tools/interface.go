@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -140,6 +141,9 @@ func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (s
 		env = append(env, fmt.Sprintf("%s=%s", key, secret))
 	}
 	env = append(env, fmt.Sprintf("PATH=%s", os.Getenv("PATH")))
+	env = append(env, fmt.Sprintf("GOPATH=%s", os.Getenv("GOPATH")))
+	env = append(env, fmt.Sprintf("GOCACHE=%s", os.Getenv("GOCACHE")))
+	env = append(env, fmt.Sprintf("GOPROXY=%s", os.Getenv("GOPROXY")))
 	cmd.Env = env
 
 	stdin, err := cmd.StdinPipe()
@@ -151,14 +155,24 @@ func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (s
 	if err != nil {
 		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
 
 	if err = cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start tools: %w", err)
 	}
 
 	client := hive.NewToolClient(stdout, stdin)
-	resp, err := client.Invoke(ctx, json.RawMessage(argumentsInJSON))
+	var input json.RawMessage
+	if err = json.Unmarshal([]byte(argumentsInJSON), &input); err != nil {
+		return "", fmt.Errorf("invalid input JSON: %w", err)
+	}
+	resp, err := client.Invoke(ctx, input)
 	if err != nil {
+		bytes, _ := io.ReadAll(stderr)
+		log.Println(string(bytes))
 		return "", fmt.Errorf("invoke tool failed: %w", err)
 	}
 	if !resp.Success {
