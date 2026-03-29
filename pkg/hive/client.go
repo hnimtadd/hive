@@ -10,17 +10,19 @@ import (
 
 // ToolClient communicates with a tool process via stdin/stdout.
 type ToolClient struct {
-	reader  io.ReadCloser
-	writer  io.WriteCloser
-	timeout time.Duration
+	reader   io.ReadCloser
+	writer   io.WriteCloser
+	debugger io.ReadCloser
+	timeout  time.Duration
 }
 
 // NewToolClient creates a client for tool communication.
-func NewToolClient(reader io.ReadCloser, writer io.WriteCloser) *ToolClient {
+func NewToolClient(reader io.ReadCloser, writer io.WriteCloser, debugger io.ReadCloser) *ToolClient {
 	return &ToolClient{
-		reader:  reader,
-		writer:  writer,
-		timeout: 30 * time.Second,
+		reader:   reader,
+		writer:   writer,
+		debugger: debugger,
+		timeout:  30 * time.Second,
 	}
 }
 
@@ -40,6 +42,16 @@ func (c *ToolClient) Invoke(ctx context.Context, payload json.RawMessage) (*Resp
 func (c *ToolClient) Inspect(ctx context.Context) (*Response, error) {
 	req := &Request{Action: "inspect"}
 	return c.send(ctx, req)
+}
+
+// DebugLog tries best to read the logs from the debugger which is the executed
+// process stderr
+func (c *ToolClient) DebugLog() string {
+	debugBytes, err := io.ReadAll(c.debugger)
+	if err != nil {
+		return fmt.Sprintf("failed to read debug logs; %s", err)
+	}
+	return string(debugBytes)
 }
 
 func (c *ToolClient) send(ctx context.Context, req *Request) (*Response, error) {

@@ -34,3 +34,5 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/hnimtadd/hive v0.0.2 => ../../../

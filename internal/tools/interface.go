@@ -80,6 +80,7 @@ func (c Config) ResolveSecret() map[string]string {
 	for _, required := range c.Secret {
 		secret[required.Key] = os.Getenv(required.Key)
 	}
+	log.Println("resolved to", secret)
 	return secret
 }
 

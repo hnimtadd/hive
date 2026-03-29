@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -97,20 +96,29 @@ func WithSecret[I, O any](ptr any) ToolOption[I, O] {
 			if !defined {
 				continue
 			}
+			fieldVal := structVal.Field(i)
+			if !fieldVal.CanSet() || fieldVal.Kind() != reflect.String {
+				return nil, errors.New("hive key is only support string secret")
+			}
 
 			tag := parseHiveTag(key)
 			if tag.Key == "" {
 				return nil, fmt.Errorf("env key is not defined for: %s", field.Name)
 			}
 
-			if key != "" && !strings.Contains(key, ",") {
-				reqs = append(reqs, secret.Requirement{
-					Key:         tag.Key,
-					Description: tag.Description,
-					Required:    !tag.OmitEmpty,
-				})
+			reqs = append(reqs, secret.Requirement{
+				Key:         tag.Key,
+				Description: tag.Description,
+				Required:    !tag.OmitEmpty,
+			})
+
+			val, defined := os.LookupEnv(tag.Key)
+			if !defined && !tag.OmitEmpty {
+				return nil, fmt.Errorf("env is empty for secret: %s", field.Name)
 			}
+			fieldVal.SetString(val)
 		}
+
 		t.secret = reqs
 		return t, nil
 	}

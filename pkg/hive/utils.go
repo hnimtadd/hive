@@ -1,6 +1,10 @@
 package hive
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"strings"
+)
 
 type hiveTag struct {
 	Key         string
@@ -38,4 +42,12 @@ func parseHiveTag(tag string) hiveTag {
 	}
 
 	return result
+}
+
+func Debugln(args ...any) {
+	fmt.Fprintln(os.Stderr, args...)
+}
+
+func Debugf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format, args...)
 }

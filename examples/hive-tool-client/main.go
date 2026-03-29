@@ -61,12 +61,18 @@ func executeTool(entrypoint []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+	cmd.Env = os.Environ()
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start tool: %w", err)
 	}
 
 	// Create client to communicate with the tool
-	client := hive.NewToolClient(stdout, stdin)
+	client := hive.NewToolClient(stdout, stdin, stderr)
 
 	switch method {
 	case "inspect":
@@ -86,6 +92,7 @@ func executeTool(entrypoint []string) error {
 	case "inspect":
 		resp, err = client.Inspect(ctx)
 		if err != nil {
+			log.Println("debug logs:", client.DebugLog())
 			return fmt.Errorf("inspect failed: %w", err)
 		}
 
@@ -98,6 +105,7 @@ func executeTool(entrypoint []string) error {
 		}
 		resp, err = client.Invoke(ctx, inputData)
 		if err != nil {
+			log.Println("debug logs:", client.DebugLog())
 			return fmt.Errorf("invoke failed: %w", err)
 		}
 		defer cmd.Wait() //nolint: errcheck // this is acceptable
@@ -109,7 +117,8 @@ func executeTool(entrypoint []string) error {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	fmt.Println(string(output)) //nolint: forbidigo// this is accepted
+	log.Println(string(output))
+	log.Println("debug logs:", client.DebugLog())
 	return nil
 }
 
