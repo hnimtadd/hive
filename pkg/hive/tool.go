@@ -3,13 +3,17 @@ package hive
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/hnimtadd/hive/pkg/secret"
 )
 
 // Tool is a function-based tool that serves itself via stdin/stdout.
@@ -22,6 +26,8 @@ type Tool[I, O any] struct {
 	timeout     time.Duration
 	reader      io.Reader
 	writer      io.Writer
+
+	secret []secret.Requirement
 }
 
 // NewTool creates a new tool with automatic schema inference from input type I.
@@ -30,6 +36,7 @@ func NewTool[I, O any](
 	name string,
 	description string,
 	handler func(context.Context, I) (O, error),
+	opts ...ToolOption[I, O],
 ) (*Tool[I, O], error) {
 	toolInfo, err := utils.GoStruct2ToolInfo[I](name, description)
 	if err != nil {
@@ -40,7 +47,7 @@ func NewTool[I, O any](
 		return nil, fmt.Errorf("failed to infer schema: %w", err)
 	}
 
-	return &Tool[I, O]{
+	tool := &Tool[I, O]{
 		name:        name,
 		description: description,
 		schema:      schema,
@@ -48,13 +55,65 @@ func NewTool[I, O any](
 		timeout:     30 * time.Second,
 		reader:      os.Stdin,
 		writer:      os.Stdout,
-	}, nil
+		secret:      []secret.Requirement{},
+	}
+	for _, opt := range opts {
+		tool, err = opt(tool)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return tool, nil
 }
 
+type ToolOption[I, O any] func(t *Tool[I, O]) (*Tool[I, O], error)
+
 // WithTimeout sets a custom timeout for request handling.
-func (t *Tool[I, O]) WithTimeout(timeout time.Duration) *Tool[I, O] {
-	t.timeout = timeout
-	return t
+func WithTimeout[I, O any](timeout time.Duration) ToolOption[I, O] {
+	return func(t *Tool[I, O]) (*Tool[I, O], error) {
+		if timeout.Seconds() == 0 {
+			return nil, errors.New("tool timeout must be larger than 0")
+		}
+		t.timeout = timeout
+		return t, nil
+	}
+}
+
+func WithSecret[I, O any](ptr any) ToolOption[I, O] {
+	return func(t *Tool[I, O]) (*Tool[I, O], error) {
+		var reqs []secret.Requirement
+		v := reflect.ValueOf(ptr)
+		if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+			return nil, errors.New("input must be a pointer to a struct")
+		}
+		structVal := v.Elem()
+		structType := structVal.Type()
+		if structType.Kind() == reflect.Ptr {
+			structType = structType.Elem()
+		}
+		for i := range structType.NumField() {
+			field := structType.Field(i)
+			key, defined := field.Tag.Lookup("hive")
+			if !defined {
+				continue
+			}
+
+			tag := parseHiveTag(key)
+			if tag.Key == "" {
+				return nil, fmt.Errorf("env key is not defined for: %s", field.Name)
+			}
+
+			if key != "" && !strings.Contains(key, ",") {
+				reqs = append(reqs, secret.Requirement{
+					Key:         tag.Key,
+					Description: tag.Description,
+					Required:    !tag.OmitEmpty,
+				})
+			}
+		}
+		t.secret = reqs
+		return t, nil
+	}
 }
 
 // Name returns the tool name.
@@ -132,6 +191,9 @@ func (t *Tool[I, O]) handleInspect(req *Request) *Response {
 	return req.Success(map[string]any{
 		"name":        t.name,
 		"description": t.description,
-		"schema":      t.schema,
+		"paramters":   t.schema,
+		"runtime":     "hive",
+		"timeout":     int(t.timeout.Seconds()),
+		"secret":      t.secret,
 	})
 }

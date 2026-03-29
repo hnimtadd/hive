@@ -16,7 +16,12 @@ type GreetOutput struct {
 	Message string `json:"message"`
 }
 
+type GreetSecret struct {
+	Key string `hive:"key=KEY;description=Say hello to someone;omitempty"`
+}
+
 func main() {
+	s := &GreetSecret{}
 	tool, err := hive.NewTool(
 		"greet",
 		"A simple greeting tool",
@@ -25,6 +30,7 @@ func main() {
 				Message: fmt.Sprintf("Hello, %s!", input.Name),
 			}, nil
 		},
+		hive.WithSecret[GreetInput, GreetOutput](s),
 	)
 	if err != nil {
 		log.Println(err)

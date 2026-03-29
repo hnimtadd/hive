@@ -9,7 +9,6 @@ import (
 type Requirement struct {
 	Key         string `json:"key"         yaml:"key"`
 	Description string `json:"description" yaml:"description"`
-	Example     string `json:"example"     yaml:"example"`
 	Required    bool   `json:"required"    yaml:"required"`
 }
 

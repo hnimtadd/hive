@@ -3,6 +3,7 @@ package react
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
@@ -42,6 +43,20 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 			Tools: baseTools,
 		}
 	}
+	config.ToolsConfig.ToolCallMiddlewares = append(config.ToolsConfig.ToolCallMiddlewares, compose.ToolMiddleware{
+		Invokable: func(ite compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+				log.Println("Calling tool", input.Name, "with argument", input.Arguments)
+				output, err := ite(ctx, input)
+				if err != nil {
+					log.Printf("[%s] Calling tool failed: %s, err: %s\n", input.CallID, input.Name, err)
+					return output, err
+				}
+				log.Printf("[%s] Calling tool success: %s, output: %s\n", input.CallID, input.Name, output)
+				return output, nil
+			}
+		},
+	})
 
 	// Create Eino's ReACT agent
 	ctx := context.Background()

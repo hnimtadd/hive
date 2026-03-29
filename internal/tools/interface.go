@@ -13,7 +13,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/hnimtadd/hive/internal/secret"
+	"github.com/hnimtadd/hive/pkg/hive"
+	"github.com/hnimtadd/hive/pkg/secret"
 )
 
 type Config struct {
@@ -62,33 +63,10 @@ func (h hiveTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
 	switch h.config.Runtime {
 	case "native":
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
-		defer cancel()
+		return h.handleNativeTool(ctx, argumentsInJSON)
 
-		fmt.Println(h.config.Entrypoint)
-		cmd := exec.CommandContext(ctx, h.config.Entrypoint[0], h.config.Entrypoint[1:]...)
-		fmt.Println(h.config.path)
-		cmd.Dir = h.config.path
-		env := []string{}
-		secrets := h.config.ResolveSecret()
-		for key, secret := range secrets {
-			env = append(env, fmt.Sprintf("%s=%s", key, secret))
-		}
-		env = append(env, fmt.Sprintf("PATH=%s", os.Getenv("PATH")))
-		cmd.Env = env
-		var stdout, stderr bytes.Buffer
-		cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to execute tools: %w", err)
-		}
-		if stderr.Len() > 0 {
-			log.Printf("Tool debug: %s\n", stderr.String())
-		}
-		log.Printf("Tool output: %s\n", stdout.String())
-		return stdout.String(), nil
+	case "hive":
+		return h.handleHiveTool(ctx, argumentsInJSON)
 
 	default:
 		log.Printf("not supported runtime: %s", h.config.Runtime)
@@ -102,4 +80,91 @@ func (c Config) ResolveSecret() map[string]string {
 		secret[required.Key] = os.Getenv(required.Key)
 	}
 	return secret
+}
+
+// handleNativeTool use normal stdin/out transport layer to execute executable file
+// native tools are tool that are executable and have some agreements on the stdin,stdout
+// expected format based on tool.yaml configuration.
+func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) (string, error) {
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
+	defer cancel()
+	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
+	if err != nil {
+		log.Printf("tool is not executable: %s", err)
+		return "", fmt.Errorf("tool is not executable: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, cmdPath, h.config.Entrypoint[1:]...)
+	cmd.Dir = h.config.path
+	env := []string{}
+	secrets := h.config.ResolveSecret()
+	for key, secret := range secrets {
+		env = append(env, fmt.Sprintf("%s=%s", key, secret))
+	}
+	env = append(env, fmt.Sprintf("PATH=%s", os.Getenv("PATH")))
+	cmd.Env = env
+	var stdout, stderr bytes.Buffer
+	cmd.Stdin = bytes.NewReader([]byte(argumentsInJSON))
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err = cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to execute tools: %w", err)
+	}
+	if stderr.Len() > 0 {
+		log.Printf("Tool debug: %s\n", stderr.String())
+	}
+	log.Printf("Tool output: %s\n", stdout.String())
+	return stdout.String(), nil
+}
+
+// handleHiveTool use hive sdk client with stdin,out based transport layer
+// to trigger the hive tool.
+// Benefit of hive tool, is hive tool is  self-describe binary, so user maintain
+// both secret requirements and description inside the code, ignore the tool.yaml dependencies.
+func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (string, error) {
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
+	defer cancel()
+	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
+	if err != nil {
+		log.Printf("tool is not executable: %s", err)
+		return "", fmt.Errorf("tool is not executable: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, cmdPath, h.config.Entrypoint[1:]...)
+	cmd.Dir = h.config.path
+	env := []string{}
+	secrets := h.config.ResolveSecret()
+	for key, secret := range secrets {
+		env = append(env, fmt.Sprintf("%s=%s", key, secret))
+	}
+	env = append(env, fmt.Sprintf("PATH=%s", os.Getenv("PATH")))
+	cmd.Env = env
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err = cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start tools: %w", err)
+	}
+
+	client := hive.NewToolClient(stdout, stdin)
+	resp, err := client.Invoke(ctx, json.RawMessage(argumentsInJSON))
+	if err != nil {
+		return "", fmt.Errorf("invoke tool failed: %w", err)
+	}
+	if !resp.Success {
+		return resp.Error, nil
+	}
+
+	output, _ := json.Marshal(resp)
+	return string(output), nil
 }

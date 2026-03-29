@@ -26,8 +26,8 @@ type Response struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Success creates a successful response
-func (r *Request) Success(result interface{}) *Response {
+// Success creates a successful response.
+func (r *Request) Success(result any) *Response {
 	var resultJSON json.RawMessage
 	if result != nil {
 		data, err := json.Marshal(result)
@@ -85,4 +85,3 @@ type ToolMetadata struct {
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 }
-
