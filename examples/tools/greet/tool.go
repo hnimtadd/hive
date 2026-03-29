@@ -26,6 +26,7 @@ func main() {
 		"greet",
 		"A simple greeting tool",
 		func(ctx context.Context, input GreetInput) (GreetOutput, error) {
+			hive.Debugln("Secret", s)
 			return GreetOutput{
 				Message: fmt.Sprintf("Hello, %s!", input.Name),
 			}, nil
