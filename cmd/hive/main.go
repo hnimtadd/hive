@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/pkg/config"
@@ -65,12 +67,19 @@ func executeCommand(command string) error {
 	}
 
 	// Start monitoring task progress
-	return handleTask(srv, task)
+	if err:= handleTask(srv, task);err != nil{
+		log.Printf("task handling failed: %s\n",err)
+		srv.CloseSend()
+		return err
+	}
+	return nil
 }
 
 // monitorTask watches task progress and provides real-time updates.
 func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.ServerMessage], task *types.HiveTask) error {
 	log.Printf("Monitoring task progress for\n")
+
+	reader := bufio.NewReader(os.Stdin)
 
 	req := &agentv1.ClientMessage{
 		Payload: &agentv1.ClientMessage_Request{
@@ -106,11 +115,10 @@ func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.Serv
 
 		case *agentv1.ServerMessage_Feedback:
 			log.Printf("Server feedback: %v\n", msg.Feedback.String())
-			var response string
-
 			log.Print("Enter your answer: ")
-			// Use & to pass the variable by reference so Scanln can modify it
-			_, err = fmt.Scanln(&response)
+
+			var response string
+			response, err = reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("error reading input: %w", err)
 			}
