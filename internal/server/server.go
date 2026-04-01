@@ -134,7 +134,7 @@ func (s *HiveServer) Stop() {
 
 // timeoutUnaryInterceptor adds timeout to unary RPCs.
 func timeoutUnaryInterceptor(timeout time.Duration) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return handler(ctx, req)
@@ -195,7 +195,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 
 	// Ensure final state is persisted
 	defer func() {
-		if err := s.storage.Update(task); err != nil {
+		if err = s.storage.Update(task); err != nil {
 			logger.ErrorContext(ctx, "failed to update final task state", slog.String("reason", err.Error()))
 		}
 	}()
@@ -256,7 +256,7 @@ loop:
 			)
 
 			// Persist completed state
-			if err := s.storage.Update(task); err != nil {
+			if err = s.storage.Update(task); err != nil {
 				logger.ErrorContext(ctx, "failed to persist completed task state", slog.Any("error", err))
 			}
 
@@ -275,7 +275,7 @@ loop:
 			)
 
 			// Persist failed state
-			if err := s.storage.Update(task); err != nil {
+			if err = s.storage.Update(task); err != nil {
 				logger.ErrorContext(ctx, "failed to persist failed task state", slog.Any("error", err))
 			}
 
@@ -300,7 +300,7 @@ loop:
 			})
 
 			// Persist paused state with question
-			if err := s.storage.Update(task); err != nil {
+			if err = s.storage.Update(task); err != nil {
 				logger.ErrorContext(ctx, "failed to persist paused task state", slog.Any("error", err))
 			}
 
@@ -331,7 +331,7 @@ loop:
 				})
 
 				// Persist user feedback
-				if err := s.storage.Update(task); err != nil {
+				if err = s.storage.Update(task); err != nil {
 					logger.ErrorContext(ctx, "failed to persist task after user feedback", slog.Any("error", err))
 				}
 
@@ -351,7 +351,7 @@ loop:
 			})
 
 			// Persist in-progress state after each cycle
-			if err := s.storage.Update(task); err != nil {
+			if err = s.storage.Update(task); err != nil {
 				logger.ErrorContext(ctx, "failed to persist in-progress task state", slog.Any("error", err))
 			}
 
@@ -472,7 +472,7 @@ func (s *HiveServer) forwardToolEvents(
 				Update: updateMsg,
 			},
 		}); err != nil {
-			logger.Error("failed to send tool execution event",
+			logger.ErrorContext(ctx, "failed to send tool execution event",
 				slog.String("agent_id", event.AgentID),
 				slog.String("tool", event.ToolName),
 				slog.String("event_type", string(event.EventType)),
@@ -481,7 +481,7 @@ func (s *HiveServer) forwardToolEvents(
 			return
 		}
 
-		logger.Debug("tool execution event sent",
+		logger.DebugContext(ctx, "tool execution event sent",
 			slog.String("agent_id", event.AgentID),
 			slog.String("tool", event.ToolName),
 			slog.String("event_type", string(event.EventType)),
