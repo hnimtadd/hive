@@ -46,7 +46,7 @@ type ToolConfig struct {
 
 type TaskConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
-	Storage string        `mapstrcuture:"storage"`
+	Storage string        `mapstructure:"storage"`
 }
 
 type ClaudeProvider string

@@ -187,9 +187,16 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
 
+	// Create initial task record
+	if err = s.storage.Add(task); err != nil {
+		logger.ErrorContext(ctx, "failed to create initial task record", slog.String("reason", err.Error()))
+		return fmt.Errorf("failed to store task: %w", err)
+	}
+
+	// Ensure final state is persisted
 	defer func() {
-		if err = s.storage.Add(task); err != nil {
-			logger.ErrorContext(ctx, "failed to store task", slog.String("reason", err.Error()))
+		if err := s.storage.Update(task); err != nil {
+			logger.ErrorContext(ctx, "failed to update final task state", slog.String("reason", err.Error()))
 		}
 	}()
 
@@ -223,6 +230,12 @@ loop:
 			trace.Logger(ctx).Info("task completed successfully",
 				slog.String("task_id", task.ID),
 			)
+
+			// Persist completed state
+			if err := s.storage.Update(task); err != nil {
+				logger.ErrorContext(ctx, "failed to persist completed task state", slog.Any("error", err))
+			}
+
 			update := mapper.ToTaskUpdateSuccess(output)
 			if err = srv.Send(update); err != nil {
 				logger.Error("failed to send success update", slog.Any("error", err))
@@ -236,6 +249,12 @@ loop:
 				slog.String("task_id", task.ID),
 				slog.String("reason", output.Content),
 			)
+
+			// Persist failed state
+			if err := s.storage.Update(task); err != nil {
+				logger.ErrorContext(ctx, "failed to persist failed task state", slog.Any("error", err))
+			}
+
 			update := mapper.ToTaskUpdateFailed(output)
 			if err = srv.Send(update); err != nil {
 				logger.Error("failed to send failure update", slog.Any("error", err))
@@ -255,6 +274,11 @@ loop:
 				Role:    "assistant",
 				Content: output.Content,
 			})
+
+			// Persist paused state with question
+			if err := s.storage.Update(task); err != nil {
+				logger.ErrorContext(ctx, "failed to persist paused task state", slog.Any("error", err))
+			}
 
 			update := mapper.ToTaskUpdateRequireFeedback(output)
 			if err = srv.Send(update); err != nil {
@@ -282,6 +306,11 @@ loop:
 					Content: userFeedback,
 				})
 
+				// Persist user feedback
+				if err := s.storage.Update(task); err != nil {
+					logger.ErrorContext(ctx, "failed to persist task after user feedback", slog.Any("error", err))
+				}
+
 				logger.Info("user feedback received and stored in task history",
 					slog.String("task_id", task.ID),
 					slog.String("feedback", userFeedback),
@@ -296,6 +325,11 @@ loop:
 				Role:    "assistant",
 				Content: output.Content,
 			})
+
+			// Persist in-progress state after each cycle
+			if err := s.storage.Update(task); err != nil {
+				logger.ErrorContext(ctx, "failed to persist in-progress task state", slog.Any("error", err))
+			}
 
 			update := mapper.ToTaskUpdateInProgress(output)
 			if err = srv.Send(update); err != nil {

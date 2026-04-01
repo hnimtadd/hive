@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -16,6 +15,7 @@ import (
 type TaskStorage interface {
 	List() ([]*types.HiveTask, error)
 	Add(task *types.HiveTask) error
+	Update(task *types.HiveTask) error
 	Delete(id string) (*types.HiveTask, error)
 	Load(id string) (*types.HiveTask, error)
 }
@@ -34,7 +34,7 @@ func NewLocalStorage(opts Options) (TaskStorage, error) {
 check:
 	stat, err := os.Stat(opts.Storage)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if os.IsExist(err) {
 			return nil, fmt.Errorf("invalid task storage: %w", err)
 		}
 		if err = os.MkdirAll(opts.Storage, 0o700); err != nil {
@@ -74,6 +74,22 @@ func (t *taskStorage) Add(task *types.HiveTask) error {
 	doc.SetAll(payload)
 	if err = t.db.Insert(taskCollection, doc); err != nil {
 		return fmt.Errorf("failed to insert task to the storage: %w", err)
+	}
+	return nil
+}
+
+// Update implements [TaskStorage].
+func (t *taskStorage) Update(task *types.HiveTask) error {
+	payload, err := utils.JSONConvert[map[string]any](task)
+	if err != nil {
+		return fmt.Errorf("failed to convert task to document payload: %w", err)
+	}
+
+	if err = t.db.UpdateById(taskCollection, task.ID, func(doc *document.Document) *document.Document {
+		doc.SetAll(payload)
+		return doc
+	}); err != nil {
+		return fmt.Errorf("failed to update task in storage: %w", err)
 	}
 	return nil
 }
