@@ -16,6 +16,7 @@ import (
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/mapper"
+	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -31,6 +32,8 @@ type HiveServer struct {
 	supervisor bee.SupervisorBee
 	config     *config.Config
 
+	storage storage.TaskStorage
+
 	grpcServer *grpc.Server
 }
 
@@ -38,6 +41,12 @@ var _ agentv1.AgentServiceServer = &HiveServer{}
 
 func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry bee.Registry) (*HiveServer, error) {
 	persona, err := getSupervisorPersona(registry)
+	if err != nil {
+		return nil, err
+	}
+	taskStorage, err := storage.NewLocalStorage(storage.Options{
+		Storage: cfg.Tasks.Storage,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -56,10 +65,12 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 	if err != nil {
 		return nil, err
 	}
+
 	return &HiveServer{
 		registry:   registry,
 		supervisor: supervisor,
 		config:     cfg,
+		storage:    taskStorage,
 	}, nil
 }
 
@@ -175,6 +186,12 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 
 	task := types.NewHiveTask(req.GetGlobalGoal())
 	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
+
+	defer func() {
+		if err = s.storage.Add(task); err != nil {
+			logger.ErrorContext(ctx, "failed to store task", slog.String("reason", err.Error()))
+		}
+	}()
 
 	logger.Info("task created", slog.String("task_id", task.ID), slog.String("goal", task.Goal), slog.Int("artifact_count", len(task.Artifacts)))
 loop:

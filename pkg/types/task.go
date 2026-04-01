@@ -30,14 +30,14 @@ type Message struct {
 // HiveTask represents a single task in the distributed system.
 type HiveTask struct {
 	// Core identifiers
-	ID               string            `json:"id"                    db:"id"          jsonschema:"ID of the task"`
-	Status           Status            `json:"status"                db:"status"      jsonschema:"Current task status"`
-	NextAction       *string           `json:"next_action,omitempty" db:"next_action" jsonschema:"Previous agent suggested next action to complete"`
-	Plan             []TaskPlan        `json:"plan"                  db:"plan"        jsonschema:"Our mastery plan"`
-	Artifacts        map[string]string `json:"artifacts"             db:"artifacts"   jsonschema:"Shared artifacts extracted by other agents that uses for this task life-cycle"`
-	InternalThoughts string            `json:"internal_thoughts"                      jsonschema:"Thoughts of previous agent"`
-	Messages         []Message         `json:"message"               db:"message"     jsonschema:"global conversation"`
-	Goal             string            `json:"context"               db:"context"     jsonschema:"Task core context and description"`
+	ID               string            `json:"_id"                   jsonschema:"ID of the task"`
+	Status           Status            `json:"status"                jsonschema:"Current task status"`
+	NextAction       *string           `json:"next_action,omitempty" jsonschema:"Previous agent suggested next action to complete"`
+	Plan             []TaskPlan        `json:"plan"                  jsonschema:"Our mastery plan"`
+	Artifacts        map[string]string `json:"artifacts"             jsonschema:"Shared artifacts extracted by other agents that uses for this task life-cycle"`
+	InternalThoughts string            `json:"internal_thoughts"     jsonschema:"Thoughts of previous agent"`
+	Messages         []Message         `json:"message"               jsonschema:"global conversation"`
+	Goal             string            `json:"context"               jsonschema:"Task core context and description"`
 }
 
 // NewHiveTask creates a new task with default values.

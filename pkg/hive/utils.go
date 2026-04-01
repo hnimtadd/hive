@@ -18,9 +18,8 @@ func parseHiveTag(tag string) hiveTag {
 		return result
 	}
 
-	parts := strings.Split(tag, ";")
-	for _, part := range parts {
-		part := strings.TrimSpace(part)
+	for part := range strings.SplitSeq(tag, ";") {
+		part = strings.TrimSpace(part)
 		if part == "omitempty" {
 			result.OmitEmpty = true
 			continue

@@ -46,6 +46,7 @@ type ToolConfig struct {
 
 type TaskConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
+	Storage string        `mapstrcuture:"storage"`
 }
 
 type ClaudeProvider string
@@ -182,12 +183,13 @@ func setDefaults() {
 	viper.SetDefault("server.max_timeout", 10*time.Minute)
 	viper.SetDefault("server.graceful_shutdown_timeout", 30*time.Second)
 
+	hiveSpace := getDefaultHiveSpace()
 	// Tasks defaults
 	viper.SetDefault("task.timeout", 10*time.Minute)
+	viper.SetDefault("task.storage", hiveSpace+"/storage")
 	viper.SetDefault("bee.default_timeout", 2*time.Minute)
 	viper.SetDefault("tool.default_timeout", 1*time.Minute)
 
-	hiveSpace := getDefaultHiveSpace()
 	viper.SetDefault("workspace", hiveSpace+"/workspace")
 	viper.SetDefault("beehive", hiveSpace+"/behive")
 
