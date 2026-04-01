@@ -62,12 +62,6 @@ func (h hiveTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 
 // InvokableRun implements [tool.InvokableTool].
 func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
-	logger := trace.Logger(ctx)
-	logger.Info("tool execution started",
-		slog.String("tool", h.config.Name),
-		slog.String("runtime", h.config.Runtime),
-	)
-
 	var result string
 	var err error
 
@@ -79,20 +73,7 @@ func (h hiveTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 		result, err = h.handleHiveTool(ctx, argumentsInJSON)
 
 	default:
-		logger.Error("unsupported runtime", slog.String("runtime", h.config.Runtime))
 		return "", fmt.Errorf("not supported runtime: %s", h.config.Runtime)
-	}
-
-	if err != nil {
-		logger.Error("tool execution failed",
-			slog.String("tool", h.config.Name),
-			slog.Any("error", err),
-		)
-	} else {
-		logger.Info("tool execution completed",
-			slog.String("tool", h.config.Name),
-			slog.Int("output_length", len(result)),
-		)
 	}
 
 	return result, err
@@ -115,7 +96,6 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 	defer cancel()
 	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
 	if err != nil {
-		trace.Logger(ctx).Error("tool is not executable", slog.Any("error", err))
 		return "", fmt.Errorf("tool is not executable: %w", err)
 	}
 
@@ -136,9 +116,9 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 		return "", fmt.Errorf("failed to execute tools: %w", err)
 	}
 	if stderr.Len() > 0 {
-		trace.Logger(ctx).Debug("tool stderr output", slog.String("stderr", stderr.String()))
+		trace.Logger(ctx).DebugContext(ctx,"tool stderr output", slog.String("stderr", stderr.String()))
 	}
-	trace.Logger(ctx).Debug("tool stdout output", slog.Int("output_length", stdout.Len()))
+	trace.Logger(ctx).DebugContext(ctx,"tool stdout output", slog.Int("output_length", stdout.Len()))
 	return stdout.String(), nil
 }
 
@@ -152,7 +132,6 @@ func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (s
 	defer cancel()
 	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
 	if err != nil {
-		trace.Logger(ctx).Error("tool is not executable", slog.Any("error", err))
 		return "", fmt.Errorf("tool is not executable: %w", err)
 	}
 

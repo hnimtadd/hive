@@ -45,7 +45,7 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 		}
 	}
 	config.ToolsConfig.ToolCallMiddlewares = append(config.ToolsConfig.ToolCallMiddlewares, compose.ToolMiddleware{
-		Invokable: func(ite compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+		Invokable: func(handler compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 				trace.Logger(ctx).Info("tool invocation started",
 					slog.String("tool", input.Name),
@@ -53,7 +53,7 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 					slog.Int("args_length", len(input.Arguments)),
 				)
 
-				output, err := ite(ctx, input)
+				output, err := handler(ctx, input)
 
 				if err != nil {
 					trace.Logger(ctx).Error("tool invocation failed",
