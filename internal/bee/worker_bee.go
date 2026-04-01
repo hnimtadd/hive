@@ -50,7 +50,7 @@ type agent struct {
 	config *Config
 }
 
-func NewWorkerBee(config *Config) (WorkerBee, error) {
+func NewWorkerBee(config *Config, agentOpts ...react.AgentOption) (WorkerBee, error) {
 	systemPrompt, err := getSystemPrompt(config.Persona)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
@@ -61,6 +61,7 @@ func NewWorkerBee(config *Config) (WorkerBee, error) {
 		config.Tools,
 		systemPrompt,
 		config.MaxSteps,
+		agentOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)

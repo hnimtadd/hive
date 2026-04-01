@@ -50,13 +50,14 @@ func (s *supervisor) Capabilities() []string {
 	panic("unimplemented")
 }
 
-func NewSupervisorBee(config *Config) (SupervisorBee, error) {
+func NewSupervisorBee(config *Config, agentOpts ...react.AgentOption) (SupervisorBee, error) {
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
 		config.Tools,
 		config.Persona,
 		config.MaxSteps,
+		agentOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)

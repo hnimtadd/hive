@@ -19,10 +19,56 @@ type Agent struct {
 	agent        *einoreact.Agent
 	systemPrompt string
 	history      []*schema.Message
+	middlewares  []ToolExecutionMiddleware
+}
+
+// ToolExecutionMiddleware intercepts tool execution for logging, metrics, or streaming
+type ToolExecutionMiddleware func(ctx context.Context, event *ToolExecutionEvent) error
+
+// ToolExecutionEvent represents a tool execution lifecycle event
+type ToolExecutionEvent struct {
+	AgentID   string
+	ToolName  string
+	CallID    string
+	EventType ToolEventType
+	Input     string // JSON-encoded arguments
+	Output    string // JSON-encoded result
+	Error     error
+}
+
+// ToolEventType represents the stage of tool execution
+type ToolEventType string
+
+const (
+	ToolEventStarted   ToolEventType = "started"
+	ToolEventCompleted ToolEventType = "completed"
+	ToolEventFailed    ToolEventType = "failed"
+)
+
+// AgentOption configures the agent during creation
+type AgentOption func(*Agent)
+
+// WithToolMiddleware adds a custom middleware for tool execution tracking
+func WithToolMiddleware(middleware ToolExecutionMiddleware) AgentOption {
+	return func(a *Agent) {
+		a.middlewares = append(a.middlewares, middleware)
+	}
 }
 
 // NewWithSystemPrompt creates a new ReACT agent with a system prompt.
-func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string, maxStep int) (*Agent, error) {
+func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string, maxStep int, opts ...AgentOption) (*Agent, error) {
+	// Create agent with default values
+	a := &Agent{
+		id:           id,
+		systemPrompt: systemPrompt,
+		history:      []*schema.Message{},
+		middlewares:  []ToolExecutionMiddleware{},
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(a)
+	}
 	config := &einoreact.AgentConfig{
 		ToolCallingModel: chatModel,
 		MaxStep:          maxStep,
@@ -44,49 +90,86 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 			Tools: baseTools,
 		}
 	}
-	config.ToolsConfig.ToolCallMiddlewares = append(config.ToolsConfig.ToolCallMiddlewares, compose.ToolMiddleware{
-		Invokable: func(handler compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
-			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-				trace.Logger(ctx).Info("tool invocation started",
-					slog.String("tool", input.Name),
-					slog.String("call_id", input.CallID),
-					slog.Int("args_length", len(input.Arguments)),
-				)
 
-				output, err := handler(ctx, input)
+	// Add tool execution middleware that executes custom middlewares
+	config.ToolsConfig.ToolCallMiddlewares = append(
+		config.ToolsConfig.ToolCallMiddlewares,
+		compose.ToolMiddleware{
+			Invokable: func(handler compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+				return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 
-				if err != nil {
-					trace.Logger(ctx).Error("tool invocation failed",
-						slog.String("tool", input.Name),
-						slog.String("call_id", input.CallID),
-						slog.Any("error", err),
-					)
-					return output, err
+					// Fire STARTED event to custom middlewares
+					startEvent := &ToolExecutionEvent{
+						AgentID:   a.id,
+						ToolName:  input.Name,
+						CallID:    input.CallID,
+						EventType: ToolEventStarted,
+						Input:     input.Arguments,
+					}
+					for _, mw := range a.middlewares {
+						if err := mw(ctx, startEvent); err != nil {
+							trace.Logger(ctx).Error("middleware error on tool start",
+								slog.String("tool", input.Name),
+								slog.Any("error", err))
+						}
+					}
+
+					// Execute the tool
+					output, err := handler(ctx, input)
+
+					// Fire COMPLETED or FAILED event
+					if err != nil {
+						failedEvent := &ToolExecutionEvent{
+							AgentID:   a.id,
+							ToolName:  input.Name,
+							CallID:    input.CallID,
+							EventType: ToolEventFailed,
+							Input:     input.Arguments,
+							Error:     err,
+						}
+
+						for _, mw := range a.middlewares {
+							if mwErr := mw(ctx, failedEvent); mwErr != nil {
+								trace.Logger(ctx).Error("middleware error on tool failure",
+									slog.String("tool", input.Name),
+									slog.Any("error", mwErr))
+							}
+						}
+
+						return output, err
+					}
+
+					completedEvent := &ToolExecutionEvent{
+						AgentID:   a.id,
+						ToolName:  input.Name,
+						CallID:    input.CallID,
+						EventType: ToolEventCompleted,
+						Input:     input.Arguments,
+						Output:    output.Result,
+					}
+
+					for _, mw := range a.middlewares {
+						if mwErr := mw(ctx, completedEvent); mwErr != nil {
+							trace.Logger(ctx).Error("middleware error on tool completion",
+								slog.String("tool", input.Name),
+								slog.Any("error", mwErr))
+						}
+					}
+
+					return output, nil
 				}
-
-				trace.Logger(ctx).Info("tool invocation completed",
-					slog.String("tool", input.Name),
-					slog.String("call_id", input.CallID),
-					slog.Int("output_length", len(output.Result)),
-				)
-				return output, nil
-			}
-		},
-	})
+			},
+		})
 
 	// Create Eino's ReACT agent
 	ctx := context.Background()
-	agent, err := einoreact.NewAgent(ctx, config)
+	reactAgent, err := einoreact.NewAgent(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ReACT agent: %w", err)
 	}
 
-	return &Agent{
-		id:           id,
-		systemPrompt: systemPrompt,
-		history:      []*schema.Message{},
-		agent:        agent,
-	}, nil
+	a.agent = reactAgent
+	return a, nil
 }
 
 // ExecuteWithMessages runs the ReACT agent with conversation history.
