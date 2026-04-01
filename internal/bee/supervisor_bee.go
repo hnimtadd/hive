@@ -28,9 +28,9 @@ type SupervisorBee interface {
 }
 
 type SupervisorOutput struct {
-	Status     types.Status `json:"status"                jsonschema:"Current state: not_started, in_progress, completed, failed, pause"`
-	Content    string       `json:"content"               jsonschema:"The final answer or message for the user"`
-	NextAction string       `json:"next_action,omitempty" jsonschema:"next action you want to do"`
+	Status     types.Status `json:"status"                jsonschema:"Task status - 'in_progress': completed this cycle, need another cycle to continue; 'paused': need user input before next cycle; 'completed': task finished successfully; 'failed': task cannot be completed"`
+	Content    string       `json:"content"               jsonschema:"For in_progress: what you accomplished this cycle. For paused: question for user. For completed: final summary of results. For failed: reason for failure"`
+	NextAction string       `json:"next_action,omitempty" jsonschema:"What you plan to do in the next execution cycle (primarily for in_progress status)"`
 	Thought    string       `json:"-"`
 }
 
@@ -50,7 +50,7 @@ func (s *supervisor) Capabilities() []string {
 	panic("unimplemented")
 }
 
-func NewSupervisorAgent(config *Config) (SupervisorBee, error) {
+func NewSupervisorBee(config *Config) (SupervisorBee, error) {
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
@@ -96,7 +96,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	}
 	taskDescription, err := task.JSONString()
 	if err != nil {
-		logger.Error("failed to serialize task to JSON", slog.Any("error", err))
+		logger.ErrorContext(ctx, "failed to serialize task to JSON", slog.Any("error", err))
 		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.TimeoutInSec)*time.Second)
@@ -160,23 +160,30 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 		case types.TaskStatusCompleted,
 			types.TaskStatusFailed,
 			types.TaskStatusInProgress,
-			types.TaskStatusNotStarted,
 			types.TaskStatusPaused:
 			task.Status = agentOutput.Status
 		default:
-			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid task output status: %s", agentOutput.Status)))
+			msgs = append(
+				msgs,
+				schema.UserMessage(
+					fmt.Sprintf(
+						"invalid task output status: %s. Valid statuses are: 'in_progress' (need another execution cycle), 'paused' (need user input), 'completed' (task done), 'failed' (cannot complete)",
+						agentOutput.Status,
+					),
+				),
+			)
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid task status", nil)
 		}
 		return &agentOutput, nil
 	})
 
 	if err != nil {
-		logger.Error("supervisor execution failed",
+		logger.ErrorContext(ctx, "supervisor execution failed",
 			slog.String("task_id", task.ID),
 			slog.Any("error", err),
 		)
 	} else {
-		logger.Info("supervisor execution completed",
+		logger.InfoContext(ctx, "supervisor execution completed",
 			slog.String("task_id", task.ID),
 			slog.String("status", string(msg.Status)),
 		)

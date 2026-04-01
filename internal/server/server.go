@@ -45,7 +45,7 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 	// Use configured default timeout, capped at max timeout
 	timeout := cfg.Server.MaxTimeout
 
-	supervisor, err := bee.NewSupervisorAgent(&bee.Config{
+	supervisor, err := bee.NewSupervisorBee(&bee.Config{
 		ID:           uuid.New().String(),
 		Persona:      persona,
 		MaxSteps:     3,
@@ -228,15 +228,24 @@ loop:
 			break loop
 
 		case types.TaskStatusPaused:
-			trace.Logger(ctx).Error("task paused",
+			trace.Logger(ctx).Info("task paused, requesting user feedback",
 				slog.String("task_id", task.ID),
-				slog.String("reason", output.Content),
+				slog.String("question", output.Content),
 			)
+
+			// Store the supervisor's question in the conversation history
+			task.Messages = append(task.Messages, types.Message{
+				Role:    "assistant",
+				Content: output.Content,
+			})
+
 			update := mapper.ToTaskUpdateRequireFeedback(output)
 			if err = srv.Send(update); err != nil {
 				logger.Error("failed to require feedback from user", slog.Any("error", err))
 				return err
 			}
+
+			// Wait for user feedback
 			for {
 				msg, err = srv.Recv()
 				if err != nil {
@@ -248,21 +257,40 @@ loop:
 					logger.Warn("feedback from user is required")
 					continue
 				}
-				// TODO: feed feedback to model
-				logger.Info("user feedback received", slog.String("feedback", feedback.String()))
+
+				// Store the user's feedback in the conversation history
+				userFeedback := feedback.GetFeedback()
+				task.Messages = append(task.Messages, types.Message{
+					Role:    "user",
+					Content: userFeedback,
+				})
+
+				logger.Info("user feedback received and stored in task history",
+					slog.String("task_id", task.ID),
+					slog.String("feedback", userFeedback),
+				)
 				break
 			}
 
 		// TODO: mock the event stream to the internal model so client could have a visibility on tool calling and thoughts here
 		case types.TaskStatusInProgress:
+			// Store the progress update in the conversation history
+			task.Messages = append(task.Messages, types.Message{
+				Role:    "assistant",
+				Content: output.Content,
+			})
+
 			update := mapper.ToTaskUpdateInProgress(output)
 			if err = srv.Send(update); err != nil {
 				logger.Error("failed to send in progress update", slog.Any("error", err))
 				return err
 			}
 
-			logger.Info("task in progress", slog.String("status", string(output.Status)), slog.String("content", output.Content))
-			break loop
+			logger.Info("task in progress",
+				slog.String("task_id", task.ID),
+				slog.String("status", string(output.Status)),
+				slog.String("content", output.Content),
+			)
 		}
 	}
 	return nil
@@ -272,13 +300,40 @@ func getSupervisorPersona(registry bee.Registry) (string, error) {
 	agents := registry.ListAgents()
 	persona := `
 Role: You are the Central Orchestrator for a multi-agent swarm. Your goal is to navigate a complex task to completion by delegating to specialized workers.
+
 Core Responsibilities:
-	- Analyze State: Review the conversation history. Identify what has been achieved and what is still missing.
+	- Analyze State: Review the task's "message" field which contains the full conversation history, including your previous progress updates and any user feedback. Identify what has been achieved and what is still missing.
     - Prevent Redundancy: If a supervisee has already failed at a specific approach, do not assign them the same task again without new instructions.
     - Evaluate Capabilities: Match the requirements of the next step against the specific tools and expertise of the available agents.
-	- Terminate with Purpose:
-		* Output FINISH if the user's goal is met along with the information
-        * Output FAILED if the available agents lack the capabilities to proceed or if a logical dead-end is reached.
+	- Delegate and coordinate: Use available tools to delegate work to specialized agents.
+	- Context Awareness: Always check the "message" field in the task to see what was previously accomplished and what the user has said. This helps you avoid repeating work or asking the same questions.
+
+Status Selection Guidelines - Choose the appropriate status for each response:
+
+	1. "in_progress": Use this when you completed one execution cycle but need to continue in the next cycle.
+	   - You delegated to an agent and received results, but need to delegate to another agent or do more work
+	   - You gathered some information but need additional steps to complete the task
+	   - You made progress toward the goal but it's not yet complete
+	   - Set "content" to describe what you just accomplished (e.g., "Received search results from agent X, now analyzing...")
+	   - The system will immediately call you again to continue - your next invocation will have access to the tool results from this cycle
+	   - DO NOT use this when you need user input - use "paused" instead
+
+	2. "paused": Use this ONLY when you need information or clarification from the user before you can proceed.
+	   - The task requirements are ambiguous and you cannot proceed without clarification
+	   - You need the user to make a decision between multiple valid approaches
+	   - You require additional context that only the user can provide (not available through any agent)
+	   - Set "content" to your question for the user
+	   - The system will WAIT for user feedback, then call you again with their response
+
+	3. "completed": Use this when the user's goal is fully achieved.
+	   - All task requirements have been met and no further work is needed
+	   - Set "content" to a summary of what was accomplished and the final results
+
+	4. "failed": Use this when the task cannot be completed.
+	   - Available agents lack the necessary capabilities to fulfill the request
+	   - A logical dead-end is reached and there's no path forward
+	   - Set "content" to explain why the task cannot be completed
+
 Constraint: Do not perform the task yourself. Your only tools are delegation and synthesis.
 
 This is the task state, which is your input that you and your team are working with:

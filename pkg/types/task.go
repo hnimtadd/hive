@@ -47,6 +47,12 @@ func NewHiveTask(goal string) *HiveTask {
 		Status:    TaskStatusNotStarted,
 		Goal:      goal,
 		Artifacts: make(map[string]string),
+		Messages: []Message{
+			{
+				Role:    "user",
+				Content: goal,
+			},
+		},
 	}
 }
 
