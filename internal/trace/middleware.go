@@ -7,14 +7,14 @@ import (
 	"google.golang.org/grpc"
 )
 
-// UnaryServerInterceptor adds tracing to unary gRPC calls
+// UnaryServerInterceptor adds tracing to unary gRPC calls.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		// Create trace context
 		traceID := NewID()
 		ctx = ContextWithTrace(ctx, traceID)

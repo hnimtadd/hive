@@ -40,8 +40,6 @@ type agent struct {
 	persona      string
 	description  string
 	capabilities []string
-	timeout      int
-	maxTasks     int
 
 	outputValidator *jsonschema.Resolved
 
@@ -103,7 +101,8 @@ func (a *agent) Capabilities() []string {
 // Execute implements [WorkerBee].
 func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	logger := trace.Logger(ctx)
-	logger.Info("worker execution started",
+	logger.InfoContext(ctx,
+		"worker execution started",
 		slog.String("agent_id", a.id),
 		slog.String("task", input.Task),
 	)
@@ -116,7 +115,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	}
 	taskDescription, err := json.Marshal(input)
 	if err != nil {
-		logger.Error("failed to marshal task input", slog.Any("error", err))
+		logger.ErrorContext(ctx, "failed to marshal task input", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -172,12 +171,12 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 	})
 
 	if err != nil {
-		logger.Error("worker execution failed",
+		logger.ErrorContext(ctx, "worker execution failed",
 			slog.String("agent_id", a.id),
 			slog.Any("error", err),
 		)
 	} else {
-		logger.Info("worker execution completed",
+		logger.InfoContext(ctx, "worker execution completed",
 			slog.String("agent_id", a.id),
 			slog.String("status", string(output.Status)),
 		)
@@ -219,6 +218,6 @@ func (a *agent) GetType() string {
 }
 
 // Validate implements [WorkerBee].
-func (a *agent) Validate(input Input) error {
+func (a *agent) Validate(_ Input) error {
 	return nil
 }

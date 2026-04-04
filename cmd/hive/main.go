@@ -67,8 +67,8 @@ func executeCommand(command string) error {
 	}
 
 	// Start monitoring task progress
-	if err:= handleTask(srv, task);err != nil{
-		log.Printf("task handling failed: %s\n",err)
+	if err := handleTask(srv, task); err != nil {
+		log.Printf("task handling failed: %s\n", err)
 		srv.CloseSend()
 		return err
 	}

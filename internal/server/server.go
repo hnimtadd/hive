@@ -204,12 +204,13 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 
 	// Create tool event channel and streaming middleware
 	toolEventCh := make(chan *react.ToolExecutionEvent, 100)
-	streamingMW := react.StreamingMiddleware(toolEventCh)
+	streamingMW := react.EventStreamingMiddleware(toolEventCh)
+	ctx = react.ContextWithToolMiddleware(ctx, streamingMW)
 
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
 	supervisorConfig.ID = uuid.New().String()
-	supervisor, err := bee.NewSupervisorBee(&supervisorConfig, react.WithToolMiddleware(streamingMW))
+	supervisor, err := bee.NewSupervisorBee(&supervisorConfig)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create supervisor", slog.Any("error", err))
 		return fmt.Errorf("failed to create supervisor: %w", err)

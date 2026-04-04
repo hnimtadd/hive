@@ -76,7 +76,7 @@
             # Database
             sqlite
             redis
-            
+
             # Git operations
             git
 
@@ -103,7 +103,6 @@
             echo "Available commands:"
             echo "  go run cmd/hive/main.go     - Run the CLI"
             echo "  go run cmd/agent/main.go    - Run an agent worker"
-            echo "  redis-server                - Start Redis server"
             echo "  air                         - Live reload development"
             echo ""
             echo "Redis should be available at localhost:6379"

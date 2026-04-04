@@ -7,8 +7,25 @@ import (
 	"github.com/hnimtadd/hive/internal/trace"
 )
 
-// StreamingMiddleware creates a middleware that sends tool events to a channel
-func StreamingMiddleware(eventCh chan<- *ToolExecutionEvent) ToolExecutionMiddleware {
+type contextKey string
+
+const contextKeyMiddleware contextKey = "middleware"
+
+func ContextWithToolMiddleware(ctx context.Context, mw ToolExecutionMiddleware) context.Context {
+	return context.WithValue(ctx, contextKeyMiddleware, mw)
+}
+
+func MiddlewareFromContext(ctx context.Context) (ToolExecutionMiddleware, bool) {
+	mwAny := ctx.Value(contextKeyMiddleware)
+	mw, isMw := mwAny.(ToolExecutionMiddleware)
+	return mw, isMw
+}
+
+// ToolExecutionMiddleware intercepts tool execution for logging, metrics, or streaming
+type ToolExecutionMiddleware func(ctx context.Context, event *ToolExecutionEvent) error
+
+// EventStreamingMiddleware creates a middleware that sends tool events to a channel
+func EventStreamingMiddleware(eventCh chan<- *ToolExecutionEvent) ToolExecutionMiddleware {
 	return func(ctx context.Context, event *ToolExecutionEvent) error {
 		select {
 		case eventCh <- event:

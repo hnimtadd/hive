@@ -195,7 +195,7 @@ func setDefaults() {
 
 	viper.SetDefault("tracing.enabled", true)
 	viper.SetDefault("tracing.log_level", "info")
-	viper.SetDefault("tracing.log_format", "text")
+	viper.SetDefault("tracing.log_format", "json")
 	viper.SetDefault("tracing.log_file", "")
 	viper.SetDefault("tracing.add_source", false)
 }
