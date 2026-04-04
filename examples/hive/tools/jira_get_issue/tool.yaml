@@ -1,0 +1,26 @@
+name: "jira_get_issue"
+description: >
+  Retrieve a specific Jira issue by issue key.
+  Returns full issue details including summary, description, status, priority, assignee, and labels.
+runtime: "hive"
+entrypoint: ["jira_get_issue"]
+timeout: 30
+
+parameters:
+  type: "object"
+  properties:
+    issue_key:
+      type: "string"
+      description: "Issue key (e.g. 'PROJ-123')"
+  required: ["issue_key"]
+
+secret:
+  - key: "JIRA_USERNAME"
+    description: "Jira account email"
+    required: true
+  - key: "JIRA_ACCESS_TOKEN"
+    description: "Jira API token"
+    required: true
+  - key: "JIRA_BASE_URL"
+    description: "Jira instance URL (e.g. https://yourcompany.atlassian.net)"
+    required: true

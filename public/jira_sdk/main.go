@@ -2,178 +2,179 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
+	"github.com/andygrunwald/go-jira"
 	"github.com/hnimtadd/hive/pkg/hive"
 )
 
 type JiraSecrets struct {
-	Email   string `hive:"key=JIRA_EMAIL;description=Jira account email;required"`
-	Token   string `hive:"key=JIRA_API_TOKEN;description=Jira API token;required"`
-	BaseURL string `hive:"key=JIRA_BASE_URL;description=Jira instance URL (e.g. https://yourcompany.atlassian.net);required"`
+	Username string `hive:"key=JIRA_USERNAME;description=Jira account email;required"`
+	Token    string `hive:"key=JIRA_ACCESS_TOKEN;description=Jira API token;required"`
+	BaseURL  string `hive:"key=JIRA_BASE_URL;description=Jira instance URL (e.g. https://yourcompany.atlassian.net);required"`
 }
 
-// GetIssueInput retrieves a specific issue
+// GetIssueInput retrieves a specific issue.
 type GetIssueInput struct {
 	IssueKey string `json:"issue_key" jsonschema:"description=Issue key (e.g. 'PROJ-123')"`
 }
 
 type Issue struct {
-	Key    string     `json:"key"`
-	Fields IssueFields `json:"fields"`
+	Key     string `json:"key"`
+	Content string `json:"content"`
 }
 
-type IssueFields struct {
-	Summary     string      `json:"summary"`
-	Description string      `json:"description"`
-	Status      Status      `json:"status"`
-	IssueType   IssueType   `json:"issuetype"`
-	Priority    Priority    `json:"priority"`
-	Assignee    *User       `json:"assignee"`
-	Reporter    User        `json:"reporter"`
-	Created     time.Time   `json:"created"`
-	Updated     time.Time   `json:"updated"`
-	Labels      []string    `json:"labels"`
-}
-
-type Status struct {
-	Name string `json:"name"`
-}
-
-type IssueType struct {
-	Name string `json:"name"`
-}
-
-type Priority struct {
-	Name string `json:"name"`
-}
-
-type User struct {
-	DisplayName  string `json:"displayName"`
-	EmailAddress string `json:"emailAddress"`
-}
-
-// SearchIssuesInput searches for issues using JQL
-type SearchIssuesInput struct {
-	JQL        string `json:"jql" jsonschema:"description=JQL query string (e.g. 'project = PROJ AND status = Open')"`
-	MaxResults int    `json:"max_results" jsonschema:"description=Maximum number of issues to return (default: 50, max: 100)"`
-}
-
-type SearchIssuesOutput struct {
-	Issues     []Issue `json:"issues"`
-	Total      int     `json:"total"`
-	MaxResults int     `json:"max_results"`
-}
-
-type JiraClient struct {
-	baseURL string
-	email   string
-	token   string
-	client  *http.Client
-}
-
-func NewJiraClient(email, token, baseURL string) *JiraClient {
-	return &JiraClient{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
-		email:   email,
-		token:   token,
-		client:  &http.Client{Timeout: 30 * time.Second},
+func NewJiraClient(email, token, baseURL string) (*jira.Client, error) {
+	tp := jira.BasicAuthTransport{
+		Username: email,
+		Password: token,
 	}
-}
-
-func (c *JiraClient) doRequest(method, path string) ([]byte, error) {
-	url := c.baseURL + path
-
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Jira uses Basic Auth with email and API token
-	req.SetBasicAuth(c.email, c.token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("Jira API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	return body, nil
+	return jira.NewClient(tp.Client(), baseURL)
 }
 
 type JiraTool struct {
 	secrets *JiraSecrets
 }
 
-func (t *JiraTool) getIssue(ctx context.Context, input GetIssueInput) (Issue, error) {
-	client := NewJiraClient(t.secrets.Email, t.secrets.Token, t.secrets.BaseURL)
-
-	path := fmt.Sprintf("/rest/api/3/issue/%s", input.IssueKey)
-
-	body, err := client.doRequest("GET", path)
+func (t *JiraTool) getIssue(_ context.Context, input GetIssueInput) (Issue, error) {
+	client, err := NewJiraClient(t.secrets.Username, t.secrets.Token, t.secrets.BaseURL)
 	if err != nil {
-		return Issue{}, err
+		return Issue{}, fmt.Errorf("failed to create jira client: %w", err)
+	}
+	issue, _, err := client.Issue.Get(input.IssueKey, nil)
+	if err != nil {
+		return Issue{}, fmt.Errorf("failed to to fetch Jira ticket %s: %w", input.IssueKey, err)
 	}
 
-	var issue Issue
-	if err := json.Unmarshal(body, &issue); err != nil {
-		return Issue{}, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return issue, nil
+	return Issue{
+		Key:     input.IssueKey,
+		Content: buildResponse(issue),
+	}, nil
 }
 
-func (t *JiraTool) searchIssues(ctx context.Context, input SearchIssuesInput) (SearchIssuesOutput, error) {
-	client := NewJiraClient(t.secrets.Email, t.secrets.Token, t.secrets.BaseURL)
+func buildResponse(ticket *jira.Issue) string {
+	// Build a focused response for the agent
+	// Focus on CONTENT that helps understand what to build, not metadata
+	var response strings.Builder
 
-	// Set defaults
-	if input.MaxResults == 0 {
-		input.MaxResults = 50
-	}
-	if input.MaxResults > 100 {
-		input.MaxResults = 100
-	}
+	fmt.Fprintf(&response, "=== JIRA TICKET %s ===\n\n", ticket.Key)
+	fmt.Fprintf(&response, "Summary: %s\n\n", ticket.Fields.Summary)
 
-	// URL encode JQL
-	jql := strings.ReplaceAll(input.JQL, " ", "%20")
-	path := fmt.Sprintf("/rest/api/3/search?jql=%s&maxResults=%d", jql, input.MaxResults)
-
-	body, err := client.doRequest("GET", path)
-	if err != nil {
-		return SearchIssuesOutput{}, err
+	// Description (already processed by go-jira client as plain text)
+	if ticket.Fields.Description != "" {
+		response.WriteString("Description:\n")
+		response.WriteString(ticket.Fields.Description)
+		response.WriteString("\n\n")
 	}
 
-	var result struct {
-		Issues     []Issue `json:"issues"`
-		Total      int     `json:"total"`
-		MaxResults int     `json:"maxResults"`
+	// Basic metadata (keep it minimal)
+	response.WriteString("Metadata:\n")
+	if ticket.Fields.Type.Name != "" {
+		fmt.Fprintf(&response, "- Type: %s\n", ticket.Fields.Type.Name)
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return SearchIssuesOutput{}, fmt.Errorf("failed to parse response: %w", err)
+	if ticket.Fields.Status.Name != "" {
+		fmt.Fprintf(&response, "- Status: %s\n", ticket.Fields.Status.Name)
+	}
+	if ticket.Fields.Priority.Name != "" {
+		fmt.Fprintf(&response, "- Priority: %s\n", ticket.Fields.Priority.Name)
+	}
+	if ticket.Fields.Assignee != nil && ticket.Fields.Assignee.DisplayName != "" {
+		fmt.Fprintf(&response, "- Assignee: %s\n", ticket.Fields.Assignee.DisplayName)
+	}
+	response.WriteString("\n")
+
+	// Components and Labels (if relevant)
+	if len(ticket.Fields.Components) > 0 {
+		response.WriteString("Components: ")
+		compNames := []string{}
+		for _, comp := range ticket.Fields.Components {
+			compNames = append(compNames, comp.Name)
+		}
+		response.WriteString(strings.Join(compNames, ", "))
+		response.WriteString("\n\n")
 	}
 
-	return SearchIssuesOutput{
-		Issues:     result.Issues,
-		Total:      result.Total,
-		MaxResults: result.MaxResults,
-	}, nil
+	if len(ticket.Fields.Labels) > 0 {
+		fmt.Fprintf(&response, "Labels: %s\n\n", strings.Join(ticket.Fields.Labels, ", "))
+	}
+
+	// Sub-tasks (if any)
+	if len(ticket.Fields.Subtasks) > 0 {
+		fmt.Fprintf(&response, "Sub-tasks (%d):\n", len(ticket.Fields.Subtasks))
+		for i, subtask := range ticket.Fields.Subtasks {
+			if i >= 10 { // Limit to first 10
+				fmt.Fprintf(&response, "... and %d more sub-tasks\n", len(ticket.Fields.Subtasks)-10)
+				break
+			}
+			status := "Unknown"
+			if subtask.Fields.Status.Name != "" {
+				status = subtask.Fields.Status.Name
+			}
+			fmt.Fprintf(&response, "- %s: %s [%s]\n", subtask.Key, subtask.Fields.Summary, status)
+		}
+		response.WriteString("\n")
+	}
+
+	// Linked issues (if any)
+	if len(ticket.Fields.IssueLinks) > 0 {
+		fmt.Fprintf(&response, "Linked Issues (%d):\n", len(ticket.Fields.IssueLinks))
+		for i, link := range ticket.Fields.IssueLinks {
+			if i >= 10 { // Limit to first 10
+				fmt.Fprintf(&response, "... and %d more linked issues\n", len(ticket.Fields.IssueLinks)-10)
+				break
+			}
+			linkType := ""
+			linkedKey := ""
+			if link.Type.Name != "" {
+				linkType = link.Type.Name
+			}
+			if link.OutwardIssue != nil {
+				linkedKey = link.OutwardIssue.Key
+			} else if link.InwardIssue != nil {
+				linkedKey = link.InwardIssue.Key
+			}
+			fmt.Fprintf(&response, "- %s: %s\n", linkType, linkedKey)
+		}
+		response.WriteString("\n")
+	}
+
+	// Attachments (if any)
+	if len(ticket.Fields.Attachments) > 0 {
+		fmt.Fprintf(&response, "Attachments (%d):\n", len(ticket.Fields.Attachments))
+		for i, attachment := range ticket.Fields.Attachments {
+			if i >= 5 { // Limit to first 5
+				fmt.Fprintf(&response, "... and %d more attachments\n", len(ticket.Fields.Attachments)-5)
+				break
+			}
+			fmt.Fprintf(&response, "- %s (%s, %d bytes)\n", attachment.Filename, attachment.MimeType, attachment.Size)
+		}
+		response.WriteString("\n")
+	}
+
+	// Recent comments (most important - might contain decisions and clarifications)
+	if ticket.Fields.Comments != nil && len(ticket.Fields.Comments.Comments) > 0 {
+		fmt.Fprintf(&response, "Comments (%d total, showing most recent 5):\n", len(ticket.Fields.Comments.Comments))
+
+		// Show last 5 comments (most recent)
+		startIdx := max(len(ticket.Fields.Comments.Comments)-5, 0)
+
+		for i := startIdx; i < len(ticket.Fields.Comments.Comments); i++ {
+			comment := ticket.Fields.Comments.Comments[i]
+			author := "Unknown"
+			if comment.Author.DisplayName != "" {
+				author = comment.Author.DisplayName
+			}
+			fmt.Fprintf(&response, "\n--- Comment by %s ---\n", author)
+			response.WriteString(comment.Body) // go-jira already processes this as plain text
+			response.WriteString("\n")
+		}
+		response.WriteString("\n")
+	}
+
+	response.WriteString("=== END OF JIRA TICKET ===\n")
+	return response.String()
 }
 
 func main() {
@@ -192,21 +193,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create search_issues tool
-	searchTool, err := hive.NewTool(
-		"jira_search_issues",
-		"Search for Jira issues using JQL query",
-		jiraTool.searchIssues,
-		hive.WithSecret[SearchIssuesInput, SearchIssuesOutput](secrets),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create search_issues tool: %v\n", err)
-		os.Exit(1)
-	}
-
 	fmt.Fprintf(os.Stderr, "Jira tools created successfully\n")
-	fmt.Fprintf(os.Stderr, "Tools: %s, %s\n", getIssueTool.Name(), searchTool.Name())
-
+	fmt.Fprintf(os.Stderr, "Tools: %s\n", getIssueTool.Name())
 	// Serve the get_issue tool by default
 	getIssueTool.Serve()
 }

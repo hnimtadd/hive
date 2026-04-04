@@ -21,23 +21,23 @@ type GitLabSecrets struct {
 // GetMergeRequestInput retrieves a specific merge request
 type GetMergeRequestInput struct {
 	Project string `json:"project" jsonschema:"description=Project ID or path (e.g. 'group/project' or '12345')"`
-	MR      int    `json:"mr" jsonschema:"description=Merge request IID (internal ID)"`
+	MR      int    `json:"mr"      jsonschema:"description=Merge request IID (internal ID)"`
 }
 
 type MergeRequest struct {
-	IID         int       `json:"iid"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	State       string    `json:"state"`
-	Author      User      `json:"author"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	SourceBranch string   `json:"source_branch"`
-	TargetBranch string   `json:"target_branch"`
-	WebURL      string    `json:"web_url"`
-	SHA         string    `json:"sha"`
-	MergeStatus string    `json:"merge_status"`
-	Labels      []string  `json:"labels"`
+	IID          int       `json:"iid"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	State        string    `json:"state"`
+	Author       User      `json:"author"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	SourceBranch string    `json:"source_branch"`
+	TargetBranch string    `json:"target_branch"`
+	WebURL       string    `json:"web_url"`
+	SHA          string    `json:"sha"`
+	MergeStatus  string    `json:"merge_status"`
+	Labels       []string  `json:"labels"`
 }
 
 type User struct {
@@ -49,8 +49,8 @@ type User struct {
 // ListMergeRequestsInput lists merge requests for a project
 type ListMergeRequestsInput struct {
 	Project string `json:"project" jsonschema:"description=Project ID or path (e.g. 'group/project')"`
-	State   string `json:"state" jsonschema:"description=Filter by state: opened, closed, merged, all (default: opened)"`
-	Limit   int    `json:"limit" jsonschema:"description=Maximum number of MRs to return (default: 20, max: 100)"`
+	State   string `json:"state"   jsonschema:"description=Filter by state: opened, closed, merged, all (default: opened)"`
+	Limit   int    `json:"limit"   jsonschema:"description=Maximum number of MRs to return (default: 20, max: 100)"`
 }
 
 type ListMergeRequestsOutput struct {
@@ -61,7 +61,7 @@ type ListMergeRequestsOutput struct {
 // GetIssueInput retrieves a specific issue
 type GetIssueInput struct {
 	Project string `json:"project" jsonschema:"description=Project ID or path"`
-	Issue   int    `json:"issue" jsonschema:"description=Issue IID (internal ID)"`
+	Issue   int    `json:"issue"   jsonschema:"description=Issue IID (internal ID)"`
 }
 
 type Issue struct {

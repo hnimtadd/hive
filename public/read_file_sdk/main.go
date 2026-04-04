@@ -14,10 +14,10 @@ type ReadFileInput struct {
 }
 
 type ReadFileOutput struct {
-	Content  string `json:"content" jsonschema:"description=The file contents"`
-	Path     string `json:"path" jsonschema:"description=Absolute path of the file read"`
-	Size     int64  `json:"size" jsonschema:"description=File size in bytes"`
-	IsText   bool   `json:"is_text" jsonschema:"description=Whether the file is text (not binary)"`
+	Content string `json:"content" jsonschema:"description=The file contents"`
+	Path    string `json:"path"    jsonschema:"description=Absolute path of the file read"`
+	Size    int64  `json:"size"    jsonschema:"description=File size in bytes"`
+	IsText  bool   `json:"is_text" jsonschema:"description=Whether the file is text (not binary)"`
 }
 
 func readFile(ctx context.Context, input ReadFileInput) (ReadFileOutput, error) {

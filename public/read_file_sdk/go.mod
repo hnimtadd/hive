@@ -2,7 +2,7 @@ module github.com/hnimtadd/hive/examples/tools/read_file_sdk
 
 go 1.25.0
 
-replace github.com/hnimtadd/hive => ../../..
+replace github.com/hnimtadd/hive => ../..
 
 require github.com/hnimtadd/hive v0.0.0-00010101000000-000000000000
 

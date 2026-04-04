@@ -2,9 +2,12 @@ module github.com/hnimtadd/hive/examples/tools/jira_sdk
 
 go 1.25.0
 
-replace github.com/hnimtadd/hive => ../../..
+replace github.com/hnimtadd/hive => ../..
 
-require github.com/hnimtadd/hive v0.0.0-00010101000000-000000000000
+require (
+	github.com/andygrunwald/go-jira v1.17.0
+	github.com/hnimtadd/hive v0.0.0-00010101000000-000000000000
+)
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -16,6 +19,9 @@ require (
 	github.com/cloudwego/eino v0.7.36 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
+	github.com/fatih/structs v1.1.0 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -28,6 +34,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
+	github.com/trivago/tgo v1.0.7 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
