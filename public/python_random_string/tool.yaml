@@ -1,0 +1,15 @@
+name: "random_string"
+description: >
+  Compute a random string with random length
+
+runtime: "python"
+entrypoint: "tool.py"
+timeout: 30
+
+parameters:
+  type: "object"
+  properties:
+    length:
+      type: "integer"
+      description: "length of random string"
+  required: ["length"]
