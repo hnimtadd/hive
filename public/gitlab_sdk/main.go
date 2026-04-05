@@ -218,7 +218,7 @@ func main() {
 	// For now, serve the first tool (you'd need a multi-tool server in practice)
 	// Or create separate binaries for each
 	fmt.Fprintf(os.Stderr, "GitLab tools created successfully\n")
-	fmt.Fprintf(os.Stderr, "Tools: %s, %s, %s\n", getMRTool.Name())
+	fmt.Fprintf(os.Stderr, "Tools: %s\n", getMRTool.Name())
 
 	// Serve the get_mr tool by default
 	getMRTool.Serve()
