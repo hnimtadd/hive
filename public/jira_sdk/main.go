@@ -11,9 +11,9 @@ import (
 )
 
 type JiraSecrets struct {
-	Username string `hive:"key=JIRA_USERNAME;description=Jira account email;required"`
-	Token    string `hive:"key=JIRA_ACCESS_TOKEN;description=Jira API token;required"`
-	BaseURL  string `hive:"key=JIRA_BASE_URL;description=Jira instance URL (e.g. https://yourcompany.atlassian.net);required"`
+	Username string `hive:"key=JIRA_USERNAME;description=Jira account email"`
+	Token    string `hive:"key=JIRA_ACCESS_TOKEN;description=Jira API token"`
+	BaseURL  string `hive:"key=JIRA_BASE_URL;description=Jira instance URL (e.g. https://yourcompany.atlassian.net)"`
 }
 
 // GetIssueInput retrieves a specific issue.

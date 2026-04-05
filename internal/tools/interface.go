@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -94,7 +96,11 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
 	defer cancel()
-	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
+	fullPath := h.config.Entrypoint[0]
+	if strings.HasPrefix(fullPath, "./") {
+		fullPath = path.Join(h.config.path, fullPath)
+	}
+	cmdPath, err := exec.LookPath(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("tool is not executable: %w", err)
 	}
@@ -116,9 +122,9 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 		return "", fmt.Errorf("failed to execute tools: %w", err)
 	}
 	if stderr.Len() > 0 {
-		trace.Logger(ctx).DebugContext(ctx,"tool stderr output", slog.String("stderr", stderr.String()))
+		trace.Logger(ctx).DebugContext(ctx, "tool stderr output", slog.String("stderr", stderr.String()))
 	}
-	trace.Logger(ctx).DebugContext(ctx,"tool stdout output", slog.Int("output_length", stdout.Len()))
+	trace.Logger(ctx).DebugContext(ctx, "tool stdout output", slog.Int("output_length", stdout.Len()))
 	return stdout.String(), nil
 }
 
@@ -130,7 +136,11 @@ func (h hiveTool) handleHiveTool(ctx context.Context, argumentsInJSON string) (s
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, time.Duration(h.config.TimeoutInSec)*time.Second)
 	defer cancel()
-	cmdPath, err := exec.LookPath(h.config.Entrypoint[0])
+	fullPath := h.config.Entrypoint[0]
+	if strings.HasPrefix(fullPath, "./") {
+		fullPath = path.Join(h.config.path, fullPath)
+	}
+	cmdPath, err := exec.LookPath(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("tool is not executable: %w", err)
 	}

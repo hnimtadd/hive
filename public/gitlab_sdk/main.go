@@ -14,7 +14,7 @@ import (
 )
 
 type GitLabSecrets struct {
-	Token   string `hive:"key=GITLAB_TOKEN;description=GitLab personal access token or OAuth token;required"`
+	Token   string `hive:"key=GITLAB_ACCESS_TOKEN;description=GitLab personal access token or OAuth token;required"`
 	BaseURL string `hive:"key=GITLAB_BASE_URL;description=GitLab API base URL (default: https://gitlab.com/api/v4);omitempty"`
 }
 
@@ -147,57 +147,57 @@ func (t *GitLabTool) getMergeRequest(ctx context.Context, input GetMergeRequestI
 	return mr, nil
 }
 
-func (t *GitLabTool) listMergeRequests(ctx context.Context, input ListMergeRequestsInput) (ListMergeRequestsOutput, error) {
-	client := NewGitLabClient(t.secrets.Token, t.secrets.BaseURL)
+// func (t *GitLabTool) listMergeRequests(ctx context.Context, input ListMergeRequestsInput) (ListMergeRequestsOutput, error) {
+// 	client := NewGitLabClient(t.secrets.Token, t.secrets.BaseURL)
+//
+// 	// Set defaults
+// 	if input.State == "" {
+// 		input.State = "opened"
+// 	}
+// 	if input.Limit == 0 {
+// 		input.Limit = 20
+// 	}
+// 	if input.Limit > 100 {
+// 		input.Limit = 100
+// 	}
+//
+// 	projectPath := strings.ReplaceAll(input.Project, "/", "%2F")
+// 	path := fmt.Sprintf("/projects/%s/merge_requests?state=%s&per_page=%d", projectPath, input.State, input.Limit)
+//
+// 	body, err := client.doRequest("GET", path)
+// 	if err != nil {
+// 		return ListMergeRequestsOutput{}, err
+// 	}
+//
+// 	var mrs []MergeRequest
+// 	if err := json.Unmarshal(body, &mrs); err != nil {
+// 		return ListMergeRequestsOutput{}, fmt.Errorf("failed to parse response: %w", err)
+// 	}
+//
+// 	return ListMergeRequestsOutput{
+// 		MergeRequests: mrs,
+// 		Count:         len(mrs),
+// 	}, nil
+// }
 
-	// Set defaults
-	if input.State == "" {
-		input.State = "opened"
-	}
-	if input.Limit == 0 {
-		input.Limit = 20
-	}
-	if input.Limit > 100 {
-		input.Limit = 100
-	}
-
-	projectPath := strings.ReplaceAll(input.Project, "/", "%2F")
-	path := fmt.Sprintf("/projects/%s/merge_requests?state=%s&per_page=%d", projectPath, input.State, input.Limit)
-
-	body, err := client.doRequest("GET", path)
-	if err != nil {
-		return ListMergeRequestsOutput{}, err
-	}
-
-	var mrs []MergeRequest
-	if err := json.Unmarshal(body, &mrs); err != nil {
-		return ListMergeRequestsOutput{}, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return ListMergeRequestsOutput{
-		MergeRequests: mrs,
-		Count:         len(mrs),
-	}, nil
-}
-
-func (t *GitLabTool) getIssue(ctx context.Context, input GetIssueInput) (Issue, error) {
-	client := NewGitLabClient(t.secrets.Token, t.secrets.BaseURL)
-
-	projectPath := strings.ReplaceAll(input.Project, "/", "%2F")
-	path := fmt.Sprintf("/projects/%s/issues/%d", projectPath, input.Issue)
-
-	body, err := client.doRequest("GET", path)
-	if err != nil {
-		return Issue{}, err
-	}
-
-	var issue Issue
-	if err := json.Unmarshal(body, &issue); err != nil {
-		return Issue{}, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return issue, nil
-}
+// func (t *GitLabTool) getIssue(ctx context.Context, input GetIssueInput) (Issue, error) {
+// 	client := NewGitLabClient(t.secrets.Token, t.secrets.BaseURL)
+//
+// 	projectPath := strings.ReplaceAll(input.Project, "/", "%2F")
+// 	path := fmt.Sprintf("/projects/%s/issues/%d", projectPath, input.Issue)
+//
+// 	body, err := client.doRequest("GET", path)
+// 	if err != nil {
+// 		return Issue{}, err
+// 	}
+//
+// 	var issue Issue
+// 	if err := json.Unmarshal(body, &issue); err != nil {
+// 		return Issue{}, fmt.Errorf("failed to parse response: %w", err)
+// 	}
+//
+// 	return issue, nil
+// }
 
 func main() {
 	secrets := &GitLabSecrets{}
@@ -215,34 +215,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create list_merge_requests tool
-	listMRTool, err := hive.NewTool(
-		"gitlab_list_mrs",
-		"List merge requests for a GitLab project",
-		gitlabTool.listMergeRequests,
-		hive.WithSecret[ListMergeRequestsInput, ListMergeRequestsOutput](secrets),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create list_mrs tool: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create get_issue tool
-	getIssueTool, err := hive.NewTool(
-		"gitlab_get_issue",
-		"Retrieve a specific GitLab issue by project and issue IID",
-		gitlabTool.getIssue,
-		hive.WithSecret[GetIssueInput, Issue](secrets),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create get_issue tool: %v\n", err)
-		os.Exit(1)
-	}
-
 	// For now, serve the first tool (you'd need a multi-tool server in practice)
 	// Or create separate binaries for each
 	fmt.Fprintf(os.Stderr, "GitLab tools created successfully\n")
-	fmt.Fprintf(os.Stderr, "Tools: %s, %s, %s\n", getMRTool.Name(), listMRTool.Name(), getIssueTool.Name())
+	fmt.Fprintf(os.Stderr, "Tools: %s, %s, %s\n", getMRTool.Name())
 
 	// Serve the get_mr tool by default
 	getMRTool.Serve()

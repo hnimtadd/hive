@@ -3,7 +3,7 @@ description: >
   Write content to a file on the filesystem.
   Creates file and parent directories if needed, supports append mode.
 runtime: "hive"
-entrypoint: ["write_file"]
+entrypoint: ["./write_file"]
 timeout: 30
 
 parameters:

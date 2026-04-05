@@ -1,9 +1,9 @@
-name: "gitlab_get_mrs"
+name: "gitlab_get_mr"
 description: >
   Retrieve a specific GitLab merge request by project and MR IID.
   Returns full MR details including title, description, author, branches, status, and labels.
 runtime: "hive"
-entrypoint: ["gitlab_get_mr"]
+entrypoint: ["./gitlab_get_mr"]
 timeout: 30
 
 parameters:
@@ -18,7 +18,7 @@ parameters:
   required: ["project", "mr"]
 
 secret:
-  - key: "GITLAB_TOKEN"
+  - key: "GITLAB_ACCESS_TOKEN"
     description: "GitLab personal access token or OAuth token"
     required: true
   - key: "GITLAB_BASE_URL"

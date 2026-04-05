@@ -3,7 +3,7 @@ description: >
   Retrieve a specific Jira issue by issue key.
   Returns full issue details including summary, description, status, priority, assignee, and labels.
 runtime: "hive"
-entrypoint: ["jira_get_issue"]
+entrypoint: ["./jira_get_issue"]
 timeout: 30
 
 parameters:

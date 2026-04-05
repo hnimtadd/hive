@@ -3,7 +3,7 @@ description: >
   Read contents of a text file from the filesystem.
   Supports files up to 10MB, automatically detects binary files.
 runtime: "hive"
-entrypoint: ["read_file"]
+entrypoint: ["./read_file"]
 timeout: 30
 
 parameters:

@@ -28,6 +28,7 @@ func LoadToolConfig(toolYamlPath string) (*Config, error) {
 	if len(cfg.Entrypoint) == 0 {
 		return nil, fmt.Errorf("tool at %s is missing entrypoint", toolYamlPath)
 	}
+	fmt.Println("<===== path", cfg.path)
 
 	return &cfg, nil
 }

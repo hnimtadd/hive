@@ -3,7 +3,7 @@ description: >
   Execute shell commands with safety checks and timeout protection.
   Supports git operations, package managers, build tools, and testing.
 runtime: "hive"
-entrypoint: ["shell_execute"]
+entrypoint: ["./shell_execute"]
 timeout: 600
 
 parameters:
