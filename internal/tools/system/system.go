@@ -30,9 +30,15 @@ func Tools() (map[string]tool.InvokableTool, error) {
 
 	fileWriteTool, err := FileWriteTool()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create file_edit tool: %w", err)
+		return nil, fmt.Errorf("failed to create file_write tool: %w", err)
 	}
 	tools["file_write"] = fileWriteTool
+
+	shellTool, err := ShellTool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shell tool: %w", err)
+	}
+	tools["shell"] = shellTool
 
 	return tools, nil
 }
