@@ -17,41 +17,41 @@ import (
 // Registry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
-	ListAgents() []WorkerBee
+	ListAgents() []Bee
 	// GetByID get agent by agent ID
-	GetByID(id string) (WorkerBee, bool)
+	GetByID(id string) (Bee, bool)
 }
 
 type registry struct {
-	agents map[string]WorkerBee
-	tools  map[string]tool.InvokableTool
-	path   string
+	bees  map[string]Bee
+	tools map[string]tool.InvokableTool
+	path  string
 }
 
 // ListAgents implements [Registry].
-func (a *registry) ListAgents() []WorkerBee {
-	return slices.Collect(maps.Values(a.agents))
+func (a *registry) ListAgents() []Bee {
+	return slices.Collect(maps.Values(a.bees))
 }
 
-func (a *registry) GetByID(id string) (WorkerBee, bool) {
-	agent, ok := a.agents[id]
+func (a *registry) GetByID(id string) (Bee, bool) {
+	agent, ok := a.bees[id]
 
 	return agent, ok
 }
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
+func (a *registry) scan(cfg *config.Config) ([]Bee, error) {
 	entries, err := os.ReadDir(a.path)
 	if err != nil {
 		log.Printf("failed to read agents home: %s\n", err)
-		return []WorkerBee{}, nil
+		return []Bee{}, nil
 	}
 
 	// Use server timeout as default for agents, with a reasonable max cap (2x default)
 	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
 
-	agents := []WorkerBee{}
+	agents := []Bee{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -89,7 +89,7 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
 		beeConfig.Tools = tools
 		beeConfig.LLM = llm
-		workerAgent, err := NewWorkerBee(beeConfig)
+		workerAgent, err := NewCustomBee(beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
 			continue
@@ -104,16 +104,16 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
-		agents: make(map[string]WorkerBee),
-		tools:  agentTools,
-		path:   appConfig.Bees.Dir,
+		bees:  make(map[string]Bee),
+		tools: agentTools,
+		path:  appConfig.Bees.Dir,
 	}
 	agents, err := reg.scan(appConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan agents: %w", err)
 	}
 	for _, agent := range agents {
-		reg.agents[agent.GetID()] = agent
+		reg.bees[agent.GetID()] = agent
 	}
 	return reg, nil
 }

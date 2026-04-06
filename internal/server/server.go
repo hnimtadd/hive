@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee"
+	"github.com/hnimtadd/hive/internal/bee/react"
+	"github.com/hnimtadd/hive/internal/bee/system"
 	"github.com/hnimtadd/hive/internal/mapper"
-	"github.com/hnimtadd/hive/internal/model/react"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
@@ -62,7 +62,6 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 		MaxSteps:     3,
 		TimeoutInSec: int(timeout.Seconds()),
 		LLM:          llm,
-		Tools:        []tool.InvokableTool{bee.DelegateTool(registry)},
 	}
 
 	return &HiveServer{
@@ -210,7 +209,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
 	supervisorConfig.ID = uuid.New().String()
-	supervisor, err := bee.NewSupervisorBee(&supervisorConfig)
+	supervisor, err := system.NewSupervisorBee(s.registry, &supervisorConfig)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create supervisor", slog.Any("error", err))
 		return fmt.Errorf("failed to create supervisor: %w", err)
@@ -228,7 +227,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 
 loop:
 	for {
-		var output *bee.SupervisorOutput
+		var output *system.SupervisorOutput
 
 		// Create a timeout context for each supervisor execution iteration
 		execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -238,7 +237,7 @@ loop:
 			// Check for timeout errors
 			if ctx.Err() == context.DeadlineExceeded || execCtx.Err() == context.DeadlineExceeded {
 				logger.Error("task execution timed out", slog.String("task_id", task.ID), slog.Duration("timeout", timeout))
-				timeoutUpdate := mapper.ToTaskUpdateFailed(&bee.SupervisorOutput{
+				timeoutUpdate := mapper.ToTaskUpdateFailed(&system.SupervisorOutput{
 					Status:  types.TaskStatusFailed,
 					Content: fmt.Sprintf("Task execution timed out after %s", timeout),
 				})
@@ -434,7 +433,7 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}
-	outputDescription, err := utils.DescribeJSONSchema[bee.SupervisorOutput]()
+	outputDescription, err := utils.DescribeJSONSchema[system.SupervisorOutput]()
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}

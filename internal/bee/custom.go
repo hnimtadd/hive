@@ -13,12 +13,13 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
+	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
 )
 
 // WorkerBee defines the interface that all Hive agents must implement
 // This interface enables pluggable agents that can be moved to hashicorp gRPC plugins later.
-type WorkerBee interface {
+type Bee interface {
 	BaseBee
 
 	// CanHandle determines if this agent can process the given task
@@ -35,6 +36,18 @@ type WorkerBee interface {
 	Validate(task Input) error
 }
 
+type Output struct {
+	Status       types.Status      `json:"status"               jsonschema:"Updated job state, either: not_started, in_progress, completed, failed, paused"`
+	Observations string            `json:"observations"         jsonschema:"What did you find? This will be added to history."`
+	NewArtifacts map[string]string `json:"new_artifacts"        jsonschema:"Any data found (e.g., ticket_details, log_snippet)"`
+	NextSteps    string            `json:"next_steps,omitempty" jsonschema:"Optional suggestion for the supervisor"`
+}
+type Input struct {
+	Context   string            `json:"status"    jsonschema:"High-level goal for the entire run"`
+	Task      string            `json:"task"      jsonschema:"The exact instruction from the supervisor"`
+	Artifacts map[string]string `json:"artifacts" jsonschema:"specfic data relevant to your task"`
+}
+
 type agent struct {
 	id           string
 	persona      string
@@ -43,12 +56,12 @@ type agent struct {
 
 	outputValidator *jsonschema.Resolved
 
-	agent *react.Model
+	agent *react.Agent
 
 	config *Config
 }
 
-func NewWorkerBee(config *Config, agentOpts ...react.AgentOption) (WorkerBee, error) {
+func NewCustomBee(config *Config, agentOpts ...react.AgentOption) (Bee, error) {
 	systemPrompt, err := getSystemPrompt(config.Persona)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)

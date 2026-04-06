@@ -13,8 +13,8 @@ import (
 	"github.com/hnimtadd/hive/internal/trace"
 )
 
-// Model is a simplified ReACT agent wrapper.
-type Model struct {
+// Agent is a simplified ReACT agent wrapper.
+type Agent struct {
 	id           string
 	agent        *einoreact.Agent
 	systemPrompt string
@@ -42,12 +42,12 @@ const (
 )
 
 // AgentOption configures the agent during creation.
-type AgentOption func(*Model)
+type AgentOption func(*Agent)
 
 // NewWithSystemPrompt creates a new ReACT agent with a system prompt.
-func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string, maxStep int, opts ...AgentOption) (*Model, error) {
+func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools []tool.InvokableTool, systemPrompt string, maxStep int, opts ...AgentOption) (*Agent, error) {
 	// Create agent with default values
-	a := &Model{
+	a := &Agent{
 		id:           id,
 		systemPrompt: systemPrompt,
 		history:      []*schema.Message{},
@@ -97,7 +97,7 @@ func NewWithSystemPrompt(id string, chatModel model.ToolCallingChatModel, tools 
 }
 
 // ExecuteWithMessages runs the ReACT agent with conversation history.
-func (a *Model) ExecuteWithMessages(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
+func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
 	trace.Logger(ctx).DebugContext(ctx, "ReACT agent generating",
 		slog.String("agent_id", a.id),
 		slog.Int("message_count", len(messages)),
@@ -121,17 +121,17 @@ func (a *Model) ExecuteWithMessages(ctx context.Context, messages []*schema.Mess
 }
 
 // Execute runs the ReACT agent with stateful message.
-func (a *Model) Execute(ctx context.Context, message string) (*schema.Message, error) {
+func (a *Agent) Execute(ctx context.Context, message string) (*schema.Message, error) {
 	a.history = append(a.history, schema.UserMessage(message))
 	return a.agent.Generate(ctx, a.history)
 }
 
 // ID returns the agent ID.
-func (a *Model) ID() string {
+func (a *Agent) ID() string {
 	return a.id
 }
 
-func (a *Model) invokableToolMiddleware() compose.InvokableToolMiddleware {
+func (a *Agent) invokableToolMiddleware() compose.InvokableToolMiddleware {
 	return func(handler compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 			mw, isInjected := MiddlewareFromContext(ctx)

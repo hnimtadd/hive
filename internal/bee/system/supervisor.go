@@ -1,24 +1,28 @@
-package bee
+package system
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"slices"
 	"time"
 
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
-	"github.com/hnimtadd/hive/pkg/utils"
+	hiveutils "github.com/hnimtadd/hive/pkg/utils"
 )
 
 type SupervisorBee interface {
-	BaseBee
+	bee.BaseBee
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
@@ -41,8 +45,8 @@ type supervisor struct {
 
 	outputValidator *jsonschema.Resolved
 
-	reactAgent *react.Model
-	config     *Config
+	reactAgent *react.Agent
+	config     *bee.Config
 }
 
 // Capabilities implements [SupervisorBee].
@@ -50,7 +54,8 @@ func (s *supervisor) Capabilities() []string {
 	panic("unimplemented")
 }
 
-func NewSupervisorBee(config *Config, agentOpts ...react.AgentOption) (SupervisorBee, error) {
+func NewSupervisorBee(registry bee.Registry, config *bee.Config, agentOpts ...react.AgentOption) (SupervisorBee, error) {
+	config.Tools = append(config.Tools, delegateTool(registry))
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
@@ -83,7 +88,7 @@ func NewSupervisorBee(config *Config, agentOpts ...react.AgentOption) (Superviso
 // Execute implements [SupervisorBee].
 func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*SupervisorOutput, error) {
 	logger := trace.Logger(ctx)
-	logger.Info("supervisor execution started",
+	logger.InfoContext(ctx, "supervisor execution started",
 		slog.String("supervisor_id", s.id),
 		slog.String("task_id", task.ID),
 		slog.String("task_status", string(task.Status)),
@@ -130,7 +135,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 		}()
 		msgs = append(msgs, result)
 
-		content, err = utils.HeristicallyExtractJSONString(content)
+		content, err = hiveutils.HeristicallyExtractJSONString(content)
 		if err != nil {
 			trace.Logger(ctx).Debug("failed to extract JSON string", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
@@ -206,4 +211,73 @@ func (s *supervisor) GetID() string {
 // GetType implements [SupervisorBee].
 func (s *supervisor) GetType() string {
 	panic("unimplemented")
+}
+
+type delegateTaskInput struct {
+	bee.Input
+
+	ID string `json:"agent_id"`
+}
+
+func delegateTool(registry bee.Registry) tool.InvokableTool {
+	// Manually define ToolInfo
+	toolInfo := &schema.ToolInfo{
+		Name: "delegate_agent",
+		Desc: "Look up if an agent with ID is exists and delegate task to that agent",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"agent_id": {Type: "string", Desc: "Agent ID"},
+			"context":  {Type: "string", Desc: "The global context that the agent need to be aware about"},
+			"task":     {Type: "string", Desc: "The detail task that agent have to complete in this run"},
+			"artifact": {Type: schema.Object, Desc: "artifacts that the agent need to execute"},
+		}),
+	}
+
+	// Create enhanced tool
+	return utils.NewTool(
+		toolInfo,
+		func(ctx context.Context, input *delegateTaskInput) (*schema.ToolResult, error) {
+			a, exists := registry.GetByID(input.ID)
+			if !exists {
+				log.Println("agent with ID not found", input.ID)
+				return &schema.ToolResult{
+					Parts: []schema.ToolOutputPart{
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s not found", input.ID)},
+					},
+				}, nil
+			}
+			i := &bee.Input{
+				Context:   input.Context,
+				Artifacts: input.Artifacts,
+				Task:      input.Task,
+			}
+
+			if !a.CanHandle(i) {
+				log.Println("agent can't handle")
+				return &schema.ToolResult{
+					Parts: []schema.ToolOutputPart{
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s could not handle the task", input.ID)},
+					},
+				}, nil
+			}
+			output, err := a.Execute(ctx, i)
+			if err != nil {
+				log.Println("failed to execute", err)
+				return &schema.ToolResult{
+					Parts: []schema.ToolOutputPart{
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s failed to not handle the task: %s", input.ID, err)},
+					},
+				}, nil
+			}
+			outputJSON, err := json.Marshal(output)
+			if err != nil {
+				return &schema.ToolResult{
+					Parts: []schema.ToolOutputPart{
+						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to convert output to a json: %v", err)},
+					},
+				}, nil
+			}
+
+			return &schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: string(outputJSON)}}}, nil
+		},
+	)
 }
