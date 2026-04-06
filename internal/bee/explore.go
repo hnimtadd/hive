@@ -1,4 +1,4 @@
-package system
+package bee
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/trace"
 	hiveerrors "github.com/hnimtadd/hive/pkg/errors"
@@ -66,12 +65,12 @@ type exploreBee struct {
 	id              string
 	description     string
 	agent           *react.Agent
-	config          *bee.Config
+	config          *Config
 	outputValidator *jsonschema.Resolved
 }
 
 // NewExploreBee creates a new Explore agent with read-only tools.
-func NewExploreBee(config *bee.Config, agentOpts ...react.AgentOption) (ExploreBee, error) {
+func NewExploreBee(config *Config, agentOpts ...react.AgentOption) (ExploreBee, error) {
 	// Filter tools to only allow read operations
 	readOnlyTools := filterReadOnlyTools(config.Tools)
 	if len(readOnlyTools) == 0 {
@@ -284,46 +283,49 @@ func (e *exploreBee) Explore(ctx context.Context, input *ExploreInput) (*Explore
 	return output, err
 }
 
-func Explore(ctx context.Context, input *ExploreInput) (*schema.ToolResult, error) {
-	logger := trace.Logger(ctx)
+func Explore(cfg *Config) func(ctx context.Context, input *ExploreInput) (*schema.ToolResult, error) {
+	return func(ctx context.Context, input *ExploreInput) (*schema.ToolResult, error) {
+		logger := trace.Logger(ctx)
 
-	logger.InfoContext(ctx,
-		"explore execution started",
-		slog.String("task", input.Task),
-		slog.String("thoroughness", string(input.Thoroughness)),
-	)
-	// Set default thoroughness if not specified
-	if input.Thoroughness == "" {
-		input.Thoroughness = ThoroughnessQuick
-	}
+		logger.InfoContext(ctx,
+			"explore execution started",
+			slog.String("task", input.Task),
+			slog.String("thoroughness", string(input.Thoroughness)),
+		)
+		// Set default thoroughness if not specified
+		if input.Thoroughness == "" {
+			input.Thoroughness = ThoroughnessQuick
+		}
 
-	// Validate thoroughness level
-	validThoroughness := []ThoroughnessLevel{ThoroughnessQuick, ThoroughnessMedium, ThoroughnessVeryThorough}
-	if !slices.Contains(validThoroughness, input.Thoroughness) {
-		input.Thoroughness = ThoroughnessQuick
-	}
-	agent, err := NewExploreBee(&bee.Config{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to init explore agent: %w", err)
-	}
-	output, err := agent.Explore(ctx, input)
-	if err != nil {
+		// Validate thoroughness level
+		validThoroughness := []ThoroughnessLevel{ThoroughnessQuick, ThoroughnessMedium, ThoroughnessVeryThorough}
+		if !slices.Contains(validThoroughness, input.Thoroughness) {
+			input.Thoroughness = ThoroughnessQuick
+		}
+		agent, err := NewExploreBee(&Config{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to init explore agent: %w", err)
+		}
+		output, err := agent.Explore(ctx, input)
+		if err != nil {
+			return &schema.ToolResult{Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("failed to explore: %s", err)}},
+			}, nil
+		}
+		outputBytes, err := json.Marshal(output)
+		if err != nil {
+			return &schema.ToolResult{
+				Parts: []schema.ToolOutputPart{
+					{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("failed to explore: failed to marshal output %s", err)},
+				}}, nil
+		}
 		return &schema.ToolResult{Parts: []schema.ToolOutputPart{
-			{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("failed to explore: %s", err)}},
-		}, nil
+			{Type: schema.ToolPartTypeText, Text: string(outputBytes)},
+		}}, nil
 	}
-	outputBytes, err := json.Marshal(output)
-	if err != nil {
-		return &schema.ToolResult{
-			Parts: []schema.ToolOutputPart{
-				{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("failed to explore: failed to marshal output %s", err)},
-			}}, nil
-	}
-	return &schema.ToolResult{Parts: []schema.ToolOutputPart{
-		{Type: schema.ToolPartTypeText, Text: string(outputBytes)},
-	}}, nil
 }
 
-func ExploreTool() (tool.InvokableTool, error) {
-	return utils.InferTool("explore", "Fast read-only agent tool optimized for searching and analyzing codebases", Explore)
+func exploreTool(cfg *Config) tool.InvokableTool {
+	tool, _ := utils.InferTool("explore", "Fast read-only agent tool optimized for searching and analyzing codebases", Explore(cfg))
+	return tool
 }

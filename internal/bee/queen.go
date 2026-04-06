@@ -49,7 +49,10 @@ type queen struct {
 }
 
 func NewqueenBee(registry Registry, config *Config, agentOpts ...react.AgentOption) (QueenBee, error) {
-	config.Tools = append(config.Tools, delegateTool(registry))
+	config.Tools = append(config.Tools,
+		delegateTool(registry),
+		exploreTool(config),
+	)
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
