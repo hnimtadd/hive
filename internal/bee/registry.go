@@ -9,7 +9,7 @@ import (
 	"slices"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/hnimtadd/hive/internal/llm"
+	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
 )

@@ -8,7 +8,7 @@ import (
 	"syscall"
 
 	"github.com/hnimtadd/hive/internal/bee"
-	"github.com/hnimtadd/hive/internal/llm"
+	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/internal/trace"

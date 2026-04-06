@@ -43,7 +43,7 @@ type agent struct {
 
 	outputValidator *jsonschema.Resolved
 
-	agent *react.Agent
+	agent *react.Model
 
 	config *Config
 }

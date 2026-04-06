@@ -10,7 +10,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/hnimtadd/hive/internal/agent/react"
+	"github.com/hnimtadd/hive/internal/model/react"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -41,7 +41,7 @@ type supervisor struct {
 
 	outputValidator *jsonschema.Resolved
 
-	reactAgent *react.Agent
+	reactAgent *react.Model
 	config     *Config
 }
 
