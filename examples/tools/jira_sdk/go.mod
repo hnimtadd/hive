@@ -2,7 +2,7 @@ module github.com/hnimtadd/hive/examples/tools/jira_sdk
 
 go 1.25.0
 
-replace github.com/hnimtadd/hive => ../..
+replace github.com/hnimtadd/hive => ../../..
 
 require (
 	github.com/andygrunwald/go-jira v1.17.0

@@ -4,37 +4,13 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PUBLIC_DIR="$REPO_ROOT/public"
+PUBLIC_DIR="$REPO_ROOT/examples/tools"
 TOOLS_DIR="$REPO_ROOT/examples/hive/tools"
 
 echo "Building Hive SDK tools..."
 echo "Repository root: $REPO_ROOT"
 echo "Tools directory: $TOOLS_DIR"
 echo ""
-
-# Build shell_execute
-echo "Building shell_execute..."
-cd "$PUBLIC_DIR/shell_executor_sdk"
-go mod tidy >/dev/null 2>&1
-go build -o shell_execute main.go
-cp shell_execute "$TOOLS_DIR/shell_execute"
-echo "shell_execute built and copied"
-
-# Build read_file
-echo "Building read_file..."
-cd "$PUBLIC_DIR/read_file_sdk"
-go mod tidy >/dev/null 2>&1
-go build -o read_file main.go
-cp read_file "$TOOLS_DIR/read_file"
-echo "read_file built and copied"
-
-# Build write_file
-echo "Building write_file..."
-cd "$PUBLIC_DIR/write_file_sdk"
-go mod tidy >/dev/null 2>&1
-go build -o write_file main.go
-cp write_file "$TOOLS_DIR/write_file"
-echo "write_file built and copied"
 
 # Build GitLab tools
 echo "Building GitLab tools..."
