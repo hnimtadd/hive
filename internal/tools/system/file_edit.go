@@ -13,7 +13,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-func FileWriteTool() (tool.InvokableTool, error) {
+func FileEditTool() (tool.InvokableTool, error) {
 	return utils.InferTool("file_edit", "edit file contents by replacing, appending, prepending, or inserting text", fileEdit)
 }
 

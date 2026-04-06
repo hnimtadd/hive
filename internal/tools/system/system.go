@@ -28,11 +28,11 @@ func Tools() (map[string]tool.InvokableTool, error) {
 	}
 	tools["file_read"] = fileReadTool
 
-	fileWriteTool, err := FileWriteTool()
+	fileEditTool, err := FileEditTool()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create file_write tool: %w", err)
+		return nil, fmt.Errorf("failed to create file_edit tool: %w", err)
 	}
-	tools["file_write"] = fileWriteTool
+	tools["file_write"] = fileEditTool
 
 	shellTool, err := ShellTool()
 	if err != nil {
