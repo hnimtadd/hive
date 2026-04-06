@@ -208,7 +208,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
 	supervisorConfig.ID = uuid.New().String()
-	supervisor, err := bee.NewSupervisorBee(s.registry, &supervisorConfig)
+	supervisor, err := bee.NewQueenBee(s.registry, &supervisorConfig)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create supervisor", slog.Any("error", err))
 		return fmt.Errorf("failed to create supervisor: %w", err)

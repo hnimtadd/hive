@@ -14,6 +14,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/bee/react"
+	"github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/internal/trace"
 	hiveerrors "github.com/hnimtadd/hive/pkg/errors"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
@@ -71,8 +72,12 @@ type exploreBee struct {
 
 // NewExploreBee creates a new Explore agent with read-only tools.
 func NewExploreBee(config *Config, agentOpts ...react.AgentOption) (ExploreBee, error) {
+	systemTools, err := system.Tools()
+	if err != nil {
+		return nil, errors.New("no read-only tools available")
+	}
 	// Filter tools to only allow read operations
-	readOnlyTools := filterReadOnlyTools(config.Tools)
+	readOnlyTools := filterReadOnlyTools(systemTools)
 	if len(readOnlyTools) == 0 {
 		return nil, errors.New("no read-only tools available")
 	}
@@ -84,7 +89,7 @@ func NewExploreBee(config *Config, agentOpts ...react.AgentOption) (ExploreBee, 
 		config.LLM,
 		readOnlyTools,
 		systemPrompt,
-		config.MaxSteps,
+		300,
 		agentOpts...,
 	)
 	if err != nil {
@@ -111,7 +116,7 @@ func NewExploreBee(config *Config, agentOpts ...react.AgentOption) (ExploreBee, 
 }
 
 // filterReadOnlyTools filters tools to only include safe read-only operations.
-func filterReadOnlyTools(tools []tool.InvokableTool) []tool.InvokableTool {
+func filterReadOnlyTools(tools map[string]tool.InvokableTool) []tool.InvokableTool {
 	readOnlyToolNames := map[string]bool{
 		"glob":      true,
 		"grep":      true,
@@ -277,6 +282,7 @@ func (e *exploreBee) Explore(ctx context.Context, input *ExploreInput) (*Explore
 			slog.String("agent_id", e.id),
 			slog.Int("key_files_found", len(output.KeyFiles)),
 			slog.Int("code_snippets", len(output.CodeSnippets)),
+			slog.Any("output", output),
 		)
 	}
 
@@ -302,7 +308,7 @@ func Explore(cfg *Config) func(ctx context.Context, input *ExploreInput) (*schem
 		if !slices.Contains(validThoroughness, input.Thoroughness) {
 			input.Thoroughness = ThoroughnessQuick
 		}
-		agent, err := NewExploreBee(&Config{})
+		agent, err := NewExploreBee(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to init explore agent: %w", err)
 		}

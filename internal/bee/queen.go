@@ -48,10 +48,11 @@ type queen struct {
 	config     *Config
 }
 
-func NewqueenBee(registry Registry, config *Config, agentOpts ...react.AgentOption) (QueenBee, error) {
+func NewQueenBee(registry Registry, config *Config, agentOpts ...react.AgentOption) (QueenBee, error) {
+	exploreTool := exploreTool(config)
 	config.Tools = append(config.Tools,
 		delegateTool(registry),
-		exploreTool(config),
+		exploreTool,
 	)
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
