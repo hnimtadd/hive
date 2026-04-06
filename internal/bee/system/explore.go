@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -15,7 +16,7 @@ import (
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/trace"
-	"github.com/hnimtadd/hive/pkg/errors"
+	hiveerrors "github.com/hnimtadd/hive/pkg/errors"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
 )
 
@@ -33,7 +34,7 @@ type ExploreInput struct {
 	Thoroughness ThoroughnessLevel `json:"thoroughness,omitempty" jsonschema:"Search thoroughness: 'quick', 'medium', or 'very thorough' (default: quick)"`
 }
 
-// ExploreOutput defines output from the Explore agent
+// ExploreOutput defines output from the Explore agent.
 type ExploreOutput struct {
 	Summary      string          `json:"summary"                 jsonschema:"Brief summary of findings"`
 	KeyFiles     []FileReference `json:"key_files"               jsonschema:"List of relevant files with descriptions"`
@@ -42,21 +43,21 @@ type ExploreOutput struct {
 	Notes        string          `json:"notes,omitempty"         jsonschema:"Additional observations or architectural notes"`
 }
 
-// FileReference represents a file with location info
+// FileReference represents a file with location info.
 type FileReference struct {
 	Path        string `json:"path"                  jsonschema:"File path"`
 	LineNumber  int    `json:"line_number,omitempty" jsonschema:"Optional line number"`
 	Description string `json:"description"           jsonschema:"What this file contains or does"`
 }
 
-// CodeSnippet represents a code excerpt
+// CodeSnippet represents a code excerpt.
 type CodeSnippet struct {
 	File     string `json:"file"               jsonschema:"Source file path"`
 	Language string `json:"language,omitempty" jsonschema:"Programming language"`
 	Code     string `json:"code"               jsonschema:"Code content"`
 }
 
-// ExploreBee is a specialized read-only agent for codebase exploration
+// ExploreBee is a specialized read-only agent for codebase exploration.
 type ExploreBee interface {
 	Explore(ctx context.Context, input *ExploreInput) (*ExploreOutput, error)
 }
@@ -69,12 +70,12 @@ type exploreBee struct {
 	outputValidator *jsonschema.Resolved
 }
 
-// NewExploreBee creates a new Explore agent with read-only tools
+// NewExploreBee creates a new Explore agent with read-only tools.
 func NewExploreBee(config *bee.Config, agentOpts ...react.AgentOption) (ExploreBee, error) {
 	// Filter tools to only allow read operations
 	readOnlyTools := filterReadOnlyTools(config.Tools)
 	if len(readOnlyTools) == 0 {
-		return nil, fmt.Errorf("no read-only tools available")
+		return nil, errors.New("no read-only tools available")
 	}
 
 	systemPrompt := getExploreSystemPrompt()
@@ -194,7 +195,7 @@ Remember: You are an explorer, not a builder. Discover, analyze, and report—ne
 func (e *exploreBee) Explore(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
 	logger := trace.Logger(ctx)
 
-	retryConfig := errors.RetryConfig{
+	retryConfig := hiveerrors.RetryConfig{
 		MaxAttempts:   e.config.MaxSteps,
 		InitialDelay:  500,
 		BackoffFactor: 2.0,
@@ -210,7 +211,7 @@ func (e *exploreBee) Explore(ctx context.Context, input *ExploreInput) (*Explore
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(e.config.TimeoutInSec)*time.Second)
 	defer cancel()
 
-	handler := errors.NewErrorHandler[*ExploreOutput]()
+	handler := hiveerrors.NewErrorHandler[*ExploreOutput]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 
 	output, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*ExploreOutput, error) {
@@ -244,24 +245,24 @@ func (e *exploreBee) Explore(ctx context.Context, input *ExploreInput) (*Explore
 		content, err = hiveutils.HeristicallyExtractJSONString(content)
 		if err != nil {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output is not valid JSON: %s", err)))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse explore output", err)
+			return nil, hiveerrors.NewHiveError(hiveerrors.ErrTypeValidation, "failed to parse explore output", err)
 		}
 
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse explore output", err)
+			return nil, hiveerrors.NewHiveError(hiveerrors.ErrTypeValidation, "failed to parse explore output", err)
 		}
 
 		if err = e.outputValidator.Validate(output); err != nil {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output does not follow JSON schema: %s", err)))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to validate explore output schema", err)
+			return nil, hiveerrors.NewHiveError(hiveerrors.ErrTypeValidation, "failed to validate explore output schema", err)
 		}
 
 		exploreOutput := ExploreOutput{}
 		if err = json.Unmarshal([]byte(content), &exploreOutput); err != nil {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse explore output", err)
+			return nil, hiveerrors.NewHiveError(hiveerrors.ErrTypeValidation, "failed to parse explore output", err)
 		}
 
 		return &exploreOutput, nil
