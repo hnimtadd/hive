@@ -5,18 +5,12 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 )
 
-type BaseBee interface {
+type baseBee interface {
 	// GetID returns the unique identifier for this agent instance
 	GetID() string
 
-	// GetType returns the type/category of this agent (e.g., "code_editor", "test_runner", "deployer")
-	GetType() string
-
 	// Description return a short self-description about agent capabilities.
 	Description() string
-
-	// Capabilities return capabilities of current agent
-	Capabilities() []string
 }
 
 // Config holds configuration for agent initialization.

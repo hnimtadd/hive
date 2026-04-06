@@ -15,7 +15,6 @@ import (
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
-	"github.com/hnimtadd/hive/internal/bee/system"
 	"github.com/hnimtadd/hive/internal/mapper"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/trace"
@@ -209,7 +208,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
 	supervisorConfig.ID = uuid.New().String()
-	supervisor, err := system.NewSupervisorBee(s.registry, &supervisorConfig)
+	supervisor, err := bee.NewSupervisorBee(s.registry, &supervisorConfig)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create supervisor", slog.Any("error", err))
 		return fmt.Errorf("failed to create supervisor: %w", err)
@@ -227,7 +226,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 
 loop:
 	for {
-		var output *system.SupervisorOutput
+		var output *bee.QueenOutput
 
 		// Create a timeout context for each supervisor execution iteration
 		execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -237,7 +236,7 @@ loop:
 			// Check for timeout errors
 			if ctx.Err() == context.DeadlineExceeded || execCtx.Err() == context.DeadlineExceeded {
 				logger.Error("task execution timed out", slog.String("task_id", task.ID), slog.Duration("timeout", timeout))
-				timeoutUpdate := mapper.ToTaskUpdateFailed(&system.SupervisorOutput{
+				timeoutUpdate := mapper.ToTaskUpdateFailed(&bee.QueenOutput{
 					Status:  types.TaskStatusFailed,
 					Content: fmt.Sprintf("Task execution timed out after %s", timeout),
 				})
@@ -433,7 +432,7 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}
-	outputDescription, err := utils.DescribeJSONSchema[system.SupervisorOutput]()
+	outputDescription, err := utils.DescribeJSONSchema[bee.QueenOutput]()
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}

@@ -19,36 +19,32 @@ import (
 
 // WorkerBee defines the interface that all Hive agents must implement
 // This interface enables pluggable agents that can be moved to hashicorp gRPC plugins later.
-type Bee interface {
-	BaseBee
+type WorkerBee interface {
+	baseBee
 
 	// CanHandle determines if this agent can process the given task
-	CanHandle(task *Input) bool
+	CanHandle(task *WorkerInput) bool
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
 	// For success task, markCompleted will be automatically call with the
 	// summary by the agent, so the caller don't have to handle this manually.
-	Execute(ctx context.Context, task *Input) (*Output, error)
-
-	// Validate performs pre-execution validation of the task
-	// Returns error if task cannot be executed due to invalid parameters
-	Validate(task Input) error
+	Execute(ctx context.Context, task *WorkerInput) (*WorkerOutput, error)
 }
 
-type Output struct {
+type WorkerOutput struct {
 	Status       types.Status      `json:"status"               jsonschema:"Updated job state, either: not_started, in_progress, completed, failed, paused"`
 	Observations string            `json:"observations"         jsonschema:"What did you find? This will be added to history."`
 	NewArtifacts map[string]string `json:"new_artifacts"        jsonschema:"Any data found (e.g., ticket_details, log_snippet)"`
 	NextSteps    string            `json:"next_steps,omitempty" jsonschema:"Optional suggestion for the supervisor"`
 }
-type Input struct {
+type WorkerInput struct {
 	Context   string            `json:"status"    jsonschema:"High-level goal for the entire run"`
 	Task      string            `json:"task"      jsonschema:"The exact instruction from the supervisor"`
 	Artifacts map[string]string `json:"artifacts" jsonschema:"specfic data relevant to your task"`
 }
 
-type agent struct {
+type bee struct {
 	id           string
 	persona      string
 	description  string
@@ -61,7 +57,7 @@ type agent struct {
 	config *Config
 }
 
-func NewCustomBee(config *Config, agentOpts ...react.AgentOption) (Bee, error) {
+func NewCustomBee(config *Config, agentOpts ...react.AgentOption) (WorkerBee, error) {
 	systemPrompt, err := getSystemPrompt(config.Persona)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
@@ -77,7 +73,7 @@ func NewCustomBee(config *Config, agentOpts ...react.AgentOption) (Bee, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
-	schema, err := jsonschema.For[Output](nil)
+	schema, err := jsonschema.For[WorkerOutput](nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build agent output schema: %w", err)
 	}
@@ -86,7 +82,7 @@ func NewCustomBee(config *Config, agentOpts ...react.AgentOption) (Bee, error) {
 		return nil, fmt.Errorf("failed to resolve agent schema: %w", err)
 	}
 
-	return &agent{
+	return &bee{
 		id:              config.ID,
 		agent:           reactAgent,
 		persona:         config.Persona,
@@ -98,21 +94,21 @@ func NewCustomBee(config *Config, agentOpts ...react.AgentOption) (Bee, error) {
 }
 
 // CanHandle implements [WorkerBee].
-func (a *agent) CanHandle(_ *Input) bool {
+func (a *bee) CanHandle(_ *WorkerInput) bool {
 	return true
 }
 
 // Description implements [WorkerBee].
-func (a *agent) Description() string {
+func (a *bee) Description() string {
 	return a.description
 }
 
-func (a *agent) Capabilities() []string {
+func (a *bee) Capabilities() []string {
 	return a.capabilities
 }
 
 // Execute implements [WorkerBee].
-func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
+func (a *bee) Execute(ctx context.Context, input *WorkerInput) (*WorkerOutput, error) {
 	logger := trace.Logger(ctx)
 	logger.InfoContext(ctx,
 		"worker execution started",
@@ -134,9 +130,9 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(a.config.TimeoutInSec)*time.Second)
 	defer cancel()
-	handler := errors.NewErrorHandler[*Output]()
+	handler := errors.NewErrorHandler[*WorkerOutput]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
-	output, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*Output, error) {
+	output, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*WorkerOutput, error) {
 		trace.Logger(ctx).Debug("worker executing", slog.String("agent_id", a.id))
 		// Execute the task using the ReACT agent
 		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
@@ -175,7 +171,7 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output is not followed JSON schema: %s", err)))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to validate output schema", err)
 		}
-		agentOutput := Output{}
+		agentOutput := WorkerOutput{}
 		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
 			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output ot agent output schema", err)
@@ -199,11 +195,11 @@ func (a *agent) Execute(ctx context.Context, input *Input) (*Output, error) {
 }
 
 func getSystemPrompt(persona string) (string, error) {
-	inputDescription, err := utils.DescribeJSONSchema[Input]()
+	inputDescription, err := utils.DescribeJSONSchema[WorkerInput]()
 	if err != nil {
 		return "", fmt.Errorf("failed to self describe the input: %w", err)
 	}
-	outputDescription, err := utils.DescribeJSONSchema[Output]()
+	outputDescription, err := utils.DescribeJSONSchema[WorkerOutput]()
 	if err != nil {
 		return "", fmt.Errorf("failed to self describe the output: %w", err)
 	}
@@ -221,16 +217,6 @@ func getSystemPrompt(persona string) (string, error) {
 }
 
 // GetID implements [WorkerBee].
-func (a *agent) GetID() string {
+func (a *bee) GetID() string {
 	return a.id
-}
-
-// GetType implements [WorkerBee].
-func (a *agent) GetType() string {
-	panic("unimplemented")
-}
-
-// Validate implements [WorkerBee].
-func (a *agent) Validate(_ Input) error {
-	return nil
 }

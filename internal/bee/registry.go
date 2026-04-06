@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/adrg/frontmatter"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/tools"
@@ -17,23 +18,23 @@ import (
 // Registry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
-	ListAgents() []Bee
+	ListAgents() []WorkerBee
 	// GetByID get agent by agent ID
-	GetByID(id string) (Bee, bool)
+	GetByID(id string) (WorkerBee, bool)
 }
 
 type registry struct {
-	bees  map[string]Bee
+	bees  map[string]WorkerBee
 	tools map[string]tool.InvokableTool
 	path  string
 }
 
 // ListAgents implements [Registry].
-func (a *registry) ListAgents() []Bee {
+func (a *registry) ListAgents() []WorkerBee {
 	return slices.Collect(maps.Values(a.bees))
 }
 
-func (a *registry) GetByID(id string) (Bee, bool) {
+func (a *registry) GetByID(id string) (WorkerBee, bool) {
 	agent, ok := a.bees[id]
 
 	return agent, ok
@@ -41,17 +42,17 @@ func (a *registry) GetByID(id string) (Bee, bool) {
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(cfg *config.Config) ([]Bee, error) {
+func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 	entries, err := os.ReadDir(a.path)
 	if err != nil {
 		log.Printf("failed to read agents home: %s\n", err)
-		return []Bee{}, nil
+		return []WorkerBee{}, nil
 	}
 
 	// Use server timeout as default for agents, with a reasonable max cap (2x default)
 	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
 
-	agents := []Bee{}
+	agents := []WorkerBee{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -104,7 +105,7 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
-		bees:  make(map[string]Bee),
+		bees:  make(map[string]WorkerBee),
 		tools: agentTools,
 		path:  appConfig.Bees.Dir,
 	}
@@ -116,4 +117,25 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 		reg.bees[agent.GetID()] = agent
 	}
 	return reg, nil
+}
+
+func LoadAgentConfig(path string) (*Config, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var cfg Config
+	// This reads the --- YAML --- block into 'cfg'
+	// and returns the remaining Markdown as 'persona'
+	persona, err := frontmatter.Parse(f, &cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the Markdown body as the Description/Persona
+	cfg.Persona = string(persona)
+
+	return &cfg, nil
 }

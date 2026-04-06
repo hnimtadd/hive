@@ -1,4 +1,4 @@
-package system
+package bee
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
@@ -21,24 +20,24 @@ import (
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
 )
 
-type SupervisorBee interface {
-	bee.BaseBee
+type QueenBee interface {
+	baseBee
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
 	// For success task, markCompleted will be automatically call with the
 	// summary by the agent, so the caller don't have to handle this manually.
-	Execute(ctx context.Context, task *types.HiveTask) (*SupervisorOutput, error)
+	Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput, error)
 }
 
-type SupervisorOutput struct {
+type QueenOutput struct {
 	Status     types.Status `json:"status"                jsonschema:"Task status - 'in_progress': completed this cycle, need another cycle to continue; 'paused': need user input before next cycle; 'completed': task finished successfully; 'failed': task cannot be completed"`
 	Content    string       `json:"content"               jsonschema:"For in_progress: what you accomplished this cycle. For paused: question for user. For completed: final summary of results. For failed: reason for failure"`
 	NextAction string       `json:"next_action,omitempty" jsonschema:"What you plan to do in the next execution cycle (primarily for in_progress status)"`
 	Thought    string       `json:"-"`
 }
 
-type supervisor struct {
+type queen struct {
 	id           string
 	persona      string
 	capabilities []string
@@ -46,15 +45,10 @@ type supervisor struct {
 	outputValidator *jsonschema.Resolved
 
 	reactAgent *react.Agent
-	config     *bee.Config
+	config     *Config
 }
 
-// Capabilities implements [SupervisorBee].
-func (s *supervisor) Capabilities() []string {
-	panic("unimplemented")
-}
-
-func NewSupervisorBee(registry bee.Registry, config *bee.Config, agentOpts ...react.AgentOption) (SupervisorBee, error) {
+func NewqueenBee(registry Registry, config *Config, agentOpts ...react.AgentOption) (QueenBee, error) {
 	config.Tools = append(config.Tools, delegateTool(registry))
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
@@ -67,7 +61,7 @@ func NewSupervisorBee(registry bee.Registry, config *bee.Config, agentOpts ...re
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
-	schema, err := jsonschema.For[SupervisorOutput](nil)
+	schema, err := jsonschema.For[QueenOutput](nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build agent output schema: %w", err)
 	}
@@ -75,7 +69,7 @@ func NewSupervisorBee(registry bee.Registry, config *bee.Config, agentOpts ...re
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve agent schema: %w", err)
 	}
-	return &supervisor{
+	return &queen{
 		id:              config.ID,
 		reactAgent:      reactAgent,
 		persona:         config.Persona,
@@ -85,11 +79,11 @@ func NewSupervisorBee(registry bee.Registry, config *bee.Config, agentOpts ...re
 	}, nil
 }
 
-// Execute implements [SupervisorBee].
-func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*SupervisorOutput, error) {
+// Execute implements [QueenBee].
+func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput, error) {
 	logger := trace.Logger(ctx)
-	logger.InfoContext(ctx, "supervisor execution started",
-		slog.String("supervisor_id", s.id),
+	logger.InfoContext(ctx, "queen execution started",
+		slog.String("queen_id", s.id),
 		slog.String("task_id", task.ID),
 		slog.String("task_status", string(task.Status)),
 	)
@@ -108,14 +102,14 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.TimeoutInSec)*time.Second)
 	defer cancel()
 
-	handler := errors.NewErrorHandler[*SupervisorOutput]()
+	handler := errors.NewErrorHandler[*QueenOutput]()
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
-	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*SupervisorOutput, error) {
-		trace.Logger(ctx).Debug("supervisor executing", slog.Int("message_count", len(msgs)))
+	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*QueenOutput, error) {
+		trace.Logger(ctx).Debug("queen executing", slog.Int("message_count", len(msgs)))
 		// Execute the task using the ReACT agent
 		result, execErr := s.reactAgent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
-			trace.Logger(ctx).Error("supervisor ReACT execution failed", slog.Any("error", execErr))
+			trace.Logger(ctx).Error("queen ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr
 		}
 
@@ -153,7 +147,7 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
 		}
-		agentOutput := SupervisorOutput{}
+		agentOutput := QueenOutput{}
 		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to parse output JSON"))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
@@ -184,12 +178,12 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	})
 
 	if err != nil {
-		logger.ErrorContext(ctx, "supervisor execution failed",
+		logger.ErrorContext(ctx, "queen execution failed",
 			slog.String("task_id", task.ID),
 			slog.Any("error", err),
 		)
 	} else {
-		logger.InfoContext(ctx, "supervisor execution completed",
+		logger.InfoContext(ctx, "queen execution completed",
 			slog.String("task_id", task.ID),
 			slog.String("status", string(msg.Status)),
 		)
@@ -198,28 +192,23 @@ func (s *supervisor) Execute(ctx context.Context, task *types.HiveTask) (*Superv
 	return msg, err
 }
 
-// Description implements [SupervisorBee].
-func (s *supervisor) Description() string {
+// Description implements [QueenBee].
+func (s *queen) Description() string {
 	return s.config.Description
 }
 
-// GetID implements [SupervisorBee].
-func (s *supervisor) GetID() string {
+// GetID implements [QueenBee].
+func (s *queen) GetID() string {
 	return s.id
 }
 
-// GetType implements [SupervisorBee].
-func (s *supervisor) GetType() string {
-	panic("unimplemented")
-}
-
 type delegateTaskInput struct {
-	bee.Input
+	WorkerInput
 
 	ID string `json:"agent_id"`
 }
 
-func delegateTool(registry bee.Registry) tool.InvokableTool {
+func delegateTool(registry Registry) tool.InvokableTool {
 	// Manually define ToolInfo
 	toolInfo := &schema.ToolInfo{
 		Name: "delegate_agent",
@@ -245,7 +234,7 @@ func delegateTool(registry bee.Registry) tool.InvokableTool {
 					},
 				}, nil
 			}
-			i := &bee.Input{
+			i := &WorkerInput{
 				Context:   input.Context,
 				Artifacts: input.Artifacts,
 				Task:      input.Task,
