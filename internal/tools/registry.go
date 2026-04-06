@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -31,6 +33,11 @@ func NewRegistry(appConfig *config.Config) (Registry, error) {
 		return nil, fmt.Errorf("failed to scan tools: %w", err)
 	}
 	r.tools = tools
+	systemTools, err := system.Tools()
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan system tool: %w", err)
+	}
+	maps.Copy(r.tools, systemTools)
 	return r, nil
 }
 
