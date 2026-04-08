@@ -189,12 +189,12 @@ func validateConfig(config *Config) error {
 	}
 
 	switch config.AI.Provider {
-	case "Anthropic":
+	case "anthropic":
 		if config.AI.Anthropic == nil {
-			return errors.New("ai.Anthropic configuration is required when provider is 'Anthropic'")
+			return errors.New("ai.anthropic configuration is required when provider is 'anthropic'")
 		}
 		if config.AI.Anthropic.APIKeyEnv == "" {
-			return errors.New("ai.Anthropic.api_key_env cannot be empty")
+			return errors.New("ai.anthropic.api_key_env cannot be empty")
 		}
 		// Check if API key environment variable exists
 		if os.Getenv(config.AI.Anthropic.APIKeyEnv) == "" {
@@ -210,6 +210,10 @@ func validateConfig(config *Config) error {
 		// Check if API key environment variable exists
 		if os.Getenv(config.AI.OpenAI.APIKeyEnv) == "" {
 			return fmt.Errorf("environment variable %s is not set", config.AI.OpenAI.APIKeyEnv)
+		}
+	case "ollama":
+		if config.AI.Ollama == nil {
+			return errors.New("ai.ollama configuration is required when provider is 'ollama'")
 		}
 	default:
 		return fmt.Errorf("unsupported ai.provider: %s", config.AI.Provider)
