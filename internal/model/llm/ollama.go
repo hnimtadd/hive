@@ -18,7 +18,7 @@ func NewOllamaClient() (model.ToolCallingChatModel, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	if cfg.AI.Ollama == nil {
-		return nil, errors.New("Ollama configuration is empty")
+		return nil, errors.New("ollama configuration is empty")
 	}
 
 	return NewOllamaClientWithConfig(cfg.AI.Ollama)
@@ -28,7 +28,7 @@ func NewOllamaClient() (model.ToolCallingChatModel, error) {
 // Returns Eino's model.ChatModel interface instead of custom wrapper.
 func NewOllamaClientWithConfig(cfg *config.OllamaConfig) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
-		return nil, errors.New("Ollama configuration is empty")
+		return nil, errors.New("ollama configuration is empty")
 	}
 
 	anthropicConfig, err := prepareOllamaConfig(*cfg)
@@ -53,7 +53,7 @@ func NewOllamaToolCallingClient() (model.ToolCallingChatModel, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	if cfg.AI.Ollama == nil {
-		return nil, errors.New("Ollama configuration is empty")
+		return nil, errors.New("ollama configuration is empty")
 	}
 
 	return NewOllamaToolCallingClientWithConfig(cfg.AI.Ollama)
@@ -62,7 +62,7 @@ func NewOllamaToolCallingClient() (model.ToolCallingChatModel, error) {
 // NewOllamaToolCallingClientWithConfig creates a tool-calling Ollama client with config.
 func NewOllamaToolCallingClientWithConfig(cfg *config.OllamaConfig) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
-		return nil, errors.New("Ollama configuration is empty")
+		return nil, errors.New("ollama configuration is empty")
 	}
 
 	config, err := prepareOllamaConfig(*cfg)
@@ -79,7 +79,7 @@ func NewOllamaToolCallingClientWithConfig(cfg *config.OllamaConfig) (model.ToolC
 	return chatModel, nil
 }
 
-func prepareOllamaConfig(conf config.OllamaConfig) (*ollama.ChatModelConfig, error) {
+func prepareOllamaConfig(conf config.OllamaConfig) (*ollama.ChatModelConfig, error) { //nolint:unparam // this is just our convention
 	return &ollama.ChatModelConfig{
 		BaseURL: conf.BaseURL,
 		Model:   conf.Model,

@@ -15,8 +15,6 @@ import (
 // Config represents the complete Hive configuration.
 type Config struct {
 	AI           AIConfig     `mapstructure:"ai"`
-	Gitlab       GitlabConfig `mapstructure:"gitlab"`
-	Jira         JiraConfig   `mapstructure:"jira"`
 	Server       ServerConfig `mapstructure:"server"`
 	WorkspaceDir string       `mapstructure:"workspace"`
 	BeeHiveDir   string       `mapstructure:"beehive"`
@@ -79,22 +77,6 @@ type OpenAIConfig struct {
 type OllamaConfig struct {
 	Model   string `mapstructure:"model"`
 	BaseURL string `mapstructure:"base_url"`
-}
-
-// GitlabConfig holds GitLab integration settings.
-type GitlabConfig struct {
-	Enabled  bool   `mapstructure:"enabled"`
-	URL      string `mapstructure:"url"`
-	TokenEnv string `mapstructure:"token_env"`
-}
-
-// JiraConfig holds Jira integration settings.
-type JiraConfig struct {
-	BaseURL      string            `mapstructure:"base_url"`
-	UserName     string            `mapstructure:"username"`
-	APITokenEnv  string            `mapstructure:"api_token_env"`
-	Enabled      bool              `mapstructure:"enabled"`
-	CustomFields map[string]string `mapstructure:"custom_fields"` // Map of field ID to friendly name
 }
 
 // ServerConfig holds server-specific settings.
@@ -169,17 +151,11 @@ func setDefaults() {
 	viper.SetDefault("ai.provider", "Anthropic")
 	viper.SetDefault("ai.model", "Anthropic-3-5-sonnet-20241022")
 
-	// GitLab defaults
-
 	// Agent defaults
 	viper.SetDefault("agents.max_concurrent", 5)
 	viper.SetDefault("agents.timeout_seconds", 300)
 
 	viper.SetDefault("ai.max_step", 5)
-
-	// Jira defaults
-	viper.SetDefault("jira.enabled", false)
-	viper.SetDefault("jira.is_cloud", true)
 
 	// Server defaults
 	viper.SetDefault("server.port", 8080)
@@ -239,20 +215,6 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("unsupported ai.provider: %s", config.AI.Provider)
 	}
 
-	// Validate GitLab config
-	if config.Gitlab.URL == "" {
-		return errors.New("gitlab.url cannot be empty")
-	}
-
-	if config.Gitlab.TokenEnv == "" {
-		return errors.New("gitlab.token_env cannot be empty")
-	}
-
-	// Check if GitLab token environment variable exists
-	if os.Getenv(config.Gitlab.TokenEnv) == "" {
-		return fmt.Errorf("environment variable %s is not set", config.Gitlab.TokenEnv)
-	}
-
 	workspaceDir, err := utils.ExpandPath(config.WorkspaceDir)
 	if err != nil {
 		return fmt.Errorf("failed to expand path: %w", err)
@@ -288,23 +250,6 @@ func validateConfig(config *Config) error {
 	// Validate execution configuration
 	if config.Tasks.Timeout <= 0 {
 		return errors.New("task.timeout must be positive")
-	}
-
-	// Validate Jira config if enabled
-	if config.Jira.Enabled {
-		if config.Jira.BaseURL == "" {
-			return errors.New("jira.base_url cannot be empty when jira is enabled")
-		}
-		if config.Jira.UserName == "" {
-			return errors.New("jira.username cannot be empty when jira is enabled")
-		}
-		if config.Jira.APITokenEnv == "" {
-			return errors.New("jira.api_token_env cannot be empty when jira is enabled")
-		}
-		// Check if API token environment variable exists
-		if os.Getenv(config.Jira.APITokenEnv) == "" {
-			return fmt.Errorf("environment variable %s is not set", config.Jira.APITokenEnv)
-		}
 	}
 
 	return nil
