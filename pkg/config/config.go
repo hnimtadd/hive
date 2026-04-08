@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/hnimtadd/hive/pkg/utils"
 	"github.com/spf13/viper"
 )
@@ -29,10 +28,11 @@ type Config struct {
 
 // AIConfig holds AI/LLM configuration.
 type AIConfig struct {
-	Provider string        `mapstructure:"provider"`
-	Claude   *ClaudeConfig `mapstructure:"claude"`
-	OpenAI   *OpenAIConfig `mapstructure:"openai"`
-	MaxStep  int           `mapstructure:"max_step"`
+	Provider  string           `mapstructure:"provider"`
+	Anthropic *AnthropicConfig `mapstructure:"anthropic"`
+	OpenAI    *OpenAIConfig    `mapstructure:"openai"`
+	Ollama    *OllamaConfig    `mapstructure:"ollama"`
+	MaxStep   int              `mapstructure:"max_step"`
 }
 type BeeConfig struct {
 	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
@@ -49,16 +49,16 @@ type TaskConfig struct {
 	Storage string        `mapstructure:"storage"`
 }
 
-type ClaudeProvider string
+type AnthropicProvider string
 
 const (
-	ClaudeIntegrationTypeBedrock ClaudeProvider = "bedrock"
-	ClaudeIntegrationTypeAPI     ClaudeProvider = "api"
+	AnthropicIntegrationTypeBedrock AnthropicProvider = "bedrock"
+	AnthropicIntegrationTypeAPI     AnthropicProvider = "api"
 )
 
-// ClaudeConfig holds Claude-specific configuration.
-type ClaudeConfig struct {
-	Provider         ClaudeProvider    `mapstructure:"provider"`
+// AnthropicConfig holds Anthropic-specific configuration.
+type AnthropicConfig struct {
+	Provider         AnthropicProvider `mapstructure:"provider"`
 	Model            string            `mapstructure:"model"`
 	AnthropicVersion string            `mapstructure:"anthropic_version"`
 	BaseURL          string            `mapstructure:"api_base_url"`
@@ -69,11 +69,16 @@ type ClaudeConfig struct {
 
 // OpenAIConfig holds OpenAI-specific configuration.
 type OpenAIConfig struct {
-	Model                string         `mapstructure:"model"`
-	APIKeyEnv            string         `mapstructure:"api_key_env"`
-	BaseURL              string         `mapstructure:"base_url"`
-	ExtraFields          map[string]any `mapstructure:"extra_fields"`
-	PreferResponseSchema *openai.ChatCompletionResponseFormat
+	Model       string         `mapstructure:"model"`
+	APIKeyEnv   string         `mapstructure:"api_key_env"`
+	BaseURL     string         `mapstructure:"base_url"`
+	ExtraFields map[string]any `mapstructure:"extra_fields"`
+}
+
+// OllamaConfig holds OllamaConfig-specific configuration.
+type OllamaConfig struct {
+	Model   string `mapstructure:"model"`
+	BaseURL string `mapstructure:"base_url"`
 }
 
 // GitlabConfig holds GitLab integration settings.
@@ -161,8 +166,8 @@ func setDefaults() {
 	viper.SetDefault("redis.pool_size", 10)
 
 	// AI defaults - supporting both standard Anthropic and company setup
-	viper.SetDefault("ai.provider", "claude")
-	viper.SetDefault("ai.model", "claude-3-5-sonnet-20241022")
+	viper.SetDefault("ai.provider", "Anthropic")
+	viper.SetDefault("ai.model", "Anthropic-3-5-sonnet-20241022")
 
 	// GitLab defaults
 
@@ -208,16 +213,16 @@ func validateConfig(config *Config) error {
 	}
 
 	switch config.AI.Provider {
-	case "claude":
-		if config.AI.Claude == nil {
-			return errors.New("ai.claude configuration is required when provider is 'claude'")
+	case "Anthropic":
+		if config.AI.Anthropic == nil {
+			return errors.New("ai.Anthropic configuration is required when provider is 'Anthropic'")
 		}
-		if config.AI.Claude.APIKeyEnv == "" {
-			return errors.New("ai.claude.api_key_env cannot be empty")
+		if config.AI.Anthropic.APIKeyEnv == "" {
+			return errors.New("ai.Anthropic.api_key_env cannot be empty")
 		}
 		// Check if API key environment variable exists
-		if os.Getenv(config.AI.Claude.APIKeyEnv) == "" {
-			return fmt.Errorf("environment variable %s is not set", config.AI.Claude.APIKeyEnv)
+		if os.Getenv(config.AI.Anthropic.APIKeyEnv) == "" {
+			return fmt.Errorf("environment variable %s is not set", config.AI.Anthropic.APIKeyEnv)
 		}
 	case "openai":
 		if config.AI.OpenAI == nil {

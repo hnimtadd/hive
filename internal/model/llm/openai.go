@@ -18,10 +18,9 @@ func prepareOpenAIConfig(cfg *config.OpenAIConfig) (*openai.ChatModelConfig, err
 	}
 
 	openaiConfig := &openai.ChatModelConfig{
-		APIKey:         apiKey,
-		Model:          cfg.Model,
-		BaseURL:        cfg.BaseURL,
-		ResponseFormat: cfg.PreferResponseSchema,
+		APIKey:  apiKey,
+		Model:   cfg.Model,
+		BaseURL: cfg.BaseURL,
 	}
 
 	// Add extra fields for Anthropic models
@@ -79,4 +78,3 @@ func NewOpenAIToolCallingClient() (model.ToolCallingChatModel, error) {
 func NewOpenAIToolCallingClientWithConfig(cfg *config.OpenAIConfig) (model.ToolCallingChatModel, error) {
 	return NewOpenAIClientWithConfig(cfg)
 }
-
