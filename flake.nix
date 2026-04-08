@@ -99,25 +99,12 @@
 
           shellHook = ''
             echo "Welcome to The Hive development environment!"
-            echo ""
-            echo "Available commands:"
-            echo "  go run cmd/hive/main.go     - Run the CLI"
-            echo "  go run cmd/agent/main.go    - Run an agent worker"
-            echo "  air                         - Live reload development"
-            echo ""
-            echo "Redis should be available at localhost:6379"
-            echo "Run 'nix develop --help' for more Nix commands"
-
             # Set up Go environment
             export GOPATH="$(pwd)/.go"
             export GOCACHE="$(pwd)/.go/cache"
             mkdir -p $GOPATH $GOCACHE
 
-            # Ensure Redis data directory exists
-            mkdir -p .redis-data
-
             # Set project-specific environment variables
-            export HIVE_REDIS_ADDR="localhost:6379"
             export HIVE_LOG_LEVEL="info"
           '';
         };
@@ -155,58 +142,6 @@
             sqlite
           ];
 
-          shellHook = ''
-            # Helper scripts for development
-
-            start-redis() {
-              echo "Starting Redis server..."
-              redis-server --dir .redis-data --dbfilename hive.rdb --daemonize yes
-              echo "Redis started on localhost:6379"
-            }
-
-            stop-redis() {
-              echo "Stopping Redis server..."
-              redis-cli shutdown
-              echo "Redis stopped"
-            }
-
-            build-all() {
-              echo "Building all components..."
-              go build -o bin/hive cmd/hive/main.go
-              go build -o bin/agent cmd/agent/main.go
-              echo "Built: bin/hive, bin/agent"
-            }
-
-            test-all() {
-              echo "Running all tests..."
-              go test -v ./...
-            }
-
-            lint() {
-              echo "Running linter..."
-              golangci-lint run
-            }
-
-            demo() {
-              echo "Starting demo environment..."
-              start-redis
-              sleep 2
-              echo "Starting agent in background..."
-              go run cmd/agent/main.go &
-              AGENT_PID=$!
-              sleep 2
-              echo ""
-              echo "Demo ready! Try:"
-              echo '  go run cmd/hive/main.go "Update the config file" --jira "DEMO-123"'
-              echo ""
-              echo "Press Ctrl+C to stop demo"
-              trap "kill $AGENT_PID; stop-redis; exit" INT
-              wait $AGENT_PID
-            }
-
-            echo "Development scripts loaded!"
-            echo "Available functions: start-redis, stop-redis, build-all, test-all, lint, demo"
-          '';
         };
       });
 }
