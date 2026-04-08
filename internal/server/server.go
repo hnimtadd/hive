@@ -44,14 +44,8 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry registry.Registry) (*HiveServer, error) {
-	persona, err := getSupervisorPersona(registry)
-	if err != nil {
-		return nil, err
-	}
-	taskStorage, err := storage.NewLocalStorage(storage.Options{
-		Storage: cfg.Tasks.Storage,
-	})
+func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, reg registry.Registry, storage storage.TaskStorage) (*HiveServer, error) {
+	persona, err := getSupervisorPersona(reg)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +56,7 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 	if err != nil {
 		return nil, err
 	}
-	exploreTool, err := toolsSystem.ExploreTool()
+	exploreTool, err := toolsSystem.ExploreTool(llm)
 	if err != nil {
 		return nil, err
 	}
@@ -76,9 +70,9 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 	}
 
 	return &HiveServer{
-		registry:          registry,
+		registry:          reg,
 		config:            cfg,
-		storage:           taskStorage,
+		storage:           storage,
 		supervisorConfig:  supervisorConfig,
 		supervisorPersona: persona,
 	}, nil

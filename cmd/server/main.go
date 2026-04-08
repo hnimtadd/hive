@@ -10,6 +10,7 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/server"
+	"github.com/hnimtadd/hive/internal/storage"
 	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
@@ -44,23 +45,30 @@ func main() {
 		log.Printf("Tracing initialized: level=%s format=%s", cfg.Tracing.LogLevel, cfg.Tracing.LogFormat)
 	}
 
-	llm, err := llm.NewLLMToolCallingClient()
+	llm, err := llm.NewLLMToolCallingClient(cfg)
 	if err != nil {
-		log.Fatalf("faield to create llm: %v", err)
+		log.Fatalf("failed to create llm: %v", err)
 	}
 	toolRegistry, err := toolRegistry.NewRegistry(cfg)
 	if err != nil {
 		log.Fatalf("failed to init tool registry: %s", err)
 	}
 
-	// Create agent agentRegistry
-	agentRegistry, err := registry.NewBeeResitry(cfg, toolRegistry)
+	// Create agent registry
+	agentRegistry, err := registry.NewBeeRegistry(cfg, llm, toolRegistry)
 	if err != nil {
 		log.Fatalf("failed to init registry: %s", err)
 	}
 
+	taskStorage, err := storage.NewLocalStorage(storage.Options{
+		Storage: cfg.Tasks.Storage,
+	})
+	if err != nil {
+		log.Fatalf("failed to init storage: %v", err)
+	}
+
 	// Start the Hive server
-	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry)
+	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, taskStorage)
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}

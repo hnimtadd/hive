@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
@@ -18,9 +19,10 @@ import (
 )
 
 var (
-	cfgFile string
-	jiraID  string
-	verbose bool
+	cfgFile   string
+	jiraID    string
+	verbose   bool
+	artifacts map[string]string
 )
 
 // rootCmd represents the base command when called without any subcommands.
@@ -48,6 +50,9 @@ func executeCommand(command string) error {
 		if jiraID != "" {
 			log.Printf("Jira ID: %s\n", jiraID)
 		}
+		if len(artifacts) > 0 {
+			log.Printf("Artifacts: %v\n", artifacts)
+		}
 	}
 
 	// Create a new Hive task
@@ -65,6 +70,7 @@ func executeCommand(command string) error {
 	if jiraID != "" {
 		task.Artifacts["Jira_Ticket_ID"] = jiraID
 	}
+	maps.Copy(task.Artifacts, artifacts)
 
 	// Start monitoring task progress
 	if err := handleTask(srv, task); err != nil {
@@ -149,6 +155,7 @@ func main() {
 
 	// Command-specific flags
 	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
+	rootCmd.Flags().StringToStringVarP(&artifacts, "artifact", "a", nil, "Custom artifacts as key=value pairs")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

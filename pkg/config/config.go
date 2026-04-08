@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hnimtadd/hive/pkg/utils"
@@ -188,7 +189,8 @@ func validateConfig(config *Config) error {
 		return errors.New("ai.provider cannot be empty")
 	}
 
-	switch config.AI.Provider {
+	provider := strings.ToLower(config.AI.Provider)
+	switch provider {
 	case "anthropic":
 		if config.AI.Anthropic == nil {
 			return errors.New("ai.anthropic configuration is required when provider is 'anthropic'")
@@ -218,6 +220,7 @@ func validateConfig(config *Config) error {
 	default:
 		return fmt.Errorf("unsupported ai.provider: %s", config.AI.Provider)
 	}
+	config.AI.Provider = provider
 
 	workspaceDir, err := utils.ExpandPath(config.WorkspaceDir)
 	if err != nil {

@@ -11,12 +11,7 @@ import (
 
 // NewLLMToolCallingClient creates the appropriate LLM client based on configuration.
 // This is the main entry point that handles client selection at config surface level.
-func NewLLMToolCallingClient() (model.ToolCallingChatModel, error) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
+func NewLLMToolCallingClient(cfg *config.Config) (model.ToolCallingChatModel, error) {
 	return NewLLMToolCallingClientWithConfig(&cfg.AI)
 }
 

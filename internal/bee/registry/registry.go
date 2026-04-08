@@ -9,14 +9,14 @@ import (
 	"slices"
 
 	"github.com/adrg/frontmatter"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/hnimtadd/hive/internal/bee"
-	"github.com/hnimtadd/hive/internal/model/llm"
 	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
-// Registry manages available agents in the system.
+// NewBeeRegistry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
 	ListAgents() []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
@@ -28,6 +28,7 @@ type registry struct {
 	bees  map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
 	tools map[string]tool.InvokableTool
 	path  string
+	llm   model.ToolCallingChatModel
 }
 
 // ListAgents implements [Registry].
@@ -41,7 +42,7 @@ func (a *registry) GetByID(id string) (bee.CustomBee[bee.WorkerInput, bee.Worker
 	return agent, ok
 }
 
-// scan: TODO: scan the agent folder and create agent with different persona and
+// scan scans the agent folder and create agent with different persona and
 // discovery tool registered also.
 func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], error) {
 	entries, err := os.ReadDir(a.path)
@@ -74,10 +75,7 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 				entry.Name(), beeConfig.TimeoutInSec, defaultTimeoutSec)
 			beeConfig.TimeoutInSec = defaultTimeoutSec
 		}
-		llm, err := llm.NewLLMToolCallingClientWithConfig(&cfg.AI)
-		if err != nil {
-			return nil, fmt.Errorf("failed to init llm: %w", err)
-		}
+
 		tools := []tool.InvokableTool{}
 		for _, required := range beeConfig.RequiredTools {
 			tool, ok := a.tools[required]
@@ -90,7 +88,7 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 		}
 		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
 		beeConfig.Tools = tools
-		beeConfig.LLM = llm
+		beeConfig.LLM = a.llm
 		workerAgent, err := bee.NewCustomBee[bee.WorkerInput, bee.WorkerOutput](beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
@@ -102,13 +100,14 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 	return agents, nil
 }
 
-func NewBeeResitry(appConfig *config.Config, tools toolRegistry.Registry) (Registry, error) {
+func NewBeeRegistry(appConfig *config.Config, llm model.ToolCallingChatModel, tools toolRegistry.Registry) (Registry, error) {
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
 		bees:  make(map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]),
 		tools: agentTools,
 		path:  appConfig.Bees.Dir,
+		llm:   llm,
 	}
 	agents, err := reg.scan(appConfig)
 	if err != nil {

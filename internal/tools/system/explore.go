@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"slices"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/bee"
-	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/trace"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
 )
@@ -134,53 +134,50 @@ Remember: You are an explorer, not a builder. Discover, analyze, and report—ne
 }
 
 // Explore performs codebase exploration.
-func explore(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
-	uuid, _ := uuid.NewUUID()
-	logger := trace.Logger(ctx)
-	logger.InfoContext(ctx,
-		"explore execution started",
-		slog.String("task", input.Task),
-		slog.String("thoroughness", string(input.Thoroughness)),
-	)
-	// Set default thoroughness if not specified
-	if input.Thoroughness == "" {
-		input.Thoroughness = ThoroughnessQuick
-	}
+func explore(llm model.ToolCallingChatModel) func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
+	return func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
+		uuid, _ := uuid.NewUUID()
+		logger := trace.Logger(ctx)
+		logger.InfoContext(ctx,
+			"explore execution started",
+			slog.String("task", input.Task),
+			slog.String("thoroughness", string(input.Thoroughness)),
+		)
+		// Set default thoroughness if not specified
+		if input.Thoroughness == "" {
+			input.Thoroughness = ThoroughnessQuick
+		}
 
-	// Validate thoroughness level
-	validThoroughness := []ThoroughnessLevel{ThoroughnessQuick, ThoroughnessMedium, ThoroughnessVeryThorough}
-	if !slices.Contains(validThoroughness, input.Thoroughness) {
-		input.Thoroughness = ThoroughnessQuick
-	}
+		// Validate thoroughness level
+		validThoroughness := []ThoroughnessLevel{ThoroughnessQuick, ThoroughnessMedium, ThoroughnessVeryThorough}
+		if !slices.Contains(validThoroughness, input.Thoroughness) {
+			input.Thoroughness = ThoroughnessQuick
+		}
 
-	systemTools, err := Tools()
-	if err != nil {
-		logger.ErrorContext(ctx, "failed to create tools", slog.String("err", err.Error()))
-		return nil, errors.New("no read-only tools available")
-	}
-	readTools := filterReadOnlyTools(systemTools)
-	logger.InfoContext(ctx, "read tools", slog.Int("num tools", len(readTools)))
+		systemTools, err := Tools()
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to create tools", slog.String("err", err.Error()))
+			return nil, errors.New("no read-only tools available")
+		}
+		readTools := filterReadOnlyTools(systemTools)
+		logger.InfoContext(ctx, "read tools", slog.Int("num tools", len(readTools)))
 
-	llm, err := llm.NewLLMToolCallingClient()
-	if err != nil {
-		logger.ErrorContext(ctx, "failed to create llm", slog.String("err", err.Error()))
-		return nil, err
+		bee, err := bee.NewCustomBee[ExploreInput, ExploreOutput](&bee.Config{
+			ID:           uuid.String(),
+			Tools:        readTools,
+			Persona:      getExploreSystemPrompt(),
+			LLM:          llm,
+			MaxSteps:     30,
+			TimeoutInSec: 60,
+		})
+		if err != nil {
+			logger.ErrorContext(ctx, "failed to create explore agent", slog.String("err", err.Error()))
+			return nil, err
+		}
+		return bee.Execute(ctx, input)
 	}
-	bee, err := bee.NewCustomBee[ExploreInput, ExploreOutput](&bee.Config{
-		ID:           uuid.String(),
-		Tools:        readTools,
-		Persona:      getExploreSystemPrompt(),
-		LLM:          llm,
-		MaxSteps:     30,
-		TimeoutInSec: 60,
-	})
-	if err != nil {
-		logger.ErrorContext(ctx, "failed to create explore agent", slog.String("err", err.Error()))
-		return nil, err
-	}
-	return bee.Execute(ctx, input)
 }
 
-func ExploreTool() (tool.InvokableTool, error) {
-	return utils.InferTool("explore", "Fast read-only agent tool optimized for searching and analyzing codebases", explore)
+func ExploreTool(llm model.ToolCallingChatModel) (tool.InvokableTool, error) {
+	return utils.InferTool("explore", "Fast read-only agent tool optimized for searching and analyzing codebases", explore(llm))
 }
