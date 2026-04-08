@@ -1,15 +1,14 @@
-package tools
+package registry
 
 import (
 	"context"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/hnimtadd/hive/internal/tools/system"
+	coreTools "github.com/hnimtadd/hive/internal/tools"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -33,11 +32,6 @@ func NewRegistry(appConfig *config.Config) (Registry, error) {
 		return nil, fmt.Errorf("failed to scan tools: %w", err)
 	}
 	r.tools = tools
-	systemTools, err := system.Tools()
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan system tool: %w", err)
-	}
-	maps.Copy(r.tools, systemTools)
 	return r, nil
 }
 
@@ -53,7 +47,7 @@ func (r *registry) scan() (map[string]tool.InvokableTool, error) {
 			continue
 		}
 		mdPath := filepath.Join(r.path, entry.Name(), "tool.yaml")
-		config, err := LoadToolConfig(mdPath) //nolint: govet// ignore lint
+		config, err := coreTools.LoadToolConfig(mdPath) //nolint: govet// ignore lint
 		if err != nil {
 			log.Printf("failed to load tool configuration from :%s, err: %s\n", mdPath, err)
 			continue
@@ -64,8 +58,7 @@ func (r *registry) scan() (map[string]tool.InvokableTool, error) {
 				return nil, fmt.Errorf("failed to load tool: %s, secret is not fullfilled", entry.Name())
 			}
 		}
-		fmt.Println("=====", config, "=====")
-		tool, err := NewHiveTool(config)
+		tool, err := coreTools.NewHiveTool(config)
 		if err != nil {
 			log.Printf("failed to initialize tool: %s", err)
 			continue

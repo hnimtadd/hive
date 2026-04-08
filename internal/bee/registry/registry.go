@@ -1,4 +1,4 @@
-package bee
+package registry
 
 import (
 	"fmt"
@@ -10,31 +10,32 @@ import (
 
 	"github.com/adrg/frontmatter"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/model/llm"
-	"github.com/hnimtadd/hive/internal/tools"
+	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
 // Registry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
-	ListAgents() []WorkerBee
+	ListAgents() []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
 	// GetByID get agent by agent ID
-	GetByID(id string) (WorkerBee, bool)
+	GetByID(id string) (bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], bool)
 }
 
 type registry struct {
-	bees  map[string]WorkerBee
+	bees  map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
 	tools map[string]tool.InvokableTool
 	path  string
 }
 
 // ListAgents implements [Registry].
-func (a *registry) ListAgents() []WorkerBee {
+func (a *registry) ListAgents() []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput] {
 	return slices.Collect(maps.Values(a.bees))
 }
 
-func (a *registry) GetByID(id string) (WorkerBee, bool) {
+func (a *registry) GetByID(id string) (bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], bool) {
 	agent, ok := a.bees[id]
 
 	return agent, ok
@@ -42,17 +43,17 @@ func (a *registry) GetByID(id string) (WorkerBee, bool) {
 
 // scan: TODO: scan the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
+func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], error) {
 	entries, err := os.ReadDir(a.path)
 	if err != nil {
 		log.Printf("failed to read agents home: %s\n", err)
-		return []WorkerBee{}, nil
+		return []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]{}, nil
 	}
 
 	// Use server timeout as default for agents, with a reasonable max cap (2x default)
 	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
 
-	agents := []WorkerBee{}
+	agents := []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -90,7 +91,7 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
 		beeConfig.Tools = tools
 		beeConfig.LLM = llm
-		workerAgent, err := NewCustomBee(beeConfig)
+		workerAgent, err := bee.NewCustomBee[bee.WorkerInput, bee.WorkerOutput](beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
 			continue
@@ -101,11 +102,11 @@ func (a *registry) scan(cfg *config.Config) ([]WorkerBee, error) {
 	return agents, nil
 }
 
-func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, error) {
+func NewBeeResitry(appConfig *config.Config, tools toolRegistry.Registry) (Registry, error) {
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
-		bees:  make(map[string]WorkerBee),
+		bees:  make(map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]),
 		tools: agentTools,
 		path:  appConfig.Bees.Dir,
 	}
@@ -119,14 +120,14 @@ func NewBeeResitry(appConfig *config.Config, tools tools.Registry) (Registry, er
 	return reg, nil
 }
 
-func LoadAgentConfig(path string) (*Config, error) {
+func LoadAgentConfig(path string) (*bee.Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	var cfg Config
+	var cfg bee.Config
 	// This reads the --- YAML --- block into 'cfg'
 	// and returns the remaining Markdown as 'persona'
 	persona, err := frontmatter.Parse(f, &cfg)

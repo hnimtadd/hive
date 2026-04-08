@@ -11,12 +11,16 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
+	"github.com/hnimtadd/hive/internal/bee/registry"
+	"github.com/hnimtadd/hive/internal/bee/system"
 	"github.com/hnimtadd/hive/internal/mapper"
 	"github.com/hnimtadd/hive/internal/storage"
+	toolsSystem "github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -28,7 +32,7 @@ import (
 type HiveServer struct {
 	agentv1.AgentServiceServer
 
-	registry   bee.Registry
+	registry   registry.Registry
 	config     *config.Config
 	storage    storage.TaskStorage
 	grpcServer *grpc.Server
@@ -40,7 +44,7 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry bee.Registry) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry registry.Registry) (*HiveServer, error) {
 	persona, err := getSupervisorPersona(registry)
 	if err != nil {
 		return nil, err
@@ -54,13 +58,21 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, registry 
 
 	// Use configured default timeout, capped at max timeout
 	timeout := cfg.Server.MaxTimeout
-
+	delegateTool, err := toolsSystem.DelegateTool()
+	if err != nil {
+		return nil, err
+	}
+	exploreTool, err := toolsSystem.ExploreTool()
+	if err != nil {
+		return nil, err
+	}
 	// Store supervisor configuration for creating per-request supervisors
 	supervisorConfig := &bee.Config{
 		Persona:      persona,
 		MaxSteps:     3,
 		TimeoutInSec: int(timeout.Seconds()),
 		LLM:          llm,
+		Tools:        []tool.InvokableTool{delegateTool, exploreTool},
 	}
 
 	return &HiveServer{
@@ -208,7 +220,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
 	supervisorConfig.ID = uuid.New().String()
-	supervisor, err := bee.NewQueenBee(s.registry, &supervisorConfig)
+	supervisor, err := system.NewQueenBee(&supervisorConfig)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create supervisor", slog.Any("error", err))
 		return fmt.Errorf("failed to create supervisor: %w", err)
@@ -226,7 +238,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 
 loop:
 	for {
-		var output *bee.QueenOutput
+		var output *system.QueenOutput
 
 		// Create a timeout context for each supervisor execution iteration
 		execCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -236,7 +248,7 @@ loop:
 			// Check for timeout errors
 			if ctx.Err() == context.DeadlineExceeded || execCtx.Err() == context.DeadlineExceeded {
 				logger.Error("task execution timed out", slog.String("task_id", task.ID), slog.Duration("timeout", timeout))
-				timeoutUpdate := mapper.ToTaskUpdateFailed(&bee.QueenOutput{
+				timeoutUpdate := mapper.ToTaskUpdateFailed(&system.QueenOutput{
 					Status:  types.TaskStatusFailed,
 					Content: fmt.Sprintf("Task execution timed out after %s", timeout),
 				})
@@ -370,7 +382,7 @@ loop:
 	return nil
 }
 
-func getSupervisorPersona(registry bee.Registry) (string, error) {
+func getSupervisorPersona(registry registry.Registry) (string, error) {
 	agents := registry.ListAgents()
 	persona := `
 Role: You are the Central Orchestrator for a multi-agent swarm. Your goal is to navigate a complex task to completion by delegating to specialized workers.
@@ -432,7 +444,7 @@ Available Agents:
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}
-	outputDescription, err := utils.DescribeJSONSchema[bee.QueenOutput]()
+	outputDescription, err := utils.DescribeJSONSchema[system.QueenOutput]()
 	if err != nil {
 		return "", fmt.Errorf("failed to describe JSON schema: %w", err)
 	}

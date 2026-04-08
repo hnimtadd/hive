@@ -7,10 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hnimtadd/hive/internal/bee"
+	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/server"
-	"github.com/hnimtadd/hive/internal/tools"
+	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 )
@@ -48,13 +48,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("faield to create llm: %v", err)
 	}
-	toolRegistry, err := tools.NewRegistry(cfg)
+	toolRegistry, err := toolRegistry.NewRegistry(cfg)
 	if err != nil {
 		log.Fatalf("failed to init tool registry: %s", err)
 	}
 
 	// Create agent agentRegistry
-	agentRegistry, err := bee.NewBeeResitry(cfg, toolRegistry)
+	agentRegistry, err := registry.NewBeeResitry(cfg, toolRegistry)
 	if err != nil {
 		log.Fatalf("failed to init registry: %s", err)
 	}

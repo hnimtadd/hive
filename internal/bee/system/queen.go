@@ -1,18 +1,16 @@
-package bee
+package system
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"slices"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
@@ -21,7 +19,11 @@ import (
 )
 
 type QueenBee interface {
-	baseBee
+	// GetID returns the unique identifier for this agent instance
+	GetID() string
+
+	// Description return a short self-description about agent capabilities.
+	Description() string
 
 	// Execute performs the main work of the task
 	// Returns an error if execution fails, nil if successful
@@ -45,15 +47,10 @@ type queen struct {
 	outputValidator *jsonschema.Resolved
 
 	reactAgent *react.Agent
-	config     *Config
+	config     *bee.Config
 }
 
-func NewQueenBee(registry Registry, config *Config, agentOpts ...react.AgentOption) (QueenBee, error) {
-	exploreTool := exploreTool(config)
-	config.Tools = append(config.Tools,
-		delegateTool(registry),
-		exploreTool,
-	)
+func NewQueenBee(config *bee.Config, agentOpts ...react.AgentOption) (QueenBee, error) {
 	reactAgent, err := react.NewWithSystemPrompt(
 		config.ID,
 		config.LLM,
@@ -204,73 +201,4 @@ func (s *queen) Description() string {
 // GetID implements [QueenBee].
 func (s *queen) GetID() string {
 	return s.id
-}
-
-type delegateTaskInput struct {
-	WorkerInput
-
-	ID string `json:"agent_id"`
-}
-
-func delegateTool(registry Registry) tool.InvokableTool {
-	// Manually define ToolInfo
-	toolInfo := &schema.ToolInfo{
-		Name: "delegate_agent",
-		Desc: "Look up if an agent with ID is exists and delegate task to that agent",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"agent_id": {Type: "string", Desc: "Agent ID"},
-			"context":  {Type: "string", Desc: "The global context that the agent need to be aware about"},
-			"task":     {Type: "string", Desc: "The detail task that agent have to complete in this run"},
-			"artifact": {Type: schema.Object, Desc: "artifacts that the agent need to execute"},
-		}),
-	}
-
-	// Create enhanced tool
-	return utils.NewTool(
-		toolInfo,
-		func(ctx context.Context, input *delegateTaskInput) (*schema.ToolResult, error) {
-			a, exists := registry.GetByID(input.ID)
-			if !exists {
-				log.Println("agent with ID not found", input.ID)
-				return &schema.ToolResult{
-					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s not found", input.ID)},
-					},
-				}, nil
-			}
-			i := &WorkerInput{
-				Context:   input.Context,
-				Artifacts: input.Artifacts,
-				Task:      input.Task,
-			}
-
-			if !a.CanHandle(i) {
-				log.Println("agent can't handle")
-				return &schema.ToolResult{
-					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s could not handle the task", input.ID)},
-					},
-				}, nil
-			}
-			output, err := a.Execute(ctx, i)
-			if err != nil {
-				log.Println("failed to execute", err)
-				return &schema.ToolResult{
-					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Agent %s failed to not handle the task: %s", input.ID, err)},
-					},
-				}, nil
-			}
-			outputJSON, err := json.Marshal(output)
-			if err != nil {
-				return &schema.ToolResult{
-					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to convert output to a json: %v", err)},
-					},
-				}, nil
-			}
-
-			return &schema.ToolResult{Parts: []schema.ToolOutputPart{{Type: schema.ToolPartTypeText, Text: string(outputJSON)}}}, nil
-		},
-	)
 }
