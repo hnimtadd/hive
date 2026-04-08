@@ -10,62 +10,13 @@ import (
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
-// NewOllamaClient creates a new anthropic client that implements Eino's model.ChatModel interface.
-// This replaces the custom llm.Client interface with Eino's standard interface.
-func NewOllamaClient() (model.ToolCallingChatModel, error) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.AI.Ollama == nil {
-		return nil, errors.New("ollama configuration is empty")
-	}
-
-	return NewOllamaClientWithConfig(cfg.AI.Ollama)
-}
-
-// NewOllamaClientWithConfig creates a new anthropic client with provided config.
-// Returns Eino's model.ChatModel interface instead of custom wrapper.
-func NewOllamaClientWithConfig(cfg *config.OllamaConfig) (model.ToolCallingChatModel, error) {
+// newOllamaToolCallingClientWithConfig creates a tool-calling Ollama client with config.
+func newOllamaToolCallingClientWithConfig(model string, cfg *config.OllamaConfig) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
 		return nil, errors.New("ollama configuration is empty")
 	}
 
-	anthropicConfig, err := prepareOllamaConfig(*cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare Ollama configuration: %w", err)
-	}
-
-	// Return Eino's ChatModel directly - no wrapper needed
-	chatModel, err := ollama.NewChatModel(context.Background(), anthropicConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Ollama model: %w", err)
-	}
-
-	return chatModel, nil
-}
-
-// NewOllamaToolCallingClient creates a anthropic client that supports tool calling.
-// This returns the more advanced ToolCallingChatModel interface.
-func NewOllamaToolCallingClient() (model.ToolCallingChatModel, error) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.AI.Ollama == nil {
-		return nil, errors.New("ollama configuration is empty")
-	}
-
-	return NewOllamaToolCallingClientWithConfig(cfg.AI.Ollama)
-}
-
-// NewOllamaToolCallingClientWithConfig creates a tool-calling Ollama client with config.
-func NewOllamaToolCallingClientWithConfig(cfg *config.OllamaConfig) (model.ToolCallingChatModel, error) {
-	if cfg == nil {
-		return nil, errors.New("ollama configuration is empty")
-	}
-
-	config, err := prepareOllamaConfig(*cfg)
+	config, err := prepareOllamaConfig(model, *cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare Ollama configuration: %w", err)
 	}
@@ -79,9 +30,9 @@ func NewOllamaToolCallingClientWithConfig(cfg *config.OllamaConfig) (model.ToolC
 	return chatModel, nil
 }
 
-func prepareOllamaConfig(conf config.OllamaConfig) (*ollama.ChatModelConfig, error) { //nolint:unparam // this is just our convention
+func prepareOllamaConfig(model string, conf config.OllamaConfig) (*ollama.ChatModelConfig, error) { //nolint:unparam // this is just our convention
 	return &ollama.ChatModelConfig{
 		BaseURL: conf.BaseURL,
-		Model:   conf.Model,
+		Model:   model,
 	}, nil
 }

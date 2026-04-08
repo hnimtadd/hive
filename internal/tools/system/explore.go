@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/bee"
+	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/trace"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
 )
@@ -134,7 +134,7 @@ Remember: You are an explorer, not a builder. Discover, analyze, and report—ne
 }
 
 // Explore performs codebase exploration.
-func explore(llm model.ToolCallingChatModel) func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
+func explore(provider llm.Provider) func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
 	return func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
 		uuid, _ := uuid.NewUUID()
 		logger := trace.Logger(ctx)
@@ -161,12 +161,13 @@ func explore(llm model.ToolCallingChatModel) func(ctx context.Context, input *Ex
 		}
 		readTools := filterReadOnlyTools(systemTools)
 		logger.InfoContext(ctx, "read tools", slog.Int("num tools", len(readTools)))
+		model, _ := provider.GetModel(ctx, llm.TierFast)
 
 		bee, err := bee.NewCustomBee[ExploreInput, ExploreOutput](&bee.Config{
 			ID:           uuid.String(),
 			Tools:        readTools,
 			Persona:      getExploreSystemPrompt(),
-			LLM:          llm,
+			LLM:          model,
 			MaxSteps:     30,
 			TimeoutInSec: 60,
 		})
@@ -178,6 +179,6 @@ func explore(llm model.ToolCallingChatModel) func(ctx context.Context, input *Ex
 	}
 }
 
-func ExploreTool(llm model.ToolCallingChatModel) (tool.InvokableTool, error) {
+func ExploreTool(llm llm.Provider) (tool.InvokableTool, error) {
 	return utils.InferTool("explore", "Fast read-only agent tool optimized for searching and analyzing codebases", explore(llm))
 }

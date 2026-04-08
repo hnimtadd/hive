@@ -14,48 +14,13 @@ import (
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
-// NewAnthropicClientWithConfig creates a new anthropic client with provided config.
-// Returns Eino's model.ChatModel interface instead of custom wrapper.
-func NewAnthropicClientWithConfig(cfg *config.AnthropicConfig) (model.ToolCallingChatModel, error) {
+// newAnthropicToolCallingClientWithConfig creates a tool-calling Anthropic client with config.
+func newAnthropicToolCallingClientWithConfig(model string, cfg *config.AnthropicConfig) (model.ToolCallingChatModel, error) {
 	if cfg == nil {
 		return nil, errors.New("Anthropic configuration is empty")
 	}
 
-	anthropicConfig, err := prepareAnthropicConfig(*cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prepare Anthropic configuration: %w", err)
-	}
-
-	// Return Eino's ChatModel directly - no wrapper needed
-	chatModel, err := anthropic.NewChatModel(context.Background(), anthropicConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Anthropic model: %w", err)
-	}
-
-	return chatModel, nil
-}
-
-// NewAnthropicToolCallingClient creates a anthropic client that supports tool calling.
-// This returns the more advanced ToolCallingChatModel interface.
-func NewAnthropicToolCallingClient() (model.ToolCallingChatModel, error) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-	if cfg.AI.Anthropic == nil {
-		return nil, errors.New("Anthropic configuration is empty")
-	}
-
-	return NewAnthropicToolCallingClientWithConfig(cfg.AI.Anthropic)
-}
-
-// NewAnthropicToolCallingClientWithConfig creates a tool-calling Anthropic client with config.
-func NewAnthropicToolCallingClientWithConfig(cfg *config.AnthropicConfig) (model.ToolCallingChatModel, error) {
-	if cfg == nil {
-		return nil, errors.New("Anthropic configuration is empty")
-	}
-
-	anthropicConfig, err := prepareAnthropicConfig(*cfg)
+	anthropicConfig, err := prepareAnthropicConfig(model, *cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare Anthropic configuration: %w", err)
 	}
@@ -70,7 +35,7 @@ func NewAnthropicToolCallingClientWithConfig(cfg *config.AnthropicConfig) (model
 	return chatModel, nil
 }
 
-func prepareAnthropicConfig(conf config.AnthropicConfig) (*anthropic.Config, error) {
+func prepareAnthropicConfig(model string, conf config.AnthropicConfig) (*anthropic.Config, error) {
 	apiKey := os.Getenv(conf.APIKeyEnv)
 	if apiKey == "" {
 		return nil, fmt.Errorf("%s environment variable is required", conf.APIKeyEnv)
@@ -78,7 +43,7 @@ func prepareAnthropicConfig(conf config.AnthropicConfig) (*anthropic.Config, err
 
 	AnthropicConfig := &anthropic.Config{
 		APIKey: apiKey,
-		Model:  conf.Model,
+		Model:  model,
 	}
 
 	if conf.BaseURL != "" {

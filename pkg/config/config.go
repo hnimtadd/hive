@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/hnimtadd/hive/pkg/utils"
@@ -27,11 +26,11 @@ type Config struct {
 
 // AIConfig holds AI/LLM configuration.
 type AIConfig struct {
-	Provider  string           `mapstructure:"provider"`
-	Anthropic *AnthropicConfig `mapstructure:"anthropic"`
-	OpenAI    *OpenAIConfig    `mapstructure:"openai"`
-	Ollama    *OllamaConfig    `mapstructure:"ollama"`
-	MaxStep   int              `mapstructure:"max_step"`
+	Tiers     map[string]ModelTier `mapstructure:"tiers"`
+	Anthropic *AnthropicConfig     `mapstructure:"anthropic"`
+	OpenAI    *OpenAIConfig        `mapstructure:"openai"`
+	Ollama    *OllamaConfig        `mapstructure:"ollama"`
+	MaxStep   int                  `mapstructure:"max_step"`
 }
 type BeeConfig struct {
 	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
@@ -48,6 +47,16 @@ type TaskConfig struct {
 	Storage string        `mapstructure:"storage"`
 }
 
+type ModelTiers struct {
+	Fast  ModelTier `mapstructure:"fast"`
+	Smart ModelTier `mapstructure:"smart"`
+}
+
+type ModelTier struct {
+	Provider string `mapstructure:"provider"`
+	Model    string `mapstructure:"model"`
+}
+
 type AnthropicProvider string
 
 const (
@@ -58,7 +67,6 @@ const (
 // AnthropicConfig holds Anthropic-specific configuration.
 type AnthropicConfig struct {
 	Provider         AnthropicProvider `mapstructure:"provider"`
-	Model            string            `mapstructure:"model"`
 	AnthropicVersion string            `mapstructure:"anthropic_version"`
 	BaseURL          string            `mapstructure:"api_base_url"`
 	Headers          map[string]string `mapstructure:"api_headers"`
@@ -68,7 +76,6 @@ type AnthropicConfig struct {
 
 // OpenAIConfig holds OpenAI-specific configuration.
 type OpenAIConfig struct {
-	Model       string         `mapstructure:"model"`
 	APIKeyEnv   string         `mapstructure:"api_key_env"`
 	BaseURL     string         `mapstructure:"base_url"`
 	ExtraFields map[string]any `mapstructure:"extra_fields"`
@@ -76,7 +83,6 @@ type OpenAIConfig struct {
 
 // OllamaConfig holds OllamaConfig-specific configuration.
 type OllamaConfig struct {
-	Model   string `mapstructure:"model"`
 	BaseURL string `mapstructure:"base_url"`
 }
 
@@ -184,44 +190,6 @@ func setDefaults() {
 
 // validateConfig validates the configuration values.
 func validateConfig(config *Config) error {
-	// Validate AI config
-	if config.AI.Provider == "" {
-		return errors.New("ai.provider cannot be empty")
-	}
-
-	provider := strings.ToLower(config.AI.Provider)
-	switch provider {
-	case "anthropic":
-		if config.AI.Anthropic == nil {
-			return errors.New("ai.anthropic configuration is required when provider is 'anthropic'")
-		}
-		if config.AI.Anthropic.APIKeyEnv == "" {
-			return errors.New("ai.anthropic.api_key_env cannot be empty")
-		}
-		// Check if API key environment variable exists
-		if os.Getenv(config.AI.Anthropic.APIKeyEnv) == "" {
-			return fmt.Errorf("environment variable %s is not set", config.AI.Anthropic.APIKeyEnv)
-		}
-	case "openai":
-		if config.AI.OpenAI == nil {
-			return errors.New("ai.openai configuration is required when provider is 'openai'")
-		}
-		if config.AI.OpenAI.APIKeyEnv == "" {
-			return errors.New("ai.openai.api_key_env cannot be empty")
-		}
-		// Check if API key environment variable exists
-		if os.Getenv(config.AI.OpenAI.APIKeyEnv) == "" {
-			return fmt.Errorf("environment variable %s is not set", config.AI.OpenAI.APIKeyEnv)
-		}
-	case "ollama":
-		if config.AI.Ollama == nil {
-			return errors.New("ai.ollama configuration is required when provider is 'ollama'")
-		}
-	default:
-		return fmt.Errorf("unsupported ai.provider: %s", config.AI.Provider)
-	}
-	config.AI.Provider = provider
-
 	workspaceDir, err := utils.ExpandPath(config.WorkspaceDir)
 	if err != nil {
 		return fmt.Errorf("failed to expand path: %w", err)

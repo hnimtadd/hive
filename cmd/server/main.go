@@ -45,7 +45,7 @@ func main() {
 		log.Printf("Tracing initialized: level=%s format=%s", cfg.Tracing.LogLevel, cfg.Tracing.LogFormat)
 	}
 
-	llm, err := llm.NewLLMToolCallingClient(cfg)
+	llm, err := llm.NewLLMProvider(&cfg.AI)
 	if err != nil {
 		log.Fatalf("failed to create llm: %v", err)
 	}

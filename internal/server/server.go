@@ -10,7 +10,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/google/uuid"
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
@@ -19,6 +18,7 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/bee/system"
 	"github.com/hnimtadd/hive/internal/mapper"
+	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/storage"
 	toolsSystem "github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/internal/trace"
@@ -44,7 +44,7 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, reg registry.Registry, storage storage.TaskStorage) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.TaskStorage) (*HiveServer, error) {
 	persona, err := getSupervisorPersona(reg)
 	if err != nil {
 		return nil, err
@@ -56,16 +56,17 @@ func NewHiveServer(cfg *config.Config, llm model.ToolCallingChatModel, reg regis
 	if err != nil {
 		return nil, err
 	}
-	exploreTool, err := toolsSystem.ExploreTool(llm)
+	exploreTool, err := toolsSystem.ExploreTool(provider)
 	if err != nil {
 		return nil, err
 	}
+	model, _ := provider.GetModel(context.TODO(), llm.TierSmart)
 	// Store supervisor configuration for creating per-request supervisors
 	supervisorConfig := &bee.Config{
 		Persona:      persona,
 		MaxSteps:     3,
 		TimeoutInSec: int(timeout.Seconds()),
-		LLM:          llm,
+		LLM:          model,
 		Tools:        []tool.InvokableTool{delegateTool, exploreTool},
 	}
 

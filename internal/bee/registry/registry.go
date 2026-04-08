@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"maps"
@@ -9,9 +10,9 @@ import (
 	"slices"
 
 	"github.com/adrg/frontmatter"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/hnimtadd/hive/internal/bee"
+	"github.com/hnimtadd/hive/internal/model/llm"
 	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
 	"github.com/hnimtadd/hive/pkg/config"
 )
@@ -28,7 +29,7 @@ type registry struct {
 	bees  map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
 	tools map[string]tool.InvokableTool
 	path  string
-	llm   model.ToolCallingChatModel
+	llm   llm.Provider
 }
 
 // ListAgents implements [Registry].
@@ -88,7 +89,8 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 		}
 		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
 		beeConfig.Tools = tools
-		beeConfig.LLM = a.llm
+		model, _ := a.llm.GetModel(context.TODO(), llm.TierDefault)
+		beeConfig.LLM = model
 		workerAgent, err := bee.NewCustomBee[bee.WorkerInput, bee.WorkerOutput](beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
@@ -100,7 +102,7 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 	return agents, nil
 }
 
-func NewBeeRegistry(appConfig *config.Config, llm model.ToolCallingChatModel, tools toolRegistry.Registry) (Registry, error) {
+func NewBeeRegistry(appConfig *config.Config, llm llm.Provider, tools toolRegistry.Registry) (Registry, error) {
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
