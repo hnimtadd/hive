@@ -30,27 +30,22 @@ type ExploreInput struct {
 	Thoroughness ThoroughnessLevel `json:"thoroughness,omitempty" jsonschema:"Search thoroughness: 'quick', 'medium', or 'very thorough' (default: quick)"`
 }
 
-// ExploreOutput defines output from the Explore agent.
+// ExploreOutput defines output from the Explore agent - kept simple for agent consumption.
 type ExploreOutput struct {
-	Summary      string          `json:"summary"                 jsonschema:"Brief summary of findings"`
-	KeyFiles     []FileReference `json:"key_files,omitempty"     jsonschema:"List of relevant files with descriptions"`
-	Patterns     string          `json:"patterns,omitempty"      jsonschema:"Identified patterns or structures"`
-	CodeSnippets []CodeSnippet   `json:"code_snippets,omitempty" jsonschema:"Relevant code excerpts"`
-	Notes        string          `json:"notes,omitempty"         jsonschema:"Additional observations or architectural notes"`
+	// Brief summary of what was found (most important)
+	Summary string `json:"summary" jsonschema:"2-3 sentence summary of key findings"`
+
+	// Key files discovered with brief descriptions (optional)
+	RelevantFiles []FileInfo `json:"relevant_files,omitempty" jsonschema:"Important files found, include path and brief description"`
+
+	// Additional context or patterns observed (optional)
+	KeyInsights string `json:"key_insights,omitempty" jsonschema:"Notable patterns, architecture, or observations"`
 }
 
-// FileReference represents a file with location info.
-type FileReference struct {
-	Path        string `json:"path"                  jsonschema:"File path"`
-	LineNumber  int    `json:"line_number,omitempty" jsonschema:"Optional line number"`
-	Description string `json:"description"           jsonschema:"What this file contains or does"`
-}
-
-// CodeSnippet represents a code excerpt.
-type CodeSnippet struct {
-	File     string `json:"file"               jsonschema:"Source file path"`
-	Language string `json:"language,omitempty" jsonschema:"Programming language"`
-	Code     string `json:"code"               jsonschema:"Code content"`
+// FileInfo represents a discovered file - minimal info for other agents.
+type FileInfo struct {
+	Path        string `json:"path"        jsonschema:"File path"`
+	Description string `json:"description" jsonschema:"What this file contains or does"`
 }
 
 // filterReadOnlyTools filters tools to only include safe read-only operations.
@@ -116,12 +111,13 @@ Adjust your search strategy based on the thoroughness level:
 - **CONTEXT AWARE**: Parse the thoroughness level from input
 
 ## Output Format
-Provide structured findings:
-- Summary: Brief overview
-- Key Files: List with paths, line numbers, descriptions
-- Patterns: Identified structures or conventions
-- Code Snippets: Relevant excerpts with context
-- Notes: High-level architectural observations
+Keep your response concise and focused:
+
+1. **Summary** (required): 2-3 sentences capturing the most important findings
+2. **Relevant Files** (optional): Only files actually worth reading for the task
+3. **Key Insights** (optional): Notable patterns or architecture observations
+
+Be brief - other agents will use this to decide next steps, not to read a full report.
 
 ========= INPUT FORMAT ========
 %s
@@ -130,7 +126,7 @@ Provide structured findings:
 YOU MUST RESPOND WITH A RAW JSON THAT FOLLOWS THIS SCHEMA:
 %s
 
-Remember: You are an explorer, not a builder. Discover, analyze, and report—never modify or execute.`, inputDesc, outputDesc)
+Remember: You are an explorer, not a builder. Be concise - summarize, don't dump.`, inputDesc, outputDesc)
 }
 
 // Explore performs codebase exploration.
@@ -168,8 +164,8 @@ func explore(provider llm.Provider) func(ctx context.Context, input *ExploreInpu
 			Tools:        readTools,
 			Persona:      getExploreSystemPrompt(),
 			LLM:          model,
-			MaxSteps:     30,
-			TimeoutInSec: 60,
+			MaxSteps:     100,
+			TimeoutInSec: 200,
 		})
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to create explore agent", slog.String("err", err.Error()))

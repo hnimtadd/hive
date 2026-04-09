@@ -31,5 +31,53 @@ func HeristicallyExtractJSONString(content string) (string, error) {
 	if first == -1 || last < first {
 		return "", errors.New("invalid JSON, could not find JSON object")
 	}
-	return content[first : last+1], nil
+	content = content[first : last+1]
+
+	// Fix unescaped newlines inside JSON strings
+	// LLMs often output multi-line strings but don't escape them for JSON
+	content = fixUnescapedNewlines(content)
+
+	return content, nil
+}
+
+// fixUnescapedNewlines escapes literal newlines that are inside JSON string values
+func fixUnescapedNewlines(content string) string {
+	var result strings.Builder
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(content); i++ {
+		char := content[i]
+
+		if escaped {
+			result.WriteByte(char)
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			result.WriteByte(char)
+			escaped = true
+			continue
+		}
+
+		if char == '"' {
+			inString = !inString
+			result.WriteByte(char)
+			continue
+		}
+
+		// If we're inside a string and hit a literal newline, escape it
+		if inString && (char == '\n' || char == '\r') {
+			if char == '\n' {
+				result.WriteString("\\n")
+			} else {
+				result.WriteString("\\r")
+			}
+		} else {
+			result.WriteByte(char)
+		}
+	}
+
+	return result.String()
 }

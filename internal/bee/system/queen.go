@@ -130,28 +130,80 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 		}()
 		msgs = append(msgs, result)
 
+		// Track validation failures for observability
+		validationErrors := make([]string, 0)
+
 		content, err = hiveutils.HeristicallyExtractJSONString(content)
 		if err != nil {
-			trace.Logger(ctx).Debug("failed to extract JSON string", slog.Any("error", err))
+			validationErrors = append(validationErrors, fmt.Sprintf("JSON_EXTRACTION: %s", err))
+			logger.ErrorContext(ctx, "validation failed - raw output preserved for debugging",
+				slog.String("queen_id", s.id),
+				slog.String("error_type", "JSON_EXTRACTION"),
+				slog.String("error", err.Error()),
+				slog.String("raw_output", result.Content),
+				slog.Int("raw_output_length", len(result.Content)),
+			)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output to agent output schema", err).
+				WithContext("raw_output", result.Content)
 		}
+
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
-			trace.Logger(ctx).Debug("failed to unmarshal JSON string", slog.Any("error", err))
+			validationErrors = append(validationErrors, fmt.Sprintf("JSON_PARSE: %s", err))
+			logger.ErrorContext(ctx, "validation failed - extracted content preserved",
+				slog.String("queen_id", s.id),
+				slog.String("error_type", "JSON_PARSE"),
+				slog.String("error", err.Error()),
+				slog.String("extracted_content", content),
+				slog.String("raw_output", result.Content),
+			)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to map output to an object"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output to agent output schema", err).
+				WithContext("extracted_content", content).
+				WithContext("raw_output", result.Content)
 		}
 
 		if err = s.outputValidator.Validate(output); err != nil {
-			trace.Logger(ctx).Debug("failed to validate JSON against output schema", slog.Any("error", err))
+			validationErrors = append(validationErrors, fmt.Sprintf("SCHEMA_VALIDATION: %s", err))
+			// Dump the full output structure for debugging
+			outputJSON, _ := json.Marshal(output)
+			logger.ErrorContext(ctx, "validation failed - schema mismatch",
+				slog.String("queen_id", s.id),
+				slog.String("error_type", "SCHEMA_VALIDATION"),
+				slog.String("error", err.Error()),
+				slog.String("parsed_output", string(outputJSON)),
+				slog.String("extracted_content", content),
+				slog.String("raw_output", result.Content),
+			)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err).
+				WithContext("parsed_output", output).
+				WithContext("extracted_content", content).
+				WithContext("raw_output", result.Content)
 		}
+
 		agentOutput := QueenOutput{}
 		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
+			validationErrors = append(validationErrors, fmt.Sprintf("TYPE_UNMARSHAL: %s", err))
+			logger.ErrorContext(ctx, "validation failed - type unmarshaling error",
+				slog.String("queen_id", s.id),
+				slog.String("error_type", "TYPE_UNMARSHAL"),
+				slog.String("error", err.Error()),
+				slog.String("content", content),
+			)
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to parse output JSON"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err).
+				WithContext("content", content)
+		}
+
+		// Log successful validation for debugging
+		if len(validationErrors) > 0 {
+			logger.DebugContext(ctx, "output recovered after validation attempts",
+				slog.String("queen_id", s.id),
+				slog.Int("attempts", len(validationErrors)),
+				slog.Any("errors_encountered", validationErrors),
+			)
 		}
 		if len(result.ReasoningContent) > 0 {
 			agentOutput.Thought += fmt.Sprintf("system thought: %s", result.ReasoningContent)
