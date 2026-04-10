@@ -64,7 +64,7 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	// Store supervisor configuration for creating per-request supervisors
 	supervisorConfig := &bee.Config{
 		Persona:      persona,
-		MaxSteps:     3,
+		MaxSteps:     10,
 		TimeoutInSec: int(timeout.Seconds()),
 		LLM:          model,
 		Tools:        []tool.InvokableTool{delegateTool, exploreTool},
@@ -93,7 +93,7 @@ func (s *HiveServer) Serve(addr string) error {
 		),
 		grpc.ChainStreamInterceptor(
 			timeoutStreamInterceptor(s.config.Server.MaxTimeout),
-			trace.StreamServerInterceptor(),
+			trace.StreamServerInterceptor(&s.config.Tracing.SessionLog),
 		),
 	)
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
@@ -185,6 +185,9 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 		logger.Error("first message must be a task request")
 		return errors.New("first message must be a task request")
 	}
+
+	// Note: Session logging is now handled via context from StreamServerInterceptor
+	// Session logger can be retrieved from context using trace.GetSessionLogger(ctx)
 
 	// Use configured timeout (could be extended to extract from request metadata)
 	timeout := s.config.Tasks.Timeout

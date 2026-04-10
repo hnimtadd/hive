@@ -48,7 +48,7 @@ func Logger(ctx context.Context) *slog.Logger {
 	}
 
 	logger := defaultLogger
-	tc, ok := TraceFromContext(ctx)
+	tc, ok := TraceContextFromContext(ctx)
 	if ok {
 		logger = logger.With(slog.String("trace_id", string(tc.TraceID)))
 	}

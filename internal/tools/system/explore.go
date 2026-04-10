@@ -69,10 +69,12 @@ func filterReadOnlyTools(tools map[string]tool.InvokableTool) []tool.InvokableTo
 	return filtered
 }
 
-// getExploreSystemPrompt returns the system prompt for the Explore agent.
-func getExploreSystemPrompt() string {
+// GetExploreSystemPrompt returns the system prompt for the Explore agent.
+func GetExploreSystemPrompt() string {
 	inputDesc, _ := hiveutils.DescribeJSONSchema[ExploreInput]()
-	outputDesc, _ := hiveutils.DescribeJSONSchema[ExploreOutput]()
+	// Generate human-readable schema description instead of raw JSON schema
+	// This prevents LLM from outputting schema definition instead of data
+	outputDesc, _ := hiveutils.DescribeOutputJSON[ExploreOutput]()
 
 	return fmt.Sprintf(`You are a specialized codebase exploration agent optimized for fast, read-only analysis.
 
@@ -110,23 +112,12 @@ Adjust your search strategy based on the thoroughness level:
 - **SPEED MATTERS**: Be efficient, leverage your fast model
 - **CONTEXT AWARE**: Parse the thoroughness level from input
 
-## Output Format
-Keep your response concise and focused:
-
-1. **Summary** (required): 2-3 sentences capturing the most important findings
-2. **Relevant Files** (optional): Only files actually worth reading for the task
-3. **Key Insights** (optional): Notable patterns or architecture observations
-
-Be brief - other agents will use this to decide next steps, not to read a full report.
+======== Output Format =======
+Return ONLY a raw JSON object (no markdown code blocks).
+%s
 
 ========= INPUT FORMAT ========
-%s
-
-========= OUTPUT FORMAT ========
-YOU MUST RESPOND WITH A RAW JSON THAT FOLLOWS THIS SCHEMA:
-%s
-
-Remember: You are an explorer, not a builder. Be concise - summarize, don't dump.`, inputDesc, outputDesc)
+%s`, outputDesc, inputDesc)
 }
 
 // Explore performs codebase exploration.
@@ -162,7 +153,7 @@ func explore(provider llm.Provider) func(ctx context.Context, input *ExploreInpu
 		bee, err := bee.NewCustomBee[ExploreInput, ExploreOutput](&bee.Config{
 			ID:           uuid.String(),
 			Tools:        readTools,
-			Persona:      getExploreSystemPrompt(),
+			Persona:      GetExploreSystemPrompt(),
 			LLM:          model,
 			MaxSteps:     100,
 			TimeoutInSec: 200,

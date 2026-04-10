@@ -102,6 +102,24 @@ type TraceConfig struct {
 	LogFormat string `mapstructure:"log_format"`
 	LogFile   string `mapstructure:"log_file"`
 	AddSource bool   `mapstructure:"add_source"`
+	// SessionLog configures session/agent execution logging
+	SessionLog SessionLogConfig `mapstructure:"session_log"`
+}
+
+// SessionLogConfig configures session logging for agent/LLM interactions
+type SessionLogConfig struct {
+	// Enabled turns on session logging
+	Enabled bool `mapstructure:"enabled"`
+	// Dir is the output directory for session logs (default: ./hive/sessions)
+	Dir string `mapstructure:"dir"`
+	// LogRequests logs incoming LLM requests
+	LogRequests bool `mapstructure:"log_requests"`
+	// LogResponses logs outgoing LLM responses
+	LogResponses bool `mapstructure:"log_responses"`
+	// LogTools logs tool calls
+	LogTools bool `mapstructure:"log_tools"`
+	// MaxContentLength limits logged content size (0 = no limit)
+	MaxContentLength int `mapstructure:"max_content_length"`
 }
 
 // LoadConfig loads configuration from file and environment variables.
@@ -186,6 +204,12 @@ func setDefaults() {
 	viper.SetDefault("tracing.log_format", "json")
 	viper.SetDefault("tracing.log_file", "")
 	viper.SetDefault("tracing.add_source", false)
+	viper.SetDefault("tracing.session_log.enabled", true)
+	viper.SetDefault("tracing.session_log.dir", "")
+	viper.SetDefault("tracing.session_log.log_requests", true)
+	viper.SetDefault("tracing.session_log.log_responses", true)
+	viper.SetDefault("tracing.session_log.log_tools", true)
+	viper.SetDefault("tracing.session_log.max_content_length", 2000)
 }
 
 // validateConfig validates the configuration values.
@@ -225,6 +249,23 @@ func validateConfig(config *Config) error {
 	// Validate execution configuration
 	if config.Tasks.Timeout <= 0 {
 		return errors.New("task.timeout must be positive")
+	}
+
+	// Validate and create session log directory
+	if config.Tracing.SessionLog.Enabled {
+		sessionLogDir := config.Tracing.SessionLog.Dir
+		if sessionLogDir == "" {
+			sessionLogDir = filepath.Join(config.BeeHiveDir, "sessions")
+		} else {
+			sessionLogDir, err = utils.ExpandPath(sessionLogDir)
+			if err != nil {
+				return fmt.Errorf("failed to expand session_log.dir: %w", err)
+			}
+		}
+		config.Tracing.SessionLog.Dir = sessionLogDir
+		if err = os.MkdirAll(sessionLogDir, 0750); err != nil {
+			return fmt.Errorf("failed to create session log directory %s: %w", sessionLogDir, err)
+		}
 	}
 
 	return nil

@@ -369,7 +369,7 @@ func (s *ShellSession) Close() error {
 
 func Shell(ctx context.Context, input *ShellInput) (*schema.ToolResult, error) {
 	// Extract trace ID from context
-	traceCtx, ok := trace.TraceFromContext(ctx)
+	traceCtx, ok := trace.TraceContextFromContext(ctx)
 	if !ok {
 		return &schema.ToolResult{
 			Parts: []schema.ToolOutputPart{

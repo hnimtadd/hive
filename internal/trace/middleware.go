@@ -4,8 +4,58 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/cloudwego/eino/schema"
+	"github.com/hnimtadd/hive/pkg/config"
 	"google.golang.org/grpc"
 )
+
+// middlewareAdapter wraps SessionLogger to implement HiveMiddleware
+type middlewareAdapter struct {
+	logger *SessionLogger
+}
+
+func (m *middlewareAdapter) OnRequest(ctx context.Context, agentID string, messages []*schema.Message) {
+	if m.logger != nil && m.logger.IsEnabled() {
+		m.logger.LogLLMRequest(ctx, NewLLMRequestLog(
+			agentID,
+			"",
+			"", // Model not available at this level
+			messages,
+			nil,
+			m.logger,
+		))
+	}
+}
+
+func (m *middlewareAdapter) OnResponse(ctx context.Context, agentID string, response *schema.Message) {
+	if m.logger != nil && m.logger.IsEnabled() {
+		m.logger.LogLLMResponse(ctx, NewLLMResponseLog(
+			agentID,
+			"",
+			response,
+			m.logger,
+		))
+	}
+}
+
+func (m *middlewareAdapter) OnToolCall(ctx context.Context, agentID, toolName, input, output string, err error, stage string) {
+	if m.logger != nil && m.logger.IsEnabled() {
+		m.logger.LogToolCall(ctx, NewToolCallLog(
+			agentID,
+			"",
+			toolName,
+			input,
+			output,
+			err,
+			m.logger,
+		))
+	}
+}
+
+// NewMiddlewareFromSessionLogger creates a HiveMiddleware from SessionLogger
+func NewMiddlewareFromSessionLogger(logger *SessionLogger) *middlewareAdapter {
+	return &middlewareAdapter{logger: logger}
+}
 
 // UnaryServerInterceptor adds tracing to unary gRPC calls.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
@@ -17,7 +67,7 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		// Create trace context
 		traceID := NewID()
-		ctx = ContextWithTrace(ctx, traceID)
+		ctx = ContextWithTraceContext(ctx, traceID)
 
 		Logger(ctx).Info("grpc request received",
 			slog.String("method", info.FullMethod),
@@ -41,7 +91,7 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // StreamServerInterceptor adds tracing to streaming gRPC calls.
-func StreamServerInterceptor() grpc.StreamServerInterceptor {
+func StreamServerInterceptor(sessionCfg *config.SessionLogConfig) grpc.StreamServerInterceptor {
 	return func(
 		srv any,
 		stream grpc.ServerStream,
@@ -52,7 +102,7 @@ func StreamServerInterceptor() grpc.StreamServerInterceptor {
 
 		// Create trace context
 		traceID := NewID()
-		ctx = ContextWithTrace(ctx, traceID)
+		ctx = ContextWithTraceContext(ctx, traceID)
 
 		Logger(ctx).Info("grpc stream started",
 			slog.String("method", info.FullMethod),

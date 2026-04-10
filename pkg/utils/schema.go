@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -17,6 +19,50 @@ func DescribeJSONSchema[T any]() (string, error) {
 		return "", err
 	}
 	return string(schemaJSON), nil
+}
+
+func DescribeOutputJSON[T any]() (string, error) {
+	schema, err := jsonschema.For[T](nil)
+	if err != nil {
+		return "", err
+	}
+
+	// Helper to turn schema info into a "Type Hint" string
+	getTypeHint := func(s *jsonschema.Schema) string {
+		t := s.Type
+		if t == "" && len(s.OneOf) > 0 {
+			t = "multiple types"
+		}
+		desc := s.Description
+		if desc != "" {
+			return fmt.Sprintf("<%s: %s>", t, desc)
+		}
+		return fmt.Sprintf("<%s>", t)
+	}
+
+	example := make(map[string]any)
+	for name, prop := range schema.Properties {
+		if prop.Type == "array" && prop.Items != nil {
+			// Handle arrays by showing a single example item
+			itemHint := getTypeHint(prop.Items)
+			example[name] = []string{itemHint}
+		} else {
+			example[name] = getTypeHint(prop)
+		}
+	}
+
+	exampleJSON, _ := json.MarshalIndent(example, "", "  ")
+	return fmt.Sprintf(`## Output Instructions
+	You must respond with a RAW JSON object.
+	Follow the data types specified in the angle brackets "<type: description>".
+
+	### Required Structure:
+	%s
+
+	### Type Rules:
+	- If type is <integer>, do not wrap the value in quotes (e.g., 5, not "5").
+	- If type is <boolean>, use true or false without quotes.
+	- If type is <string>, provide a standard JSON string.`, string(exampleJSON)), nil
 }
 
 func HeristicallyExtractJSONString(content string) (string, error) {

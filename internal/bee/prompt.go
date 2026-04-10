@@ -11,19 +11,20 @@ func GetSystemPrompt[I, O any](persona string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to self describe the input: %w", err)
 	}
-	outputDescription, err := utils.DescribeJSONSchema[O]()
+	// Use text description instead of raw JSON schema to avoid LLM confusion
+	outputDescription, err := utils.DescribeOutputJSON[O]()
 	if err != nil {
 		return "", fmt.Errorf("failed to self describe the output: %w", err)
 	}
 	return fmt.Sprintf(`%s
-		You suppose to handle input and output with these specific formats
-		========= INPUT ========
-		YOU ONLY RECEIVE THIS JSON ONLY AS INPUT
-		%s
 
-		========= OUTPUT ======
-		YOU HAVE TO RESPONSE A RAW JSON THAT FOLLOWS THIS SCHEMA
-		%s
+========= INPUT FORMAT ========
+You receive this JSON as input:
+%s
 
-		`, persona, inputDescription, outputDescription), nil
+========= OUTPUT FORMAT ========
+%s
+
+Remember: Output DATA in the specified format, not a schema definition!
+`, persona, inputDescription, outputDescription), nil
 }

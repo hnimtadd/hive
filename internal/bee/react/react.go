@@ -10,7 +10,9 @@ import (
 	"github.com/cloudwego/eino/compose"
 	einoreact "github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/types"
 )
 
 // Agent is a simplified ReACT agent wrapper.
@@ -20,26 +22,6 @@ type Agent struct {
 	systemPrompt string
 	history      []*schema.Message
 }
-
-// ToolExecutionEvent represents a tool execution lifecycle event.
-type ToolExecutionEvent struct {
-	AgentID   string
-	ToolName  string
-	CallID    string
-	EventType ToolEventType
-	Input     string // JSON-encoded arguments
-	Output    string // JSON-encoded result
-	Error     error
-}
-
-// ToolEventType represents the stage of tool execution.
-type ToolEventType string
-
-const (
-	ToolEventStarted   ToolEventType = "started"
-	ToolEventCompleted ToolEventType = "completed"
-	ToolEventFailed    ToolEventType = "failed"
-)
 
 // AgentOption configures the agent during creation.
 type AgentOption func(*Agent)
@@ -134,47 +116,22 @@ func (a *Agent) ID() string {
 func (a *Agent) invokableToolMiddleware() compose.InvokableToolMiddleware {
 	return func(handler compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-			mw, isInjected := MiddlewareFromContext(ctx)
+			mw, isInjected := middleware.GetMiddleware(ctx)
 			if !isInjected {
 				return handler(ctx, input)
 			}
-
 			// Fire STARTED event to custom middlewares
-			startEvent := &ToolExecutionEvent{
-				AgentID:   a.id,
-				ToolName:  input.Name,
-				CallID:    input.CallID,
-				EventType: ToolEventStarted,
-				Input:     input.Arguments,
-			}
-
-			if err := mw(ctx, startEvent); err != nil {
-				trace.Logger(ctx).ErrorContext(ctx, "middleware error on tool start",
-					slog.String("tool", input.Name),
-					slog.Any("error", err))
-			}
+			mw.OnToolCall(ctx, a.id, input.Name, input.CallID, types.ToolEventStarted, input.Arguments, "", nil)
 
 			// Execute the tool
 			output, err := handler(ctx, input)
 			if err != nil {
-				failedEvent := &ToolExecutionEvent{
-					AgentID:   a.id,
-					ToolName:  input.Name,
-					CallID:    input.CallID,
-					EventType: ToolEventFailed,
-					Input:     input.Arguments,
-					Error:     err,
-				}
-
-				if mwErr := mw(ctx, failedEvent); mwErr != nil {
-					trace.Logger(ctx).ErrorContext(ctx, "middleware error on tool failure",
-						slog.String("tool", input.Name),
-						slog.Any("error", mwErr))
-				}
-
+				// Fire STARTED event to custom middlewares
+				mw.OnToolCall(ctx, a.id, input.Name, input.CallID, types.ToolEventFailed, input.Arguments, "", err)
 				return output, err
 			}
 
+			mw.OnToolCall(ctx, a.id, input.Name, input.CallID, types.ToolEventCompleted, input.Arguments, output.Result, err)
 			return output, nil
 		}
 	}
