@@ -2,18 +2,21 @@ package middleware
 
 import "context"
 
-// MiddlewareKey is the context key for HiveMiddleware
-type MiddlewareKey string
+// MiddlewareKey is the context key for HiveMiddleware.
+type contextKey string
 
-const middlewareKey MiddlewareKey = "hive_middleware"
+const middlewareKey contextKey = "hive_middleware"
 
-// ContextWithMiddleware adds a HiveMiddleware to context
+// ContextWithMiddleware adds a HiveMiddleware to context.
 func ContextWithMiddleware(ctx context.Context, mw HiveMiddleware) context.Context {
 	return context.WithValue(ctx, middlewareKey, mw)
 }
 
-// GetMiddleware retrieves HiveMiddleware from context
-func GetMiddleware(ctx context.Context) (HiveMiddleware, bool) {
+// MiddlewareFromContext retrieves HiveMiddleware from context.
+func MiddlewareFromContext(ctx context.Context) HiveMiddleware {
 	mw, ok := ctx.Value(middlewareKey).(HiveMiddleware)
-	return mw, ok
+	if mw == nil || !ok {
+		return NoopMiddleware()
+	}
+	return mw
 }
