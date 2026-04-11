@@ -14,9 +14,11 @@ import (
 
 type Tier string
 
-const TierFast Tier = "fast"
-const TierSmart Tier = "smart"
-const TierDefault Tier = "default"
+const (
+	TierFast    Tier = "fast"
+	TierSmart   Tier = "smart"
+	TierDefault Tier = "default"
+)
 
 type Provider interface {
 	GetModel(ctx context.Context, tier Tier) (model.ToolCallingChatModel, bool)
@@ -86,6 +88,12 @@ func newLLMToolCallingClientWithConfig(provider string, model string, cfg *confi
 			return nil, errors.New("ollama configuration is required when provider is 'ollama'")
 		}
 		return newOllamaToolCallingClientWithConfig(model, cfg.Ollama)
+	case "openrouter":
+		log.Println("initializing openrouter llm")
+		if cfg.OpenAI == nil {
+			return nil, errors.New("openrouter configuration is required when provider is 'openai'")
+		}
+		return newOpenRouterToolCallingClientWithConfig(model, cfg.OpenAI)
 	default:
 		return nil, fmt.Errorf("unsupported AI provider: %s", provider)
 	}

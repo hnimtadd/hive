@@ -2,92 +2,89 @@ package trace
 
 import (
 	"context"
-	"log/slog"
 
-	"google.golang.org/grpc"
+	"github.com/hnimtadd/hive/internal/middleware"
+	"github.com/hnimtadd/hive/internal/types"
 )
 
-// UnaryServerInterceptor adds tracing to unary gRPC calls.
-func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(
-		ctx context.Context,
-		req any,
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
-	) (any, error) {
-		// Create trace context
-		traceID := NewID()
-		ctx = ContextWithTrace(ctx, traceID)
+const defaultTraceID = "unavailable"
 
-		Logger(ctx).Info("grpc request received",
-			slog.String("method", info.FullMethod),
-		)
+// traceMiddleware wraps SessionLogger to implement HiveMiddleware.
+type traceMiddleware struct {
+	logger *SessionLogger
+}
 
-		resp, err := handler(ctx, req)
+func (t *traceMiddleware) IsEnabled() bool {
+	return t.logger != nil && t.logger.IsEnabled()
+}
 
-		if err != nil {
-			Logger(ctx).Error("grpc request failed",
-				slog.String("method", info.FullMethod),
-				slog.Any("error", err),
-			)
-		} else {
-			Logger(ctx).Info("grpc request completed",
-				slog.String("method", info.FullMethod),
-			)
-		}
-
-		return resp, err
+// OnRequest implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
+	if !t.IsEnabled() {
+		return
 	}
-}
-
-// StreamServerInterceptor adds tracing to streaming gRPC calls.
-func StreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(
-		srv any,
-		stream grpc.ServerStream,
-		info *grpc.StreamServerInfo,
-		handler grpc.StreamHandler,
-	) error {
-		ctx := stream.Context()
-
-		// Create trace context
-		traceID := NewID()
-		ctx = ContextWithTrace(ctx, traceID)
-
-		Logger(ctx).Info("grpc stream started",
-			slog.String("method", info.FullMethod),
-		)
-
-		// Wrap stream to inject traced context
-		wrapped := &tracedServerStream{
-			ServerStream: stream,
-			ctx:          ctx,
-		}
-
-		err := handler(srv, wrapped)
-
-		if err != nil {
-			Logger(ctx).Error("grpc stream failed",
-				slog.String("method", info.FullMethod),
-				slog.Any("error", err),
-			)
-		} else {
-			Logger(ctx).Info("grpc stream completed",
-				slog.String("method", info.FullMethod),
-			)
-		}
-
-		return err
+	traceCtx, found := TraceContextFromContext(ctx)
+	traceID := defaultTraceID
+	if found {
+		traceID = traceCtx.TraceID
 	}
+	t.logger.LogLLMRequest(ctx, &LLMRequestLog{
+		AgentID: agentID,
+		TraceID: traceID,
+		Input:   req.Input,
+	})
 }
 
-// tracedServerStream wraps grpc.ServerStream to return traced context.
-type tracedServerStream struct {
-	grpc.ServerStream
+// OnResponse implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
+	if !t.IsEnabled() {
+		return
+	}
+	traceCtx, found := TraceContextFromContext(ctx)
+	traceID := defaultTraceID
+	if found {
+		traceID = traceCtx.TraceID
+	}
 
-	ctx context.Context
+	t.logger.LogLLMResponse(ctx, &LLMResponseLog{
+		AgentID:      agentID,
+		TraceID:      traceID,
+		FinishReason: resp.FinishReason,
+		Content:      resp.Output,
+		ToolsCalls:   resp.ToolCalls,
+		Usage: &UsageLog{
+			PromptTokens:     resp.TokenUsed.PromptTokens,
+			CompletionTokens: resp.TokenUsed.CompletionTokens,
+			TotalTokens:      resp.TokenUsed.TotalTokens,
+		},
+	})
 }
 
-func (s *tracedServerStream) Context() context.Context {
-	return s.ctx
+// OnToolCall implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCall) {
+	if !t.IsEnabled() {
+		return
+	}
+	traceCtx, found := TraceContextFromContext(ctx)
+	traceID := defaultTraceID
+	if found {
+		traceID = traceCtx.TraceID
+	}
+
+	toolCall := &ToolCallLog{
+		TraceID:  traceID,
+		AgentID:  agentID,
+		Output:   toolEvent.Output,
+		CallID:   toolEvent.CallID,
+		ToolName: toolEvent.ToolName,
+		Input:    toolEvent.Arguments,
+	}
+	if toolEvent.Error != nil {
+		toolCall.Error = toolEvent.Error.Error()
+	}
+	t.logger.LogToolCall(ctx, toolCall)
+}
+
+func NewTraceMiddleware(sessionLogger *SessionLogger) middleware.HiveMiddleware {
+	return &traceMiddleware{logger: sessionLogger}
 }

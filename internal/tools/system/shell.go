@@ -26,7 +26,7 @@ type ShellSession struct {
 
 var (
 	// Map of trace_id -> ShellSession for isolated sessions per request.
-	sessions  = make(map[trace.ID]*ShellSession)
+	sessions  = make(map[string]*ShellSession)
 	sessionMu sync.Mutex
 )
 
@@ -139,7 +139,7 @@ var ShellOperators = map[string]bool{
 }
 
 // CleanupShellSession closes and removes the Shell session for a specific trace_id
-func CleanupShellSession(traceID trace.ID) error {
+func CleanupShellSession(traceID string) error {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
@@ -369,7 +369,7 @@ func (s *ShellSession) Close() error {
 
 func Shell(ctx context.Context, input *ShellInput) (*schema.ToolResult, error) {
 	// Extract trace ID from context
-	traceCtx, ok := trace.TraceFromContext(ctx)
+	traceCtx, ok := trace.TraceContextFromContext(ctx)
 	if !ok {
 		return &schema.ToolResult{
 			Parts: []schema.ToolOutputPart{

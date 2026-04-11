@@ -51,14 +51,13 @@ type queen struct {
 }
 
 func NewQueenBee(config *bee.Config, agentOpts ...react.AgentOption) (QueenBee, error) {
-	reactAgent, err := react.NewWithSystemPrompt(
-		config.ID,
-		config.LLM,
-		config.Tools,
-		config.Persona,
-		config.MaxSteps,
-		agentOpts...,
-	)
+	reactAgent, err := react.New(react.Config{
+		ID:           config.ID,
+		ChatModel:    config.LLM,
+		Tools:        config.Tools,
+		SystemPrompt: config.Persona,
+		MaxStep:      config.MaxSteps,
+	}, agentOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
@@ -132,27 +131,34 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 
 		content, err = hiveutils.HeristicallyExtractJSONString(content)
 		if err != nil {
-			trace.Logger(ctx).Debug("failed to extract JSON string", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output to agent output schema", err).
+				WithContext("raw_output", result.Content)
 		}
+
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
-			trace.Logger(ctx).Debug("failed to unmarshal JSON string", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to map output to an object"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output ot agent ouptut schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output to agent output schema", err).
+				WithContext("extracted_content", content).
+				WithContext("raw_output", result.Content)
 		}
 
 		if err = s.outputValidator.Validate(output); err != nil {
-			trace.Logger(ctx).Debug("failed to validate JSON against output schema", slog.Any("error", err))
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err).
+				WithContext("parsed_output", output).
+				WithContext("extracted_content", content).
+				WithContext("raw_output", result.Content)
 		}
+
 		agentOutput := QueenOutput{}
 		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
 			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to parse output JSON"))
-			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err)
+			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err).
+				WithContext("content", content)
 		}
+
 		if len(result.ReasoningContent) > 0 {
 			agentOutput.Thought += fmt.Sprintf("system thought: %s", result.ReasoningContent)
 		}

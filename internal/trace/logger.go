@@ -2,41 +2,49 @@ package trace
 
 import (
 	"context"
-	"io"
+	"log"
 	"log/slog"
 	"os"
+
+	"github.com/hnimtadd/hive/pkg/config"
 )
 
-var (
-	defaultLogger *slog.Logger
-)
+var defaultLogger *slog.Logger
 
-type LogConfig struct {
-	Level     slog.Level
-	Format    string
-	Output    io.Writer
-	AddSource bool
+var defaultConfig = &config.TraceConfig{
+	Enabled:   true,
+	LogLevel:  "info",
+	LogFormat: "json",
 }
 
-func InitLogger(cfg *LogConfig) {
+func Initialize(cfg *config.TraceConfig) {
 	if cfg == nil {
-		cfg = &LogConfig{
-			Level:  slog.LevelInfo,
-			Format: "json",
-			Output: os.Stdout,
+		cfg = defaultConfig
+	}
+	// Initialize tracing
+	if !cfg.Enabled {
+		return
+	}
+	logOutput := os.Stdout
+	if cfg.LogFile != "" {
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			log.Fatalf("failed to open log file: %v", err)
 		}
+		defer f.Close()
+		logOutput = f
 	}
 
 	opts := &slog.HandlerOptions{
-		Level:     cfg.Level,
+		Level:     ParseLogLevel(cfg.LogLevel),
 		AddSource: cfg.AddSource,
 	}
 
 	var handler slog.Handler
-	if cfg.Format == "json" {
-		handler = slog.NewJSONHandler(cfg.Output, opts)
+	if cfg.LogFormat == "json" {
+		handler = slog.NewJSONHandler(logOutput, opts)
 	} else {
-		handler = slog.NewTextHandler(cfg.Output, opts)
+		handler = slog.NewTextHandler(logOutput, opts)
 	}
 	defaultLogger = slog.New(handler)
 	slog.SetDefault(defaultLogger)
@@ -44,13 +52,13 @@ func InitLogger(cfg *LogConfig) {
 
 func Logger(ctx context.Context) *slog.Logger {
 	if defaultLogger == nil {
-		InitLogger(nil)
+		Initialize(nil)
 	}
 
 	logger := defaultLogger
-	tc, ok := TraceFromContext(ctx)
+	tc, ok := TraceContextFromContext(ctx)
 	if ok {
-		logger = logger.With(slog.String("trace_id", string(tc.TraceID)))
+		logger = logger.With(slog.String("trace_id", tc.TraceID))
 	}
 	return logger
 }
