@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/types"
 	"google.golang.org/grpc"
 )
 
@@ -126,4 +128,87 @@ type timeoutServerStream struct {
 
 func (s *timeoutServerStream) Context() context.Context {
 	return s.ctx
+}
+
+type eventStreamMiddleware struct {
+	eventCh chan<- any
+}
+
+type EventType string
+
+const (
+	EventTypeLLMRequest  EventType = "llm_req"
+	EventTypeLLMResponse EventType = "llm_resp"
+	EventTypeToolCall    EventType = "tool_call"
+)
+
+type ExecutionEvent struct {
+	typ  EventType
+	req  types.LLMRequest
+	resp types.LLMResponse
+	tool types.ToolCall
+}
+
+// OnRequest implements [middleware.HiveMiddleware].
+func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
+	event := ExecutionEvent{
+		typ: EventTypeLLMRequest,
+		req: req,
+	}
+
+	if err := e.pushEvent(ctx, event); err != nil {
+		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+			slog.String("agent_id", agentID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+// OnResponse implements [middleware.HiveMiddleware].
+func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
+	event := ExecutionEvent{
+		typ:  EventTypeLLMRequest,
+		resp: resp,
+	}
+	if err := e.pushEvent(ctx, event); err != nil {
+		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+			slog.String("agent_id", agentID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+// OnToolCall implements [middleware.HiveMiddleware].
+func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCall) {
+	event := ExecutionEvent{
+		typ:  EventTypeToolCall,
+		tool: toolEvent,
+	}
+	if err := e.pushEvent(ctx, event); err != nil {
+		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+			slog.String("agent_id", agentID),
+			slog.String("call_id", toolEvent.CallID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEvent) error {
+	select {
+	case e.eventCh <- event:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return errors.New("execution channel full")
+	}
+}
+
+var _ middleware.HiveMiddleware = &eventStreamMiddleware{}
+
+func (s *HiveServer) EventStreamMiddleware() (middleware.HiveMiddleware, <-chan any) {
+	eventCh := make(chan any)
+	return &eventStreamMiddleware{
+		eventCh: eventCh,
+	}, eventCh
 }

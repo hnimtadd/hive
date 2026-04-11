@@ -44,7 +44,7 @@ func NewSessionLogger(cfg *config.SessionLogConfig) (*SessionLogger, error) {
 
 // LogLLMRequest logs an LLM request.
 func (l *SessionLogger) LogLLMRequest(_ context.Context, req *LLMRequestLog) {
-	if l == nil || l.logFile == nil || !l.config.LogRequests {
+	if !l.IsEnabled() || !l.config.LogRequests {
 		return
 	}
 	l.writeEntry("LLM_REQUEST", req)
@@ -52,26 +52,18 @@ func (l *SessionLogger) LogLLMRequest(_ context.Context, req *LLMRequestLog) {
 
 // LogLLMResponse logs an LLM response.
 func (l *SessionLogger) LogLLMResponse(_ context.Context, resp *LLMResponseLog) {
-	if l == nil || l.logFile == nil || !l.config.LogResponses {
+	if !l.IsEnabled() || !l.config.LogResponses {
 		return
 	}
 	l.writeEntry("LLM_RESPONSE", resp)
 }
 
-// LogToolCall logs a tool invocation
-func (l *SessionLogger) LogToolCall(ctx context.Context, tool *ToolCallLog) {
-	if l == nil || l.logFile == nil || !l.config.LogTools {
+// LogToolCall logs a tool invocation.
+func (l *SessionLogger) LogToolCall(_ context.Context, tool *ToolCallLog) {
+	if !l.IsEnabled() || !l.config.LogTools {
 		return
 	}
 	l.writeEntry("TOOL_CALL", tool)
-}
-
-// LogError logs an error event
-func (l *SessionLogger) LogError(ctx context.Context, err *ErrorLog) {
-	if l == nil || l.logFile == nil {
-		return
-	}
-	l.writeEntry("ERROR", err)
 }
 
 func (l *SessionLogger) writeEntry(eventType string, data any) {
@@ -94,15 +86,7 @@ func (l *SessionLogger) Close() error {
 	return l.logFile.Close()
 }
 
-// IsEnabled returns true if session logging is active
+// IsEnabled returns true if session logging is active.
 func (l *SessionLogger) IsEnabled() bool {
 	return l != nil && l.config != nil && l.config.Enabled && l.logFile != nil
-}
-
-// TruncateContent truncates content if configured.
-func (l *SessionLogger) truncateContent(content string) string {
-	if l.config != nil && l.config.MaxContentLength > 0 && len(content) > l.config.MaxContentLength {
-		return content[:l.config.MaxContentLength] + "... [truncated]"
-	}
-	return content
 }

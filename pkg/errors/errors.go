@@ -100,29 +100,6 @@ func NewErrorHandler[T any]() *ErrorHandler[T] {
 	return &ErrorHandler[T]{}
 }
 
-// IsRetryableError checks if an error is retryable based on its type
-// Validation errors are not retryable as they will fail the same way
-func IsRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check if it's a HiveError
-	hiveErr, ok := err.(*HiveError)
-	if !ok {
-		// For non-HiveError types, assume retryable (network, timeout, etc.)
-		return true
-	}
-
-	// Validation errors are not retryable - they'll fail the same way
-	switch hiveErr.Type {
-	case ErrTypeValidation:
-		return false
-	default:
-		return true
-	}
-}
-
 // WithRetry executes a function with retry logic for recoverable errors
 func (h *ErrorHandler[T]) WithRetry(
 	ctx context.Context,
@@ -146,11 +123,6 @@ func (h *ErrorHandler[T]) WithRetry(
 		}
 
 		lastErr = err
-
-		// Check if error is retryable - if not, fail immediately
-		if !IsRetryableError(err) {
-			return t, err
-		}
 
 		// Don't sleep on the last attempt
 		if attempt < config.MaxAttempts {

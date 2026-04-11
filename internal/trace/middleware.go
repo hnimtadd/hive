@@ -30,7 +30,6 @@ func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req typ
 	}
 	t.logger.LogLLMRequest(ctx, &LLMRequestLog{
 		AgentID: agentID,
-		CallID:  req.CallID,
 		TraceID: traceID,
 		Input:   req.Input,
 	})
@@ -49,15 +48,14 @@ func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp t
 
 	t.logger.LogLLMResponse(ctx, &LLMResponseLog{
 		AgentID:      agentID,
-		CallID:       resp.CallID,
 		TraceID:      traceID,
 		FinishReason: resp.FinishReason,
 		Content:      resp.Output,
 		ToolsCalls:   resp.ToolCalls,
 		Usage: &UsageLog{
-			PromptTokens:     resp.TokenUsed.PromptToken,
-			CompletionTokens: resp.TokenUsed.CompletionToken,
-			TotalTokens:      resp.TokenUsed.TotalToken,
+			PromptTokens:     resp.TokenUsed.PromptTokens,
+			CompletionTokens: resp.TokenUsed.CompletionTokens,
+			TotalTokens:      resp.TokenUsed.TotalTokens,
 		},
 	})
 }
@@ -72,16 +70,19 @@ func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEv
 	if found {
 		traceID = traceCtx.TraceID
 	}
-	t.logger.LogToolCall(ctx, &ToolCallLog{
+
+	toolCall := &ToolCallLog{
 		TraceID:  traceID,
 		AgentID:  agentID,
 		Output:   toolEvent.Output,
 		CallID:   toolEvent.CallID,
 		ToolName: toolEvent.ToolName,
 		Input:    toolEvent.Arguments,
-		Error:    toolEvent.Error.Error(),
-	})
-	panic("unimplemented")
+	}
+	if toolEvent.Error != nil {
+		toolCall.Error = toolEvent.Error.Error()
+	}
+	t.logger.LogToolCall(ctx, toolCall)
 }
 
 func NewTraceMiddleware(sessionLogger *SessionLogger) middleware.HiveMiddleware {

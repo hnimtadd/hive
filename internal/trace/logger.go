@@ -27,7 +27,7 @@ func Initialize(cfg *config.TraceConfig) {
 	}
 	logOutput := os.Stdout
 	if cfg.LogFile != "" {
-		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			log.Fatalf("failed to open log file: %v", err)
 		}
@@ -58,7 +58,7 @@ func Logger(ctx context.Context) *slog.Logger {
 	logger := defaultLogger
 	tc, ok := TraceContextFromContext(ctx)
 	if ok {
-		logger = logger.With(slog.String("trace_id", string(tc.TraceID)))
+		logger = logger.With(slog.String("trace_id", tc.TraceID))
 	}
 	return logger
 }

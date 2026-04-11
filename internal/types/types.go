@@ -13,13 +13,11 @@ type ToolCall struct {
 
 // LLMRequest represents our llm request.
 type LLMRequest struct {
-	Input  string
-	CallID string
+	Input string
 }
 
 // LLMResponse represents our llm response.
 type LLMResponse struct {
-	CallID           string
 	Output           string
 	ToolCalls        []string
 	ReasoningContent string
@@ -29,7 +27,7 @@ type LLMResponse struct {
 }
 
 type TokenUsage struct {
-	PromptToken     int
-	CompletionToken int
-	TotalToken      int
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }

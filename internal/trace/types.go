@@ -4,7 +4,6 @@ package trace
 type LLMRequestLog struct {
 	TraceID string `json:"trace_id"`
 	AgentID string `json:"agent_id"`
-	CallID  string `json:"call_id"`
 	Input   string `json:"messages"` // truncated content of each message
 }
 
@@ -12,7 +11,6 @@ type LLMRequestLog struct {
 type LLMResponseLog struct {
 	TraceID      string    `json:"trace_id"`
 	AgentID      string    `json:"agent_id"`
-	CallID       string    `json:"call_id"`
 	Content      string    `json:"content"`
 	FinishReason string    `json:"finish_reason,omitempty"`
 	Usage        *UsageLog `json:"usage,omitempty"`

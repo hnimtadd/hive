@@ -159,9 +159,6 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 		return errors.New("first message must be a task request")
 	}
 
-	// Note: Session logging is now handled via context from StreamServerInterceptor
-	// Session logger can be retrieved from context using trace.GetSessionLogger(ctx)
-
 	// Use configured timeout (could be extended to extract from request metadata)
 	timeout := s.config.Tasks.Timeout
 

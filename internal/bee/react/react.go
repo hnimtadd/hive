@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
@@ -13,6 +14,7 @@ import (
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/internal/types"
+	"github.com/samber/lo"
 )
 
 // Agent is a simplified ReACT agent wrapper.
@@ -86,15 +88,16 @@ func New(cfg Config, opts ...AgentOption) (*Agent, error) {
 
 // ExecuteWithMessages runs the ReACT agent with conversation history.
 func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
+	ctx, _ = trace.ContextWithChildSpan(ctx)
 	trace.Logger(ctx).DebugContext(ctx, "ReACT agent generating",
 		slog.String("agent_id", a.id),
 		slog.Int("message_count", len(messages)),
 	)
 	middleware := middleware.MiddlewareFromContext(ctx)
 	middleware.OnRequest(ctx, a.id, types.LLMRequest{
-		Input:  messages[len(messages)-1].Content,
-		CallID: "",
+		Input: messages[len(messages)-1].Content,
 	})
+	start := time.Now()
 
 	result, err := a.agent.Generate(ctx, messages)
 
@@ -108,6 +111,28 @@ func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Mess
 			slog.String("agent_id", a.id),
 			slog.Int("response_length", len(result.Content)),
 		)
+	}
+	if result != nil {
+		toolCalls := lo.Reduce(
+			result.ToolCalls,
+			func(tools []string, toolCall schema.ToolCall, _ int) []string {
+				if toolCall.Type == "function" {
+					return append(tools, toolCall.Function.Name)
+				}
+				return tools
+			}, []string{})
+
+		middleware.OnResponse(ctx, a.id, types.LLMResponse{
+			Output:       result.Content,
+			ToolCalls:    toolCalls,
+			FinishReason: result.ResponseMeta.FinishReason,
+			TokenUsed: types.TokenUsage{
+				PromptTokens:     result.ResponseMeta.Usage.PromptTokens,
+				TotalTokens:      result.ResponseMeta.Usage.TotalTokens,
+				CompletionTokens: result.ResponseMeta.Usage.CompletionTokens,
+			},
+			ExecutionTimeMs: int(time.Since(start).Milliseconds()),
+		})
 	}
 
 	return result, err
@@ -128,18 +153,19 @@ func (a *Agent) invokableToolMiddleware() compose.InvokableToolMiddleware {
 				Arguments: input.Arguments,
 				CallID:    input.CallID,
 			}
+			start := time.Now()
 
 			// Execute the tool
 			output, err := handler(ctx, input)
 			if err != nil {
 				// Fire STARTED event to custom middlewares
 				toolCall.Succeed = false
-				toolCall.Output = output.Result
 				toolCall.Error = err
 			} else {
 				toolCall.Succeed = true
 				toolCall.Output = output.Result
 			}
+			toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
 			// Fire STARTED event to custom middlewares
 			mw.OnToolCall(ctx, a.id, toolCall)
 			return output, nil
