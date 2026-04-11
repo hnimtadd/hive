@@ -4,6 +4,10 @@ generate:
 	buf generate
 	go mod tidy
 
+.PHONY: vet
+vet:
+	go vet ./...
+
 .PHONY: clean
 clean:
 	rm -rf gen/*

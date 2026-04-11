@@ -14,7 +14,7 @@ func TestNewOpenAIClient(t *testing.T) {
 			BaseURL:   "https://api.openai.com/v1",
 		}
 
-		_, err := newOpenAIClientWithConfig("gpt-4", cfg)
+		_, err := newOpenAIToolCallingClientWithConfig("gpt-4", cfg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "environment variable is required")
 	})
@@ -30,7 +30,7 @@ func TestNewOpenAIClient(t *testing.T) {
 		// Set a dummy API key for the test
 		t.Setenv("TEST_API_KEY", "test-key")
 
-		client, err := newOpenAIClientWithConfig("gpt-4", cfg)
+		client, err := newOpenAIToolCallingClientWithConfig("gpt-4", cfg)
 		if err != nil {
 			// Expected to fail without real credentials, but should show proper interface
 			t.Logf("Expected error without real credentials: %v", err)

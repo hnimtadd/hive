@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -23,27 +22,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Initialize tracing
-	if cfg.Tracing.Enabled {
-		logOutput := os.Stdout
-		if cfg.Tracing.LogFile != "" {
-			f, err := os.OpenFile(cfg.Tracing.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				log.Fatalf("failed to open log file: %v", err)
-			}
-			defer f.Close()
-			logOutput = f
-		}
-
-		trace.InitLogger(&trace.LogConfig{
-			Level:     trace.ParseLogLevel(cfg.Tracing.LogLevel),
-			Format:    cfg.Tracing.LogFormat,
-			Output:    logOutput,
-			AddSource: cfg.Tracing.AddSource,
-		})
-
-		log.Printf("Tracing initialized: level=%s format=%s", cfg.Tracing.LogLevel, cfg.Tracing.LogFormat)
-	}
+	trace.Initialize(&cfg.Tracing)
 
 	llm, err := llm.NewLLMProvider(&cfg.AI)
 	if err != nil {

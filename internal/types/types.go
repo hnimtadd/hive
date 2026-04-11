@@ -1,37 +1,35 @@
 package types
 
-import "time"
-
-// AgentCycleLog represents a complete agent execution cycle
-type AgentCycleLog struct {
-	AgentID    string    `json:"agent_id"`
-	StartTime  time.Time `json:"start_time"`
-	EndTime    time.Time `json:"end_time"`
-	DurationMs int64     `json:"duration_ms"`
-	Status     string    `json:"status"`
-	LLMCalls   int       `json:"llm_calls"`
-	ToolCalls  int       `json:"tool_calls"`
-	Input      string    `json:"input"`
-	Output     string    `json:"output"`
-	Error      string    `json:"error,omitempty"`
+// ToolCall represent our tool call request/response.
+type ToolCall struct {
+	ToolName        string
+	CallID          string
+	Arguments       string
+	ExecutionTimeMs int
+	Succeed         bool
+	Output          string
+	Error           error
 }
 
-// ToolExecutionEvent represents a tool execution lifecycle event.
-type ToolExecutionEvent struct {
-	AgentID   string
-	ToolName  string
-	CallID    string
-	EventType ToolEventType
-	Input     string // JSON-encoded arguments
-	Output    string // JSON-encoded result
-	Error     error
+// LLMRequest represents our llm request.
+type LLMRequest struct {
+	Input  string
+	CallID string
 }
 
-// ToolEventType represents the stage of tool execution.
-type ToolEventType string
+// LLMResponse represents our llm response.
+type LLMResponse struct {
+	CallID           string
+	Output           string
+	ToolCalls        []string
+	ReasoningContent string
+	ExecutionTimeMs  int
+	FinishReason     string
+	TokenUsed        TokenUsage
+}
 
-const (
-	ToolEventStarted   ToolEventType = "started"
-	ToolEventCompleted ToolEventType = "completed"
-	ToolEventFailed    ToolEventType = "failed"
-)
+type TokenUsage struct {
+	PromptToken     int
+	CompletionToken int
+	TotalToken      int
+}

@@ -29,8 +29,8 @@ func NewRootTraceContext() *Context {
 	}
 }
 
-// ContextWithChildTraceContext adds trace ID to context..
-func ContextWithChildTraceContext(ctx context.Context) (context.Context, *Context) {
+// ContextWithChildSpan adds trace ID to context..
+func ContextWithChildSpan(ctx context.Context) (context.Context, *Context) {
 	tc, found := TraceContextFromContext(ctx)
 	if !found {
 		tc = NewRootTraceContext()

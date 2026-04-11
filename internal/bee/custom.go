@@ -53,12 +53,14 @@ func NewCustomBee[I, O any](config *Config, agentOpts ...react.AgentOption) (Cus
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
 	}
-	reactAgent, err := react.NewWithSystemPrompt(
-		config.ID,
-		config.LLM,
-		config.Tools,
-		systemPrompt,
-		config.MaxSteps,
+	reactAgent, err := react.New(
+		react.Config{
+			ID:           config.ID,
+			ChatModel:    config.LLM,
+			Tools:        config.Tools,
+			SystemPrompt: systemPrompt,
+			MaxStep:      config.MaxSteps,
+		},
 		agentOpts...,
 	)
 	if err != nil {
@@ -149,12 +151,8 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 		trace.Logger(ctx).Debug("worker output received", slog.Int("content_length", len(content)))
 		msgs = append(msgs, result)
 
-		// Track validation failures for observability
-		validationErrors := make([]string, 0)
-
 		content, err = utils.HeristicallyExtractJSONString(content)
 		if err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("JSON_EXTRACTION: %s", err))
 			logger.ErrorContext(ctx, "validation failed - raw output preserved for debugging",
 				slog.String("agent_id", a.id),
 				slog.String("error_type", "JSON_EXTRACTION"),
@@ -168,7 +166,6 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("JSON_PARSE: %s", err))
 			logger.ErrorContext(ctx, "validation failed - extracted content preserved",
 				slog.String("agent_id", a.id),
 				slog.String("error_type", "JSON_PARSE"),
@@ -183,7 +180,6 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 		}
 
 		if err = a.outputValidator.Validate(output); err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("SCHEMA_VALIDATION: %s", err))
 			// Dump the full output structure for debugging
 			outputJSON, _ := json.Marshal(output)
 			logger.ErrorContext(ctx, "validation failed - schema mismatch",
@@ -203,7 +199,6 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 
 		agentOutput := new(O)
 		if err = json.Unmarshal([]byte(content), agentOutput); err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("TYPE_UNMARSHAL: %s", err))
 			logger.ErrorContext(ctx, "validation failed - type unmarshaling error",
 				slog.String("agent_id", a.id),
 				slog.String("error_type", "TYPE_UNMARSHAL"),
@@ -215,14 +210,6 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 				WithContext("content", content)
 		}
 
-		// Log successful validation for debugging
-		if len(validationErrors) > 0 {
-			logger.DebugContext(ctx, "output recovered after validation attempts",
-				slog.String("agent_id", a.id),
-				slog.Int("attempts", len(validationErrors)),
-				slog.Any("errors_encountered", validationErrors),
-			)
-		}
 		return agentOutput, nil
 	})
 

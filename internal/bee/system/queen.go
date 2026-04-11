@@ -51,14 +51,13 @@ type queen struct {
 }
 
 func NewQueenBee(config *bee.Config, agentOpts ...react.AgentOption) (QueenBee, error) {
-	reactAgent, err := react.NewWithSystemPrompt(
-		config.ID,
-		config.LLM,
-		config.Tools,
-		config.Persona,
-		config.MaxSteps,
-		agentOpts...,
-	)
+	reactAgent, err := react.New(react.Config{
+		ID:           config.ID,
+		ChatModel:    config.LLM,
+		Tools:        config.Tools,
+		SystemPrompt: config.Persona,
+		MaxStep:      config.MaxSteps,
+	}, agentOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
