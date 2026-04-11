@@ -4,57 +4,90 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/cloudwego/eino/schema"
-	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/internal/middleware"
+	"github.com/hnimtadd/hive/internal/types"
 	"google.golang.org/grpc"
 )
 
-// middlewareAdapter wraps SessionLogger to implement HiveMiddleware
-type middlewareAdapter struct {
+const defaultTraceID = "unavailable"
+
+// traceMiddleware wraps SessionLogger to implement HiveMiddleware.
+type traceMiddleware struct {
 	logger *SessionLogger
 }
 
-func (m *middlewareAdapter) OnRequest(ctx context.Context, agentID string, messages []*schema.Message) {
-	if m.logger != nil && m.logger.IsEnabled() {
-		m.logger.LogLLMRequest(ctx, NewLLMRequestLog(
-			agentID,
-			"",
-			"", // Model not available at this level
-			messages,
-			nil,
-			m.logger,
-		))
-	}
+func (t *traceMiddleware) IsEnabled() bool {
+	return t.logger != nil && t.logger.IsEnabled()
 }
 
-func (m *middlewareAdapter) OnResponse(ctx context.Context, agentID string, response *schema.Message) {
-	if m.logger != nil && m.logger.IsEnabled() {
-		m.logger.LogLLMResponse(ctx, NewLLMResponseLog(
-			agentID,
-			"",
-			response,
-			m.logger,
-		))
+// OnRequest implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
+	if !t.IsEnabled() {
+		return
 	}
+	traceCtx, found := TraceContextFromContext(ctx)
+	traceID := defaultTraceID
+	if found {
+		traceID = traceCtx.TraceID
+	}
+	t.logger.LogLLMRequest(ctx, &LLMRequestLog{
+		AgentID: agentID,
+		CallID:  req.CallID,
+		TraceID: traceID,
+		Input:   req.Input,
+	})
 }
 
-func (m *middlewareAdapter) OnToolCall(ctx context.Context, agentID, toolName, input, output string, err error, stage string) {
-	if m.logger != nil && m.logger.IsEnabled() {
-		m.logger.LogToolCall(ctx, NewToolCallLog(
-			agentID,
-			"",
-			toolName,
-			input,
-			output,
-			err,
-			m.logger,
-		))
+// OnResponse implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
+	if !t.IsEnabled() {
+		return
 	}
+	traceCtx, found := TraceContextFromContext(ctx)
+	traceID := defaultTraceID
+	if found {
+		traceID = traceCtx.TraceID
+	}
+
+	t.logger.LogLLMResponse(ctx, &LLMResponseLog{
+		AgentID:      agentID,
+		CallID:       resp.CallID,
+		TraceID:      traceID,
+		FinishReason: resp.FinishReason,
+		Content:      resp.Output,
+		ToolsCalls:   resp.ToolCalls,
+		Usage: &UsageLog{
+			PromptTokens:     resp.TokenUsed.PromptToken,
+			CompletionTokens: resp.TokenUsed.CompletionToken,
+			TotalTokens:      resp.TokenUsed.TotalToken,
+		},
+	})
 }
 
-// NewMiddlewareFromSessionLogger creates a HiveMiddleware from SessionLogger
-func NewMiddlewareFromSessionLogger(logger *SessionLogger) *middlewareAdapter {
-	return &middlewareAdapter{logger: logger}
+// OnToolCall implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCall) {
+	if !t.IsEnabled() {
+		return
+	}
+	traceCtx, found := TraceContextFromContext(ctx)
+	traceID := defaultTraceID
+	if found {
+		traceID = traceCtx.TraceID
+	}
+	t.logger.LogToolCall(ctx, &ToolCallLog{
+		TraceID:  traceID,
+		AgentID:  agentID,
+		Output:   toolEvent.Output,
+		CallID:   toolEvent.CallID,
+		ToolName: toolEvent.ToolName,
+		Input:    toolEvent.Arguments,
+		Error:    toolEvent.Error.Error(),
+	})
+	panic("unimplemented")
+}
+
+func NewTraceMiddleware(sessionLogger *SessionLogger) middleware.HiveMiddleware {
+	return &traceMiddleware{logger: sessionLogger}
 }
 
 // UnaryServerInterceptor adds tracing to unary gRPC calls.
@@ -66,8 +99,7 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler,
 	) (any, error) {
 		// Create trace context
-		traceID := NewID()
-		ctx = ContextWithTraceContext(ctx, traceID)
+		ctx = ContextWithTraceContext(ctx, NewRootTraceContext())
 
 		Logger(ctx).Info("grpc request received",
 			slog.String("method", info.FullMethod),
@@ -91,7 +123,7 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 }
 
 // StreamServerInterceptor adds tracing to streaming gRPC calls.
-func StreamServerInterceptor(sessionCfg *config.SessionLogConfig) grpc.StreamServerInterceptor {
+func StreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(
 		srv any,
 		stream grpc.ServerStream,
@@ -101,8 +133,7 @@ func StreamServerInterceptor(sessionCfg *config.SessionLogConfig) grpc.StreamSer
 		ctx := stream.Context()
 
 		// Create trace context
-		traceID := NewID()
-		ctx = ContextWithTraceContext(ctx, traceID)
+		ctx = ContextWithTraceContext(ctx, NewRootTraceContext())
 
 		Logger(ctx).Info("grpc stream started",
 			slog.String("method", info.FullMethod),
