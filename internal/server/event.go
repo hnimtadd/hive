@@ -25,15 +25,18 @@ func (s *HiveServer) forwardToolEvents(
 		case event := <-eventCh:
 			content := ""
 			switch event.typ {
-			case EventTypeLLMRequest:
+			case EventTypeLLMRequestStart:
 				content = fmt.Sprintf("%s executing llm request: %s", event.req.AgentID, event.req.Input)
-			case EventTypeLLMResponse:
+			case EventTypeLLMRequestFinish:
 				content = fmt.Sprintf("%s return llm response: latency: %d, token_used: %d", event.resp.AgentID, event.resp.ExecutionTimeMs, event.resp.TokenUsed.TotalTokens)
-			case EventTypeToolCall:
-				if event.tool.Succeed {
-					content = fmt.Sprintf("tool call: name: %s, latency: %d, output: %s", event.tool.ToolName, event.tool.ExecutionTimeMs, event.tool.Output)
+			case EventTypeToolCallStart:
+				content = fmt.Sprintf("tool call: name: %s, input: %s", event.toolRequest.ToolName, event.toolRequest.Arguments)
+			case EventTypeToolCallFinish:
+				tr := event.toolResponse
+				if tr.Succeed {
+					content = fmt.Sprintf("tool call ID: %s, latency: %d, output: %s", tr.CallID, tr.ExecutionTimeMs, tr.Output)
 				} else {
-					content = fmt.Sprintf("tool call: name: %s, latency: %d, error: %s", event.tool.ToolName, event.tool.ExecutionTimeMs, event.tool.Error.Error())
+					content = fmt.Sprintf("tool call ID: %s, latency: %d, error: %s", tr.CallID, tr.ExecutionTimeMs, tr.Error.Error())
 				}
 			}
 			// Convert to protobuf message

@@ -143,26 +143,30 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = trace.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCall{
+				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
 				}
+				mw.OnToolCall(ctx, a.id, toolCall)
 				start := time.Now()
 
 				// Execute the tool
 				output, err := next(ctx, input)
+				tr := types.ToolCallResponse{
+					CallID:          input.CallID,
+					ExecutionTimeMs: int(time.Since(start).Milliseconds()),
+				}
 				if err != nil {
 					// Fire STARTED event to custom middlewares
-					toolCall.Succeed = false
-					toolCall.Error = err
+					tr.Succeed = false
+					tr.Error = err
 				} else {
-					toolCall.Succeed = true
-					toolCall.Output = output.Result
+					tr.Succeed = true
+					tr.Output = output.Result
 				}
-				toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
-				// Fire STARTED event to custom middlewares
-				mw.OnToolCall(ctx, a.id, toolCall)
+				// Fire FINISH event to custom middlewares
+				mw.OnToolCallResponse(ctx, a.id, tr)
 				return output, nil
 			}
 		},
@@ -170,27 +174,31 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedInvokableToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = trace.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCall{
+				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
 				}
+				mw.OnToolCall(ctx, a.id, toolCall)
 				start := time.Now()
 
 				// Execute the tool
 				output, err := next(ctx, input)
+				tr := types.ToolCallResponse{
+					CallID:          input.CallID,
+					ExecutionTimeMs: int(time.Since(start).Milliseconds()),
+				}
 				if err != nil {
 					// Fire STARTED event to custom middlewares
-					toolCall.Succeed = false
-					toolCall.Error = err
-					toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
+					tr.Succeed = false
+					tr.Error = err
 				} else {
-					toolCall.Succeed = true
-					toolCall.Output = output.Result.Parts[len(output.Result.Parts)-1].Text
+					tr.Succeed = true
+					tr.Output = output.Result.Parts[len(output.Result.Parts)-1].Text
 				}
 
 				// Fire event to custom middlewares
-				mw.OnToolCall(ctx, a.id, toolCall)
+				mw.OnToolCallResponse(ctx, a.id, tr)
 				return output, err
 			}
 		},
@@ -198,26 +206,30 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedStreamableToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = trace.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCall{
+				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
 				}
+				mw.OnToolCall(ctx, a.id, toolCall)
 				start := time.Now()
 
 				// Execute the tool
 				output, err := next(ctx, input)
 				go func(output compose.EnhancedStreamableToolOutput, err error) {
+					tr := types.ToolCallResponse{
+						CallID:          input.CallID,
+						ExecutionTimeMs: int(time.Since(start).Milliseconds()),
+					}
 					if err != nil {
+						// Fire FINISH event to custom middlewares
+						tr.Succeed = false
+						tr.Error = err
 						// Fire STARTED event to custom middlewares
-						toolCall.Succeed = false
-						toolCall.Error = err
-						toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
-						// Fire STARTED event to custom middlewares
-						mw.OnToolCall(ctx, a.id, toolCall)
+						mw.OnToolCallResponse(ctx, a.id, tr)
 						return
 					}
-					toolCall.Succeed = true
+					tr.Succeed = true
 					defer output.Result.Close()
 					for {
 						var chunk *schema.ToolResult
@@ -225,11 +237,11 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 						if errors.Is(err, io.EOF) {
 							break
 						}
-						toolCall.Output += chunk.Parts[len(chunk.Parts)-1].Text
+						tr.Output += chunk.Parts[len(chunk.Parts)-1].Text
 					}
 
 					// Fire event to custom middlewares
-					mw.OnToolCall(ctx, a.id, toolCall)
+					mw.OnToolCallResponse(ctx, a.id, tr)
 				}(*output, err)
 				return output, err
 			}
@@ -238,26 +250,31 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = trace.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCall{
+				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
 				}
+				// Fire event to custom middlewares
+				mw.OnToolCall(ctx, a.id, toolCall)
 				start := time.Now()
 
 				// Execute the tool
 				output, err := next(ctx, input)
 				go func(output compose.StreamToolOutput, err error) {
+					tr := types.ToolCallResponse{
+						CallID:          input.CallID,
+						ExecutionTimeMs: int(time.Since(start).Milliseconds()),
+					}
 					if err != nil {
 						// Fire STARTED event to custom middlewares
-						toolCall.Succeed = false
-						toolCall.Error = err
-						toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
+						tr.Succeed = false
+						tr.Error = err
 						// Fire STARTED event to custom middlewares
-						mw.OnToolCall(ctx, a.id, toolCall)
+						mw.OnToolCallResponse(ctx, a.id, tr)
 						return
 					}
-					toolCall.Succeed = true
+					tr.Succeed = true
 					defer output.Result.Close()
 					var chunk string
 					for {
@@ -265,10 +282,10 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 						if errors.Is(err, io.EOF) {
 							break
 						}
-						toolCall.Output += chunk
+						tr.Output += chunk
 					}
 					// Fire event to custom middlewares
-					mw.OnToolCall(ctx, a.id, toolCall)
+					mw.OnToolCallResponse(ctx, a.id, tr)
 				}(*output, err)
 				return output, err
 			}

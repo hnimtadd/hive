@@ -1,11 +1,16 @@
 package types
 
-// ToolCall represent our tool call request/response.
-type ToolCall struct {
-	AgentID         string
-	ToolName        string
+// ToolCallRequest represent our tool call request/response.
+type ToolCallRequest struct {
+	AgentID   string
+	CallID    string
+	ToolName  string
+	Arguments string
+}
+
+// ToolCallResponse represent our tool call response.
+type ToolCallResponse struct {
 	CallID          string
-	Arguments       string
 	ExecutionTimeMs int
 	Succeed         bool
 	Output          string

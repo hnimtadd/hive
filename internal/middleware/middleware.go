@@ -16,7 +16,10 @@ type HiveMiddleware interface {
 	OnResponse(ctx context.Context, agentID string, response types.LLMResponse)
 
 	// OnToolCall is called during tool execution lifecycle
-	OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCall)
+	OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest)
+
+	// OnToolCallResponse is called during tool execution lifecycle
+	OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse)
 }
 
 type noopMiddleware struct {
@@ -31,7 +34,11 @@ func (n noopMiddleware) OnResponse(_ context.Context, _ string, _ types.LLMRespo
 }
 
 // OnToolCall implements [HiveMiddleware].
-func (n noopMiddleware) OnToolCall(_ context.Context, _ string, _ types.ToolCall) {
+func (n noopMiddleware) OnToolCall(_ context.Context, _ string, _ types.ToolCallRequest) {
+}
+
+// OnToolCall implements [HiveMiddleware].
+func (n noopMiddleware) OnToolCallResponse(_ context.Context, _ string, _ types.ToolCallResponse) {
 }
 
 func NoopMiddleware() HiveMiddleware {

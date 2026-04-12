@@ -11,7 +11,8 @@ const defaultTraceID = "unavailable"
 
 // traceMiddleware wraps SessionLogger to implement HiveMiddleware.
 type traceMiddleware struct {
-	logger *SessionLogger
+	logger    *SessionLogger
+	toolCalls map[string]*ToolCallLog
 }
 
 func (t *traceMiddleware) IsEnabled() bool {
@@ -61,7 +62,7 @@ func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp t
 }
 
 // OnToolCall implements [middleware.HiveMiddleware].
-func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCall) {
+func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
 	if !t.IsEnabled() {
 		return
 	}
@@ -74,10 +75,25 @@ func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEv
 	toolCall := &ToolCallLog{
 		TraceID:  traceID,
 		AgentID:  agentID,
-		Output:   toolEvent.Output,
 		CallID:   toolEvent.CallID,
 		ToolName: toolEvent.ToolName,
 		Input:    toolEvent.Arguments,
+	}
+	t.toolCalls[toolEvent.CallID] = toolCall
+}
+
+// OnToolCall implements [middleware.HiveMiddleware].
+func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, toolEvent types.ToolCallResponse) {
+	if !t.IsEnabled() {
+		return
+	}
+	toolCall, ok := t.toolCalls[toolEvent.CallID]
+	if !ok {
+		return
+	}
+
+	if toolEvent.Succeed {
+		toolCall.Output = toolEvent.Output
 	}
 	if toolEvent.Error != nil {
 		toolCall.Error = toolEvent.Error.Error()

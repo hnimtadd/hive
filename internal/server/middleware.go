@@ -137,22 +137,24 @@ type eventStreamMiddleware struct {
 type EventType string
 
 const (
-	EventTypeLLMRequest  EventType = "llm_req"
-	EventTypeLLMResponse EventType = "llm_resp"
-	EventTypeToolCall    EventType = "tool_call"
+	EventTypeLLMRequestStart  EventType = "llm_request_start"
+	EventTypeLLMRequestFinish EventType = "llm_request_finish"
+	EventTypeToolCallStart    EventType = "tool_call_start"
+	EventTypeToolCallFinish   EventType = "tool_call_finish"
 )
 
 type ExecutionEvent struct {
-	typ  EventType
-	req  types.LLMRequest
-	resp types.LLMResponse
-	tool types.ToolCall
+	typ          EventType
+	req          types.LLMRequest
+	resp         types.LLMResponse
+	toolRequest  types.ToolCallRequest
+	toolResponse types.ToolCallResponse
 }
 
 // OnRequest implements [middleware.HiveMiddleware].
 func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
 	event := ExecutionEvent{
-		typ: EventTypeLLMRequest,
+		typ: EventTypeLLMRequestStart,
 		req: req,
 	}
 
@@ -167,7 +169,7 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 // OnResponse implements [middleware.HiveMiddleware].
 func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
 	event := ExecutionEvent{
-		typ:  EventTypeLLMRequest,
+		typ:  EventTypeLLMRequestStart,
 		resp: resp,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
@@ -179,10 +181,25 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 }
 
 // OnToolCall implements [middleware.HiveMiddleware].
-func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCall) {
+func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
 	event := ExecutionEvent{
-		typ:  EventTypeToolCall,
-		tool: toolEvent,
+		typ:         EventTypeToolCallStart,
+		toolRequest: toolEvent,
+	}
+	if err := e.pushEvent(ctx, event); err != nil {
+		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+			slog.String("agent_id", agentID),
+			slog.String("call_id", toolEvent.CallID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+// OnToolCall implements [middleware.HiveMiddleware].
+func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
+	event := ExecutionEvent{
+		typ:          EventTypeToolCallFinish,
+		toolResponse: toolEvent,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
 		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
