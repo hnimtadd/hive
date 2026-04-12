@@ -29,7 +29,7 @@ const (
 // The AgentService handles the lifecycle of a supervisor-led task.
 type AgentServiceClient interface {
 	// ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
-	ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error)
+	ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse], error)
 }
 
 type agentServiceClient struct {
@@ -40,18 +40,18 @@ func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
 	return &agentServiceClient{cc}
 }
 
-func (c *agentServiceClient) ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error) {
+func (c *agentServiceClient) ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_ExecuteTask_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[ClientMessage, ServerMessage]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ExecuteTaskRequest, ExecuteTaskResponse]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_ExecuteTaskClient = grpc.BidiStreamingClient[ClientMessage, ServerMessage]
+type AgentService_ExecuteTaskClient = grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse]
 
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
@@ -60,7 +60,7 @@ type AgentService_ExecuteTaskClient = grpc.BidiStreamingClient[ClientMessage, Se
 // The AgentService handles the lifecycle of a supervisor-led task.
 type AgentServiceServer interface {
 	// ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
-	ExecuteTask(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error
+	ExecuteTask(grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -71,7 +71,7 @@ type AgentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentServiceServer struct{}
 
-func (UnimplementedAgentServiceServer) ExecuteTask(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error {
+func (UnimplementedAgentServiceServer) ExecuteTask(grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
@@ -96,11 +96,11 @@ func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer)
 }
 
 func _AgentService_ExecuteTask_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(AgentServiceServer).ExecuteTask(&grpc.GenericServerStream[ClientMessage, ServerMessage]{ServerStream: stream})
+	return srv.(AgentServiceServer).ExecuteTask(&grpc.GenericServerStream[ExecuteTaskRequest, ExecuteTaskResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_ExecuteTaskServer = grpc.BidiStreamingServer[ClientMessage, ServerMessage]
+type AgentService_ExecuteTaskServer = grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]
 
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,

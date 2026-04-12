@@ -75,20 +75,20 @@ func executeCommand(command string) error {
 	// Start monitoring task progress
 	if err := handleTask(srv, task); err != nil {
 		log.Printf("task handling failed: %s\n", err)
-		srv.CloseSend()
+		_ = srv.CloseSend()
 		return err
 	}
 	return nil
 }
 
 // monitorTask watches task progress and provides real-time updates.
-func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.ServerMessage], task *types.HiveTask) error {
+func handleTask(srv grpc.BidiStreamingClient[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse], task *types.HiveTask) error {
 	log.Printf("Monitoring task progress for\n")
 
 	reader := bufio.NewReader(os.Stdin)
 
-	req := &agentv1.ClientMessage{
-		Payload: &agentv1.ClientMessage_Request{
+	req := &agentv1.ExecuteTaskRequest{
+		Payload: &agentv1.ExecuteTaskRequest_Request{
 			Request: &agentv1.TaskRequest{
 				GlobalGoal:       task.Goal,
 				InitialArtifacts: task.Artifacts,
@@ -107,19 +107,19 @@ func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.Serv
 			return err
 		}
 		switch msg := update.GetPayload().(type) {
-		case *agentv1.ServerMessage_Success:
+		case *agentv1.ExecuteTaskResponse_Success:
 			log.Println("Task success", msg.Success.GetContent())
 			return nil
 
-		case *agentv1.ServerMessage_Error:
+		case *agentv1.ExecuteTaskResponse_Error:
 			log.Printf("Task failed: %v\n", msg.Error.GetMessage())
 			return errors.New("task execution failed")
 
-		case *agentv1.ServerMessage_Update:
+		case *agentv1.ExecuteTaskResponse_Update:
 			log.Printf("Server update: %v\n", msg.Update.String())
 			continue
 
-		case *agentv1.ServerMessage_Feedback:
+		case *agentv1.ExecuteTaskResponse_Feedback:
 			log.Printf("Server feedback: %v\n", msg.Feedback.String())
 			log.Print("Enter your answer: ")
 
@@ -128,9 +128,9 @@ func handleTask(srv grpc.BidiStreamingClient[agentv1.ClientMessage, agentv1.Serv
 			if err != nil {
 				return fmt.Errorf("error reading input: %w", err)
 			}
-			resp := &agentv1.ClientMessage{
+			resp := &agentv1.ExecuteTaskRequest{
 				At: timestamppb.Now(),
-				Payload: &agentv1.ClientMessage_Feedback{
+				Payload: &agentv1.ExecuteTaskRequest_Feedback{
 					Feedback: &agentv1.UserFeedback{
 						Feedback: response,
 					},

@@ -3,6 +3,7 @@ package errors
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 )
 
@@ -53,19 +54,17 @@ func (e *HiveError) Unwrap() error {
 	return e.Cause
 }
 
-// WithContext adds context information to the error
+// WithContext adds context information to the error.
 func (e *HiveError) WithContext(key string, value interface{}) *HiveError {
 	// Create a copy to avoid mutating the original
 	newErr := *e
 	newErr.Context = make(map[string]interface{})
-	for k, v := range e.Context {
-		newErr.Context[k] = v
-	}
+	maps.Copy(newErr.Context, e.Context)
 	newErr.Context[key] = value
 	return &newErr
 }
 
-// RetryConfig defines configuration for retry behavior
+// RetryConfig defines configuration for retry behavior.
 type RetryConfig struct {
 	MaxAttempts   int
 	InitialDelay  time.Duration
@@ -92,15 +91,15 @@ func (c *RetryConfig) GetDelay(attempt int) time.Duration {
 	return delay
 }
 
-// ErrorHandler provides utilities for error handling with retry and graceful degradation
+// ErrorHandler provides utilities for error handling with retry and graceful degradation.
 type ErrorHandler[T any] struct{}
 
-// NewErrorHandler creates a new error handler
+// NewErrorHandler creates a new error handler.
 func NewErrorHandler[T any]() *ErrorHandler[T] {
 	return &ErrorHandler[T]{}
 }
 
-// WithRetry executes a function with retry logic for recoverable errors
+// WithRetry executes a function with retry logic for recoverable errors.
 func (h *ErrorHandler[T]) WithRetry(
 	ctx context.Context,
 	config RetryConfig,
@@ -113,7 +112,7 @@ func (h *ErrorHandler[T]) WithRetry(
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
-			return
+			return t, err
 		default:
 		}
 
@@ -147,7 +146,7 @@ func (h *ErrorHandler[T]) WithRetry(
 	)
 }
 
-// WithGracefulDegradation executes a primary function with fallback on error
+// WithGracefulDegradation executes a primary function with fallback on error.
 func (h *ErrorHandler[T]) WithGracefulDegradation(
 	ctx context.Context,
 	primary func(context.Context) (T, error),

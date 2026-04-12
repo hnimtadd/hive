@@ -17,6 +17,7 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/bee/system"
 	"github.com/hnimtadd/hive/internal/mapper"
+	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/storage"
 	toolsSystem "github.com/hnimtadd/hive/internal/tools/system"
@@ -144,7 +145,7 @@ func (s *HiveServer) Stop() {
 	}
 }
 
-func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMessage, agentv1.ServerMessage]) error {
+func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse]) error {
 	// Use request context which includes the timeout from interceptor
 	ctx := srv.Context()
 	logger := trace.Logger(ctx)
@@ -181,9 +182,8 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	logger.Info("task created", slog.String("task_id", task.ID), slog.String("goal", task.Goal), slog.Int("artifact_count", len(task.Artifacts)))
 
 	// Create tool event channel and streaming middleware
-	// toolEventCh := make(chan *react.ToolExecutionEvent, 100)
-	// streamingMW := react.EventStreamingMiddleware(toolEventCh)
-	// ctx = react.ContextWithToolMiddleware(ctx, streamingMW)
+	mw, eventCh := s.EventStreamMiddleware()
+	ctx = middleware.ContextWithMiddleware(ctx, mw)
 
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
@@ -195,14 +195,13 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ClientMess
 	}
 
 	// Start goroutine to forward tool events to client
-	// eventsDone := make(chan struct{})
-	// go s.forwardToolEvents(ctx, srv, toolEventCh, eventsDone)
+	doneCh := make(chan struct{})
+	go s.forwardToolEvents(ctx, srv, eventCh, doneCh)
 
 	// Ensure proper cleanup
-	// defer func() {
-	// 	close(toolEventCh) // Close channel to stop forwarder
-	// 	<-eventsDone       // Wait for forwarder to finish
-	// }()
+	defer func() {
+		close(doneCh)
+	}()
 
 loop:
 	for {
@@ -418,52 +417,3 @@ Available Agents:
 	}
 	return fmt.Sprintf(persona, taskDescription, outputDescription, string(yamlBytes)), nil
 }
-
-// forwardToolEvents forwards tool execution events from the channel to the gRPC stream.
-// func (s *HiveServer) forwardToolEvents(
-// 	ctx context.Context,
-// 	srv grpc.BidiStreamingServer[agentv1.ClientMessage, agentv1.ServerMessage],
-// 	eventCh <-chan *react.ToolExecutionEvent,
-// 	done chan<- struct{},
-// ) {
-// 	defer close(done)
-// 	logger := trace.Logger(ctx)
-//
-// 	for event := range eventCh {
-// 		content := ""
-// 		switch event.EventType {
-// 		case react.ToolEventStarted:
-// 			content = fmt.Sprintf("%s is calling tool: %s, callID: %s", event.AgentID, event.ToolName, event.CallID)
-// 		case react.ToolEventCompleted:
-// 			content = fmt.Sprintf("tool call: %s completed", event.CallID)
-// 		case react.ToolEventFailed:
-// 			content = fmt.Sprintf("tool call: %s failed, error: %s", event.CallID, event.Error)
-// 		}
-// 		// Convert to protobuf message
-// 		updateMsg := &agentv1.InProgressUpdate{
-// 			Content: content,
-// 			Status:  string(event.EventType),
-// 		}
-//
-// 		// Send to client via gRPC stream
-// 		if err := srv.Send(&agentv1.ServerMessage{
-// 			Payload: &agentv1.ServerMessage_Update{
-// 				Update: updateMsg,
-// 			},
-// 		}); err != nil {
-// 			logger.ErrorContext(ctx, "failed to send tool execution event",
-// 				slog.String("agent_id", event.AgentID),
-// 				slog.String("tool", event.ToolName),
-// 				slog.String("event_type", string(event.EventType)),
-// 				slog.Any("error", err),
-// 			)
-// 			return
-// 		}
-//
-// 		logger.DebugContext(ctx, "tool execution event sent",
-// 			slog.String("agent_id", event.AgentID),
-// 			slog.String("tool", event.ToolName),
-// 			slog.String("event_type", string(event.EventType)),
-// 		)
-// 	}
-// }

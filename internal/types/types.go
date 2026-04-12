@@ -2,6 +2,7 @@ package types
 
 // ToolCall represent our tool call request/response.
 type ToolCall struct {
+	AgentID         string
 	ToolName        string
 	CallID          string
 	Arguments       string
@@ -13,11 +14,13 @@ type ToolCall struct {
 
 // LLMRequest represents our llm request.
 type LLMRequest struct {
-	Input string
+	AgentID string
+	Input   string
 }
 
 // LLMResponse represents our llm response.
 type LLMResponse struct {
+	AgentID          string
 	Output           string
 	ToolCalls        []string
 	ReasoningContent string

@@ -8,9 +8,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func ToTaskUpdateSuccess(msg *system.QueenOutput) *agentv1.ServerMessage {
-	update := &agentv1.ServerMessage{}
-	update.Payload = &agentv1.ServerMessage_Success{
+func ToTaskUpdateSuccess(msg *system.QueenOutput) *agentv1.ExecuteTaskResponse {
+	update := &agentv1.ExecuteTaskResponse{}
+	update.Payload = &agentv1.ExecuteTaskResponse_Success{
 		Success: &agentv1.SuccessUpdate{
 			Content: msg.Content,
 		},
@@ -19,9 +19,9 @@ func ToTaskUpdateSuccess(msg *system.QueenOutput) *agentv1.ServerMessage {
 	return update
 }
 
-func ToTaskUpdateFailed(msg *system.QueenOutput) *agentv1.ServerMessage {
-	update := &agentv1.ServerMessage{}
-	update.Payload = &agentv1.ServerMessage_Error{
+func ToTaskUpdateFailed(msg *system.QueenOutput) *agentv1.ExecuteTaskResponse {
+	update := &agentv1.ExecuteTaskResponse{}
+	update.Payload = &agentv1.ExecuteTaskResponse_Error{
 		Error: &agentv1.ErrorUpdate{
 			Message: msg.Content,
 		},
@@ -30,9 +30,9 @@ func ToTaskUpdateFailed(msg *system.QueenOutput) *agentv1.ServerMessage {
 	return update
 }
 
-func ToTaskUpdateInProgress(msg *system.QueenOutput) *agentv1.ServerMessage {
-	update := &agentv1.ServerMessage{}
-	update.Payload = &agentv1.ServerMessage_Update{
+func ToTaskUpdateInProgress(msg *system.QueenOutput) *agentv1.ExecuteTaskResponse {
+	update := &agentv1.ExecuteTaskResponse{}
+	update.Payload = &agentv1.ExecuteTaskResponse_Update{
 		Update: &agentv1.InProgressUpdate{
 			Content: fmt.Sprintf("%s-next: %s", msg.Content, msg.NextAction),
 			Status:  string(msg.Status),
@@ -42,9 +42,9 @@ func ToTaskUpdateInProgress(msg *system.QueenOutput) *agentv1.ServerMessage {
 	return update
 }
 
-func ToTaskUpdateRequireFeedback(msg *system.QueenOutput) *agentv1.ServerMessage {
-	update := &agentv1.ServerMessage{}
-	update.Payload = &agentv1.ServerMessage_Feedback{
+func ToTaskUpdateRequireFeedback(msg *system.QueenOutput) *agentv1.ExecuteTaskResponse {
+	update := &agentv1.ExecuteTaskResponse{}
+	update.Payload = &agentv1.ExecuteTaskResponse_Feedback{
 		Feedback: &agentv1.FeedbackRequire{
 			Question: msg.Content,
 		},

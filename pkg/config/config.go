@@ -53,8 +53,9 @@ type ModelTiers struct {
 }
 
 type ModelTier struct {
-	Provider string `mapstructure:"provider"`
-	Model    string `mapstructure:"model"`
+	Provider string   `mapstructure:"provider"`
+	Model    string   `mapstructure:"model"`
+	Models   []string `mapstructure:"models"`
 }
 
 type AnthropicProvider string

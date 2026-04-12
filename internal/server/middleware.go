@@ -131,7 +131,7 @@ func (s *timeoutServerStream) Context() context.Context {
 }
 
 type eventStreamMiddleware struct {
-	eventCh chan<- any
+	eventCh chan<- ExecutionEvent
 }
 
 type EventType string
@@ -206,8 +206,8 @@ func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEv
 
 var _ middleware.HiveMiddleware = &eventStreamMiddleware{}
 
-func (s *HiveServer) EventStreamMiddleware() (middleware.HiveMiddleware, <-chan any) {
-	eventCh := make(chan any)
+func (s *HiveServer) EventStreamMiddleware() (middleware.HiveMiddleware, <-chan ExecutionEvent) {
+	eventCh := make(chan ExecutionEvent)
 	return &eventStreamMiddleware{
 		eventCh: eventCh,
 	}, eventCh
