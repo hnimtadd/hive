@@ -7,6 +7,7 @@ import (
 
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
 	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/pkg/utils"
 	"google.golang.org/grpc"
 )
 
@@ -37,8 +38,8 @@ func (s *HiveServer) forwardToolEvents(
 			}
 			// Convert to protobuf message
 			updateMsg := &agentv1.InProgressUpdate{
-				Content: content,
-				Status:  string(event.typ),
+				Content: utils.SanitizeUTF8(content),
+				Status:  utils.SanitizeUTF8(string(event.typ)),
 			}
 
 			// Send to client via gRPC stream

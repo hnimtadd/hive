@@ -3,7 +3,18 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 )
+
+// SanitizeUTF8 replaces invalid UTF-8 sequences with the Unicode replacement character (U+FFFD).
+// This is useful when sending strings over gRPC, as protobuf requires valid UTF-8 for string fields.
+func SanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "\uFFFD")
+}
 
 func JSONConvert[to any](val any) (to, error) {
 	var result to

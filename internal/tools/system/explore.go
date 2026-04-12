@@ -155,7 +155,7 @@ func explore(provider llm.Provider) func(ctx context.Context, input *ExploreInpu
 			Persona:      GetExploreSystemPrompt(),
 			ModelPool:    provider.ModelPool(llm.TierFast),
 			MaxSteps:     100,
-			TimeoutInSec: 200,
+			TimeoutInSec: 600,
 		})
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to create explore agent", slog.String("err", err.Error()))
