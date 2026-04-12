@@ -16,6 +16,6 @@ type Config struct {
 	Description   string   `json:"description" yaml:"description"`
 	Persona       string   `json:"persona"     yaml:"-"`
 
-	LLM   model.ToolCallingChatModel `json:"-" yaml:"-"`
-	Tools []tool.InvokableTool       `json:"-" yaml:"-"`
+	ModelPool func() model.ToolCallingChatModel `json:"-" yaml:"-"`
+	Tools     []tool.InvokableTool              `json:"-" yaml:"-"`
 }

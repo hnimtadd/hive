@@ -42,29 +42,17 @@ type customBee[I, O any] struct {
 	capabilities []string
 
 	outputValidator *jsonschema.Resolved
+	systemPrompt    string
 
-	agent *react.Agent
+	// agent *react.Agent
 
 	config *Config
 }
 
-func NewCustomBee[I, O any](config *Config, agentOpts ...react.AgentOption) (CustomBee[I, O], error) {
+func NewCustomBee[I, O any](config *Config) (CustomBee[I, O], error) {
 	systemPrompt, err := GetSystemPrompt[I, O](config.Persona)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get system prompt: %w", err)
-	}
-	reactAgent, err := react.New(
-		react.Config{
-			ID:           config.ID,
-			ChatModel:    config.LLM,
-			Tools:        config.Tools,
-			SystemPrompt: systemPrompt,
-			MaxStep:      config.MaxSteps,
-		},
-		agentOpts...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
 	}
 	schema, err := jsonschema.For[O](nil)
 	if err != nil {
@@ -77,7 +65,7 @@ func NewCustomBee[I, O any](config *Config, agentOpts ...react.AgentOption) (Cus
 
 	return &customBee[I, O]{
 		id:              config.ID,
-		agent:           reactAgent,
+		systemPrompt:    systemPrompt,
 		persona:         config.Persona,
 		description:     config.Description,
 		capabilities:    config.Capabilities,
@@ -127,8 +115,21 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 	output, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*O, error) {
 		logger.DebugContext(ctx, "worker executing", slog.String("agent_id", a.id))
+
+		reactAgent, err := react.New(
+			react.Config{
+				ID:           a.config.ID,
+				ChatModel:    a.config.ModelPool(),
+				Tools:        a.config.Tools,
+				SystemPrompt: a.systemPrompt,
+				MaxStep:      a.config.MaxSteps,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
+		}
 		// Execute the task using the ReACT agent
-		result, execErr := a.agent.ExecuteWithMessages(ctx, msgs)
+		result, execErr := reactAgent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
 			logger.ErrorContext(ctx, "worker ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr

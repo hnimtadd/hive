@@ -52,11 +52,13 @@ func main() {
 		log.Fatalf("failed to start server: %v", err)
 	}
 
+	log.Println("<===== 123")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	// Handle shutdown signals gracefully
 	go func() {
+		log.Println("Starting server at", cfg.Server.Addr())
 		if err = hiveServer.Serve(cfg.Server.Addr()); err != nil {
 			stop()
 			log.Fatalln(err)

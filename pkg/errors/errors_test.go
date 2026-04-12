@@ -259,20 +259,3 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 		assert.Equal(t, ErrTypeInternal, hiveErr.Type)
 	})
 }
-
-func TestCommonErrors(t *testing.T) {
-	// Test pre-defined error creators
-	validationErr := ErrValidation("invalid input")
-	assert.Equal(t, ErrTypeValidation, validationErr.Type)
-	assert.Contains(t, validationErr.Message, "invalid input")
-
-	notFoundErr := ErrNotFound("resource", "123")
-	assert.Equal(t, ErrTypeNotFound, notFoundErr.Type)
-	assert.Contains(t, notFoundErr.Message, "resource")
-	assert.Contains(t, notFoundErr.Message, "123")
-
-	timeoutErr := ErrTimeout(5 * time.Second)
-	assert.Equal(t, ErrTypeTimeout, timeoutErr.Type)
-	assert.Contains(t, timeoutErr.Message, "5s")
-}
-

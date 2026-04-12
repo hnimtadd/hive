@@ -46,21 +46,10 @@ type queen struct {
 
 	outputValidator *jsonschema.Resolved
 
-	reactAgent *react.Agent
-	config     *bee.Config
+	config *bee.Config
 }
 
-func NewQueenBee(config *bee.Config, agentOpts ...react.AgentOption) (QueenBee, error) {
-	reactAgent, err := react.New(react.Config{
-		ID:           config.ID,
-		ChatModel:    config.LLM,
-		Tools:        config.Tools,
-		SystemPrompt: config.Persona,
-		MaxStep:      config.MaxSteps,
-	}, agentOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
-	}
+func NewQueenBee(config *bee.Config) (QueenBee, error) {
 	schema, err := jsonschema.For[QueenOutput](nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build agent output schema: %w", err)
@@ -71,7 +60,6 @@ func NewQueenBee(config *bee.Config, agentOpts ...react.AgentOption) (QueenBee, 
 	}
 	return &queen{
 		id:              config.ID,
-		reactAgent:      reactAgent,
 		persona:         config.Persona,
 		capabilities:    config.Capabilities,
 		outputValidator: resolved,
@@ -106,8 +94,19 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*QueenOutput, error) {
 		trace.Logger(ctx).Debug("queen executing", slog.Int("message_count", len(msgs)))
+
+		reactAgent, err := react.New(react.Config{
+			ID:           s.config.ID,
+			ChatModel:    s.config.ModelPool(),
+			Tools:        s.config.Tools,
+			SystemPrompt: s.config.Persona,
+			MaxStep:      s.config.MaxSteps,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
+		}
 		// Execute the task using the ReACT agent
-		result, execErr := s.reactAgent.ExecuteWithMessages(ctx, msgs)
+		result, execErr := reactAgent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
 			trace.Logger(ctx).Error("queen ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr

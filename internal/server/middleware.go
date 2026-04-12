@@ -207,7 +207,7 @@ func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEv
 var _ middleware.HiveMiddleware = &eventStreamMiddleware{}
 
 func (s *HiveServer) EventStreamMiddleware() (middleware.HiveMiddleware, <-chan ExecutionEvent) {
-	eventCh := make(chan ExecutionEvent)
+	eventCh := make(chan ExecutionEvent, 100)
 	return &eventStreamMiddleware{
 		eventCh: eventCh,
 	}, eventCh

@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"maps"
@@ -89,8 +88,7 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 		}
 		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
 		beeConfig.Tools = tools
-		model, _ := a.llm.GetModel(context.TODO(), llm.TierDefault)
-		beeConfig.LLM = model
+		beeConfig.ModelPool = a.llm.ModelPool(llm.TierDefault)
 		workerAgent, err := bee.NewCustomBee[bee.WorkerInput, bee.WorkerOutput](beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)

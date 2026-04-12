@@ -62,13 +62,12 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	if err != nil {
 		return nil, err
 	}
-	model, _ := provider.GetModel(context.TODO(), llm.TierSmart)
 	// Store supervisor configuration for creating per-request supervisors
 	supervisorConfig := &bee.Config{
 		Persona:      persona,
 		MaxSteps:     10,
 		TimeoutInSec: int(timeout.Seconds()),
-		LLM:          model,
+		ModelPool:    provider.ModelPool(llm.TierSmart),
 		Tools:        []tool.InvokableTool{delegateTool, exploreTool},
 	}
 
@@ -181,10 +180,6 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 
 	logger.Info("task created", slog.String("task_id", task.ID), slog.String("goal", task.Goal), slog.Int("artifact_count", len(task.Artifacts)))
 
-	// Create tool event channel and streaming middleware
-	mw, eventCh := s.EventStreamMiddleware()
-	ctx = middleware.ContextWithMiddleware(ctx, mw)
-
 	// Create supervisor with streaming middleware for this request
 	supervisorConfig := *s.supervisorConfig // Copy config
 	supervisorConfig.ID = uuid.New().String()
@@ -194,6 +189,9 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 		return fmt.Errorf("failed to create supervisor: %w", err)
 	}
 
+	// Create tool event channel and streaming middleware
+	mw, eventCh := s.EventStreamMiddleware()
+	ctx = middleware.ContextWithMiddleware(ctx, mw)
 	// Start goroutine to forward tool events to client
 	doneCh := make(chan struct{})
 	go s.forwardToolEvents(ctx, srv, eventCh, doneCh)

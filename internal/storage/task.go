@@ -1,15 +1,18 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
+	"go.etcd.io/bbolt"
 
 	clover "github.com/ostafen/clover/v2"
 	document "github.com/ostafen/clover/v2/document"
 	"github.com/ostafen/clover/v2/query"
+	gloverbbolt "github.com/ostafen/clover/v2/store/bbolt"
 )
 
 type TaskStorage interface {
@@ -45,7 +48,18 @@ check:
 	if !stat.IsDir() {
 		return nil, fmt.Errorf("task storage is not a dir; %s", opts.Storage)
 	}
-	db, err := clover.Open(opts.Storage)
+
+	storage, err := gloverbbolt.OpenWithOptions(opts.Storage, &bbolt.Options{
+		Timeout: aquireLockTimeout,
+	})
+	if err != nil {
+		if errors.Is(err, bbolt.ErrTimeout) {
+			return nil, errors.New("db is being in used")
+		}
+		return nil, fmt.Errorf("failed to init local db: %w", err)
+	}
+
+	db, err := clover.OpenWithStore(storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init local db: %w", err)
 	}

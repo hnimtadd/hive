@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"sync"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/hnimtadd/hive/internal/trace"
@@ -22,83 +23,140 @@ const (
 
 type Provider interface {
 	GetModel(ctx context.Context, tier Tier) (model.ToolCallingChatModel, bool)
+	ModelPool(tier Tier) func() model.ToolCallingChatModel
+}
+
+type modelPool struct {
+	clients []model.ToolCallingChatModel
+	current int
+	mu      sync.Mutex
+}
+
+func (p *modelPool) GetModel() model.ToolCallingChatModel {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.clients) == 0 {
+		return nil
+	}
+	m := p.clients[p.current]
+	p.current = (p.current + 1) % len(p.clients)
+	return m
 }
 
 type provider struct {
 	cfg    *config.AIConfig
-	models map[Tier]model.ToolCallingChatModel
+	models map[Tier]*modelPool
+}
+
+// ModelPool implements [Provider].
+func (p *provider) ModelPool(tier Tier) func() model.ToolCallingChatModel {
+	pool, isDefined := p.models[tier]
+	if !isDefined {
+		pool = p.models[TierDefault]
+	}
+	return pool.GetModel
 }
 
 // GetModel implements [Provider].
 func (p *provider) GetModel(ctx context.Context, tier Tier) (model.ToolCallingChatModel, bool) {
 	logger := trace.Logger(ctx)
-	model, isDefined := p.models[tier]
+	pool, isDefined := p.models[tier]
 	if !isDefined {
 		logger.InfoContext(ctx, "Model with tier is not defined, use default tier", slog.String("tier", string(tier)))
-		model, isDefined = p.models[TierDefault]
+		pool, isDefined = p.models[TierDefault]
 	}
-	if !isDefined {
+	if !isDefined || pool == nil {
 		logger.InfoContext(ctx, "Model with tier is not defined")
 		return nil, false
 	}
-	return model, true
+	return pool.GetModel(), true
 }
 
 func NewLLMProvider(cfg *config.AIConfig) (Provider, error) {
-	models := map[Tier]model.ToolCallingChatModel{}
+	pools := map[Tier]*modelPool{}
 	for tier, tierConfig := range cfg.Tiers {
 		switch t := Tier(tier); t {
 		case TierDefault, TierFast, TierSmart:
-			model, err := newLLMToolCallingClientWithConfig(tierConfig, cfg)
+			pool, err := newModelPool(tierConfig, cfg)
 			if err != nil {
-				return nil, fmt.Errorf("failed to init llm with tier %s: %w", tier, err)
+				return nil, fmt.Errorf("failed to init llm pool for tier %s: %w", tier, err)
 			}
-			models[t] = model
+			pools[t] = pool
 		default:
 			return nil, fmt.Errorf("unsupported tier: %s", tier)
 		}
 	}
-	if len(models) == 0 {
+	if len(pools) == 0 {
 		return nil, errors.New("no LLM tier available")
 	}
 	return &provider{
 		cfg:    cfg,
-		models: models,
+		models: pools,
 	}, nil
 }
 
-// newLLMToolCallingClientWithConfig creates LLM client with provided config.
-func newLLMToolCallingClientWithConfig(tierConfig config.ModelTier, cfg *config.AIConfig) (model.ToolCallingChatModel, error) {
+func chunkBy[T any](slice []T, size int) [][]T {
+	var result [][]T
+	for i := 0; i < len(slice); i += size {
+		result = append(result, slice[i:min(i+size, len(slice))])
+	}
+	return result
+}
+
+func newModelPool(tierConfig config.ModelTier, cfg *config.AIConfig) (*modelPool, error) {
+	var clients []model.ToolCallingChatModel
+
 	switch tierConfig.Provider {
 	case "anthropic":
 		log.Println("initializing anthropic llm")
 		if cfg.Anthropic == nil {
 			return nil, errors.New("anthropic configuration is required when provider is 'anthropic'")
 		}
-		return newAnthropicToolCallingClientWithConfig(tierConfig.Model, cfg.Anthropic)
+		client, err := newAnthropicToolCallingClientWithConfig(tierConfig.Model, cfg.Anthropic)
+		if err != nil {
+			return nil, err
+		}
+		clients = []model.ToolCallingChatModel{client}
 	case "openai":
 		log.Println("initializing openai llm")
 		if cfg.OpenAI == nil {
 			return nil, errors.New("openai configuration is required when provider is 'openai'")
 		}
-		return newOpenAIToolCallingClientWithConfig(tierConfig.Model, cfg.OpenAI)
+		client, err := newOpenAIToolCallingClientWithConfig(tierConfig.Model, cfg.OpenAI)
+		if err != nil {
+			return nil, err
+		}
+		clients = []model.ToolCallingChatModel{client}
 	case "ollama":
 		log.Println("initializing ollama llm")
 		if cfg.Ollama == nil {
 			return nil, errors.New("ollama configuration is required when provider is 'ollama'")
 		}
-		return newOllamaToolCallingClientWithConfig(tierConfig.Model, cfg.Ollama)
+		client, err := newOllamaToolCallingClientWithConfig(tierConfig.Model, cfg.Ollama)
+		if err != nil {
+			return nil, err
+		}
+		clients = []model.ToolCallingChatModel{client}
 	case "openrouter":
-		log.Println("initializing openrouter llm")
+		log.Println("initializing openrouter llm with model pool")
 		if cfg.OpenAI == nil {
 			return nil, errors.New("openrouter configuration is required when provider is 'openai'")
 		}
-		if len(tierConfig.Models) != 0 {
-			return newOpenRouterToolCallingClientWithConfig(tierConfig.Models, cfg.OpenAI)
-		} else {
-			return newOpenRouterToolCallingClientWithConfig([]string{tierConfig.Model}, cfg.OpenAI)
+		models := tierConfig.Models
+		if len(models) == 0 {
+			models = []string{tierConfig.Model}
 		}
+		for _, group := range chunkBy(models, 3) {
+			client, err := newOpenRouterToolCallingClientWithConfig(group, cfg.OpenAI)
+			if err != nil {
+				return nil, err
+			}
+			clients = append(clients, client)
+		}
+		log.Printf("created model pool with %d model groups (max 3 models each)", len(clients))
 	default:
 		return nil, fmt.Errorf("unsupported AI provider: %s", tierConfig.Provider)
 	}
+
+	return &modelPool{clients: clients}, nil
 }

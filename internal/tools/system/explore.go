@@ -74,7 +74,7 @@ func GetExploreSystemPrompt() string {
 	inputDesc, _ := hiveutils.DescribeJSONSchema[ExploreInput]()
 	// Generate human-readable schema description instead of raw JSON schema
 	// This prevents LLM from outputting schema definition instead of data
-	outputDesc, _ := hiveutils.DescribeOutputJSON[ExploreOutput]()
+	outputDesc, _ := hiveutils.DescribeJSONSchema[ExploreOutput]()
 
 	return fmt.Sprintf(`You are a specialized codebase exploration agent optimized for fast, read-only analysis.
 
@@ -113,7 +113,7 @@ Adjust your search strategy based on the thoroughness level:
 - **CONTEXT AWARE**: Parse the thoroughness level from input
 
 ======== Output Format =======
-Return ONLY a raw JSON object (no markdown code blocks).
+CRITICAL: Return ONLY a raw JSON object that folow this JSON SCHEMA without markdown decorator, any output that not follow the convention will be rejected.
 %s
 
 ========= INPUT FORMAT ========
@@ -148,13 +148,12 @@ func explore(provider llm.Provider) func(ctx context.Context, input *ExploreInpu
 		}
 		readTools := filterReadOnlyTools(systemTools)
 		logger.InfoContext(ctx, "read tools", slog.Int("num tools", len(readTools)))
-		model, _ := provider.GetModel(ctx, llm.TierFast)
 
 		bee, err := bee.NewCustomBee[ExploreInput, ExploreOutput](&bee.Config{
 			ID:           uuid.String(),
 			Tools:        readTools,
 			Persona:      GetExploreSystemPrompt(),
-			LLM:          model,
+			ModelPool:    provider.ModelPool(llm.TierFast),
 			MaxSteps:     100,
 			TimeoutInSec: 200,
 		})

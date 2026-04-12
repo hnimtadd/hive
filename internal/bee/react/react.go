@@ -2,7 +2,9 @@ package react
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -33,21 +35,13 @@ type Config struct {
 	MaxStep      int
 }
 
-// AgentOption configures the agent during creation.
-type AgentOption func(*Agent)
-
 // New creates a new ReACT agent with a system prompt.
-func New(cfg Config, opts ...AgentOption) (*Agent, error) {
+func New(cfg Config) (*Agent, error) {
 	// Create agent with default values
 	a := &Agent{
 		id:           cfg.ID,
 		systemPrompt: cfg.SystemPrompt,
 		history:      []*schema.Message{},
-	}
-
-	// Apply options
-	for _, opt := range opts {
-		opt(a)
 	}
 
 	config := &einoreact.AgentConfig{
@@ -73,7 +67,7 @@ func New(cfg Config, opts ...AgentOption) (*Agent, error) {
 	}
 
 	// Add tool execution middleware that executes custom middlewares
-	config.ToolsConfig.ToolCallMiddlewares = []compose.ToolMiddleware{{Invokable: a.invokableToolMiddleware()}}
+	config.ToolsConfig.ToolCallMiddlewares = append(config.ToolsConfig.ToolCallMiddlewares, a.hiveMiddleware())
 
 	// Create Eino's ReACT agent
 	ctx := context.Background()
@@ -143,32 +137,141 @@ func (a *Agent) ID() string {
 	return a.id
 }
 
-func (a *Agent) invokableToolMiddleware() compose.InvokableToolMiddleware {
-	return func(handler compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
-		return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
-			mw := middleware.MiddlewareFromContext(ctx)
-			ctx, _ = trace.ContextWithChildSpan(ctx)
-			toolCall := types.ToolCall{
-				ToolName:  input.Name,
-				Arguments: input.Arguments,
-				CallID:    input.CallID,
-			}
-			start := time.Now()
+func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
+	return compose.ToolMiddleware{
+		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
+				mw := middleware.MiddlewareFromContext(ctx)
+				ctx, _ = trace.ContextWithChildSpan(ctx)
+				toolCall := types.ToolCall{
+					ToolName:  input.Name,
+					Arguments: input.Arguments,
+					CallID:    input.CallID,
+				}
+				start := time.Now()
 
-			// Execute the tool
-			output, err := handler(ctx, input)
-			if err != nil {
+				// Execute the tool
+				output, err := next(ctx, input)
+				if err != nil {
+					// Fire STARTED event to custom middlewares
+					toolCall.Succeed = false
+					toolCall.Error = err
+				} else {
+					toolCall.Succeed = true
+					toolCall.Output = output.Result
+				}
+				toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
 				// Fire STARTED event to custom middlewares
-				toolCall.Succeed = false
-				toolCall.Error = err
-			} else {
-				toolCall.Succeed = true
-				toolCall.Output = output.Result
+				mw.OnToolCall(ctx, a.id, toolCall)
+				return output, nil
 			}
-			toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
-			// Fire STARTED event to custom middlewares
-			mw.OnToolCall(ctx, a.id, toolCall)
-			return output, nil
-		}
+		},
+		EnhancedInvokable: func(next compose.EnhancedInvokableToolEndpoint) compose.EnhancedInvokableToolEndpoint {
+			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedInvokableToolOutput, error) {
+				mw := middleware.MiddlewareFromContext(ctx)
+				ctx, _ = trace.ContextWithChildSpan(ctx)
+				toolCall := types.ToolCall{
+					ToolName:  input.Name,
+					Arguments: input.Arguments,
+					CallID:    input.CallID,
+				}
+				start := time.Now()
+
+				// Execute the tool
+				output, err := next(ctx, input)
+				if err != nil {
+					// Fire STARTED event to custom middlewares
+					toolCall.Succeed = false
+					toolCall.Error = err
+					toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
+				} else {
+					toolCall.Succeed = true
+					toolCall.Output = output.Result.Parts[len(output.Result.Parts)-1].Text
+				}
+
+				// Fire event to custom middlewares
+				mw.OnToolCall(ctx, a.id, toolCall)
+				return output, err
+			}
+		},
+		EnhancedStreamable: func(next compose.EnhancedStreamableToolEndpoint) compose.EnhancedStreamableToolEndpoint {
+			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedStreamableToolOutput, error) {
+				mw := middleware.MiddlewareFromContext(ctx)
+				ctx, _ = trace.ContextWithChildSpan(ctx)
+				toolCall := types.ToolCall{
+					ToolName:  input.Name,
+					Arguments: input.Arguments,
+					CallID:    input.CallID,
+				}
+				start := time.Now()
+
+				// Execute the tool
+				output, err := next(ctx, input)
+				go func(output compose.EnhancedStreamableToolOutput, err error) {
+					if err != nil {
+						// Fire STARTED event to custom middlewares
+						toolCall.Succeed = false
+						toolCall.Error = err
+						toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
+						// Fire STARTED event to custom middlewares
+						mw.OnToolCall(ctx, a.id, toolCall)
+						return
+					}
+					toolCall.Succeed = true
+					defer output.Result.Close()
+					for {
+						var chunk *schema.ToolResult
+						chunk, err = output.Result.Recv()
+						if errors.Is(err, io.EOF) {
+							break
+						}
+						toolCall.Output += chunk.Parts[len(chunk.Parts)-1].Text
+					}
+
+					// Fire event to custom middlewares
+					mw.OnToolCall(ctx, a.id, toolCall)
+				}(*output, err)
+				return output, err
+			}
+		},
+		Streamable: func(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
+			return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
+				mw := middleware.MiddlewareFromContext(ctx)
+				ctx, _ = trace.ContextWithChildSpan(ctx)
+				toolCall := types.ToolCall{
+					ToolName:  input.Name,
+					Arguments: input.Arguments,
+					CallID:    input.CallID,
+				}
+				start := time.Now()
+
+				// Execute the tool
+				output, err := next(ctx, input)
+				go func(output compose.StreamToolOutput, err error) {
+					if err != nil {
+						// Fire STARTED event to custom middlewares
+						toolCall.Succeed = false
+						toolCall.Error = err
+						toolCall.ExecutionTimeMs = int(time.Since(start).Milliseconds())
+						// Fire STARTED event to custom middlewares
+						mw.OnToolCall(ctx, a.id, toolCall)
+						return
+					}
+					toolCall.Succeed = true
+					defer output.Result.Close()
+					var chunk string
+					for {
+						chunk, err = output.Result.Recv()
+						if errors.Is(err, io.EOF) {
+							break
+						}
+						toolCall.Output += chunk
+					}
+					// Fire event to custom middlewares
+					mw.OnToolCall(ctx, a.id, toolCall)
+				}(*output, err)
+				return output, err
+			}
+		},
 	}
 }
