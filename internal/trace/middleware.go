@@ -19,7 +19,7 @@ func (t *traceMiddleware) IsEnabled() bool {
 	return t.logger != nil && t.logger.IsEnabled()
 }
 
-// OnRequest implements [middleware.HiveMiddleware].
+// OnRequest implements [middleware.LLMMiddleware].
 func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
 	if !t.IsEnabled() {
 		return
@@ -36,7 +36,7 @@ func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req typ
 	})
 }
 
-// OnResponse implements [middleware.HiveMiddleware].
+// OnResponse implements [middleware.LLMMiddleware].
 func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
 	if !t.IsEnabled() {
 		return
@@ -61,7 +61,7 @@ func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp t
 	})
 }
 
-// OnToolCall implements [middleware.HiveMiddleware].
+// OnToolCall implements [middleware.LLMMiddleware].
 func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
 	if !t.IsEnabled() {
 		return
@@ -82,7 +82,7 @@ func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEv
 	t.toolCalls[toolEvent.CallID] = toolCall
 }
 
-// OnToolCall implements [middleware.HiveMiddleware].
+// OnToolCall implements [middleware.LLMMiddleware].
 func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, toolEvent types.ToolCallResponse) {
 	if !t.IsEnabled() {
 		return
@@ -101,6 +101,6 @@ func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, tool
 	t.logger.LogToolCall(ctx, toolCall)
 }
 
-func NewTraceMiddleware(sessionLogger *SessionLogger) middleware.HiveMiddleware {
+func NewTraceMiddleware(sessionLogger *SessionLogger) middleware.LLMMiddleware {
 	return &traceMiddleware{logger: sessionLogger}
 }
