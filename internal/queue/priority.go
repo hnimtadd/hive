@@ -2,4 +2,8 @@ package queue
 
 type Priority int
 
-const PriorityNormal Priority = iota
+const (
+	PriorityLow Priority = iota
+	PriorityNormal
+	PriorityHigh
+)
