@@ -151,7 +151,7 @@ type ExecutionEvent struct {
 	toolResponse types.ToolCallResponse
 }
 
-// OnRequest implements [middleware.HiveMiddleware].
+// OnRequest implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
 	event := ExecutionEvent{
 		typ: EventTypeLLMRequestStart,
@@ -166,7 +166,7 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 	}
 }
 
-// OnResponse implements [middleware.HiveMiddleware].
+// OnResponse implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
 	event := ExecutionEvent{
 		typ:  EventTypeLLMRequestFinish,
@@ -180,7 +180,7 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 	}
 }
 
-// OnToolCall implements [middleware.HiveMiddleware].
+// OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
 	event := ExecutionEvent{
 		typ:         EventTypeToolCallStart,
@@ -195,7 +195,7 @@ func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, 
 	}
 }
 
-// OnToolCall implements [middleware.HiveMiddleware].
+// OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
 	event := ExecutionEvent{
 		typ:          EventTypeToolCallFinish,
@@ -221,9 +221,9 @@ func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEv
 	}
 }
 
-var _ middleware.HiveMiddleware = &eventStreamMiddleware{}
+var _ middleware.LLMMiddleware = &eventStreamMiddleware{}
 
-func (s *HiveServer) EventStreamMiddleware() (middleware.HiveMiddleware, <-chan ExecutionEvent) {
+func (s *HiveServer) EventStreamMiddleware() (middleware.LLMMiddleware, <-chan ExecutionEvent) {
 	eventCh := make(chan ExecutionEvent, 100)
 	return &eventStreamMiddleware{
 		eventCh: eventCh,

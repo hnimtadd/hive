@@ -7,15 +7,15 @@ import (
 
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
-	"go.etcd.io/bbolt"
 
 	clover "github.com/ostafen/clover/v2"
 	document "github.com/ostafen/clover/v2/document"
 	"github.com/ostafen/clover/v2/query"
 	gloverbbolt "github.com/ostafen/clover/v2/store/bbolt"
+	"go.etcd.io/bbolt"
 )
 
-type TaskStorage interface {
+type Storage interface {
 	List() ([]*types.HiveTask, error)
 	Add(task *types.HiveTask) error
 	Update(task *types.HiveTask) error
@@ -33,7 +33,7 @@ type Options struct {
 
 const taskCollection = "tasks"
 
-func NewLocalStorage(opts Options) (TaskStorage, error) {
+func NewLocalStorage(opts Options) (Storage, error) {
 check:
 	stat, err := os.Stat(opts.Storage)
 	if err != nil {
@@ -78,7 +78,7 @@ check:
 	}, nil
 }
 
-// Add implements [TaskStorage].
+// Add implements [Storage].
 func (t *taskStorage) Add(task *types.HiveTask) error {
 	doc := document.NewDocument()
 	payload, err := utils.JSONConvert[map[string]any](task)
@@ -92,7 +92,7 @@ func (t *taskStorage) Add(task *types.HiveTask) error {
 	return nil
 }
 
-// Update implements [TaskStorage].
+// Update implements [Storage].
 func (t *taskStorage) Update(task *types.HiveTask) error {
 	payload, err := utils.JSONConvert[map[string]any](task)
 	if err != nil {
@@ -108,7 +108,7 @@ func (t *taskStorage) Update(task *types.HiveTask) error {
 	return nil
 }
 
-// Delete implements [TaskStorage].
+// Delete implements [Storage].
 func (t *taskStorage) Delete(id string) (*types.HiveTask, error) {
 	task, err := t.Load(id)
 	if err != nil {
@@ -120,7 +120,7 @@ func (t *taskStorage) Delete(id string) (*types.HiveTask, error) {
 	return task, nil
 }
 
-// List implements [TaskStorage].
+// List implements [Storage].
 func (t *taskStorage) List() ([]*types.HiveTask, error) {
 	tasks := []*types.HiveTask{}
 	if err := t.db.ForEach(query.NewQuery(taskCollection), func(doc *document.Document) bool {
@@ -136,11 +136,14 @@ func (t *taskStorage) List() ([]*types.HiveTask, error) {
 	return tasks, nil
 }
 
-// Load implements [TaskStorage].
+// Load implements [Storage].
 func (t *taskStorage) Load(id string) (*types.HiveTask, error) {
 	doc, err := t.db.FindById(taskCollection, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find document: %w", err)
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("task not found: %s", id)
 	}
 	task, err := toTask(doc)
 	if err != nil {
@@ -150,6 +153,9 @@ func (t *taskStorage) Load(id string) (*types.HiveTask, error) {
 }
 
 func toTask(doc *document.Document) (*types.HiveTask, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("document is nil")
+	}
 	payload := doc.ToMap()
 	task, err := utils.JSONConvert[types.HiveTask](payload)
 	if err != nil {

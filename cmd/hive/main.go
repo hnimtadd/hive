@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
@@ -66,11 +65,10 @@ func executeCommand(command string) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute task: %w", err)
 	}
-	task := types.NewHiveTask(command)
+	task := types.NewHiveTask(command, artifacts)
 	if jiraID != "" {
 		task.Artifacts["Jira_Ticket_ID"] = jiraID
 	}
-	maps.Copy(task.Artifacts, artifacts)
 
 	// Start monitoring task progress
 	if err := handleTask(srv, task); err != nil {

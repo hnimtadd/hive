@@ -41,12 +41,12 @@ type HiveTask struct {
 }
 
 // NewHiveTask creates a new task with default values.
-func NewHiveTask(goal string) *HiveTask {
+func NewHiveTask(goal string, artifacts map[string]string) *HiveTask {
 	return &HiveTask{
 		ID:        uuid.New().String(),
 		Status:    TaskStatusNotStarted,
 		Goal:      goal,
-		Artifacts: make(map[string]string),
+		Artifacts: artifacts,
 		Messages: []Message{
 			{
 				Role:    "user",
@@ -62,4 +62,11 @@ func (t *HiveTask) JSONString() (string, error) {
 		return "", err
 	}
 	return string(jsonBytes), nil
+}
+
+// IsTerminal returns true if the task has reached a terminal state.
+// Terminal states are: completed, failed.
+// Non-terminal states are: not_started, in_progress, paused.
+func (s Status) IsTerminal() bool {
+	return s == TaskStatusCompleted || s == TaskStatusFailed
 }

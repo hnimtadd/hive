@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"maps"
 	"net"
 	"time"
 
@@ -34,7 +33,7 @@ type HiveServer struct {
 
 	registry   registry.Registry
 	config     *config.Config
-	storage    storage.TaskStorage
+	storage    storage.Storage
 	grpcServer *grpc.Server
 
 	sessionLogger *trace.SessionLogger
@@ -46,7 +45,7 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.TaskStorage) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.Storage) (*HiveServer, error) {
 	persona, err := getSupervisorPersona(reg)
 	if err != nil {
 		return nil, err
@@ -162,14 +161,13 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	// Use configured timeout (could be extended to extract from request metadata)
 	timeout := s.config.Tasks.Timeout
 
-	task := types.NewHiveTask(req.GetGlobalGoal())
-	maps.Copy(task.Artifacts, req.GetInitialArtifacts())
+	task := types.NewHiveTask(req.GetGlobalGoal(), req.GetInitialArtifacts())
 
 	// Create initial task record
-	if err = s.storage.Add(task); err != nil {
-		logger.ErrorContext(ctx, "failed to create initial task record", slog.String("reason", err.Error()))
-		return fmt.Errorf("failed to store task: %w", err)
-	}
+	// if err = s.storage.Add(task); err != nil {
+	// 	logger.ErrorContext(ctx, "failed to create initial task record", slog.String("reason", err.Error()))
+	// 	return fmt.Errorf("failed to store task: %w", err)
+	// }
 
 	// Ensure final state is persisted
 	defer func() {
