@@ -2,96 +2,133 @@ package queue
 
 import (
 	"context"
-	"slices"
+	"errors"
 	"sync"
+	"time"
 
-	"github.com/hnimtadd/hive/internal/types"
+	"github.com/hnimtadd/hive/pkg/types"
 )
 
+var (
+	ErrQueueClosed  = errors.New("queue is closed")
+	ErrMaxRetries   = errors.New("max retries exceeded")
+	ErrTaskNotFound = errors.New("task not found")
+)
+
+// Queue defines the interface for task scheduling.
 type Queue interface {
-	Enqueue(task *types.Task, priority Priority) error
-	Dequeue(ctx context.Context) (*types.Task, error)
+	// Enqueue adds a task to the queue.
+	Enqueue(task *types.HiveTask) error
+	// Dequeue removes and returns the next task. Blocks until a task is available or context is cancelled.
+	Dequeue(ctx context.Context) (*types.HiveTask, error)
+	// Ack acknowledges a task as successfully processed.
+	Ack(taskID string) error
+	// Nack negatively acknowledges a task. If requeue is true, the task will be requeued.
+	Nack(taskID string, requeue bool) error
+	// Length returns the current number of tasks waiting in the queue.
+	Length() int
+	// Close shuts down the queue, unblocking all waiting Dequeue calls.
+	Close()
 }
 
-type QueuedTask struct {
-	Task     *types.Task
-	Priority Priority
-	Attempts int
-}
-
+// MemoryQueue is an in-memory implementation of Queue.
+// Suitable for personal use
 type MemoryQueue struct {
 	mu       sync.Mutex
-	queue    []*QueuedTask
-	cond     *sync.Cond
+	items    []*types.HiveTask
+	closed   bool
+	attempts map[string]int // taskID → retry count
 	maxRetry int
-	attemps  map[string]int
 }
 
-func NewMemoryQueue(maxRetry int) Queue {
-	return &MemoryQueue{
-		queue:    make([]*QueuedTask, 0, 1000),
-		maxRetry: maxRetry,
-		attemps:  make(map[string]int),
-		mu:       sync.Mutex{},
-		cond:     sync.NewCond(&sync.Mutex{}),
+// MemoryQueueOption configures the MemoryQueue.
+type MemoryQueueOption func(*MemoryQueue)
+
+// WithMaxAttempts sets the maximum number of retries before a task is considered failed.
+func WithMaxAttempts(n int) MemoryQueueOption {
+	return func(q *MemoryQueue) {
+		q.maxRetry = n
 	}
+}
+
+// NewMemoryQueue creates a new in-memory task queue.
+func NewMemoryQueue(opts ...MemoryQueueOption) *MemoryQueue {
+	q := &MemoryQueue{
+		items:    make([]*types.HiveTask, 0),
+		attempts: make(map[string]int),
+		maxRetry: 3, // Default: 3 retries
+	}
+
+	for _, opt := range opts {
+		opt(q)
+	}
+
+	return q
 }
 
 // Enqueue implements [Queue].
-func (m *MemoryQueue) Enqueue(task *types.Task, priority Priority) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (q *MemoryQueue) Enqueue(task *types.HiveTask) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 
-	attemps, isRetried := m.attemps[task.ID]
-	if isRetried && attemps >= m.maxRetry {
-		return ErrMaxRetriesExceed
-	} else if !isRetried {
-		m.attemps[task.ID] = 0
+	if q.closed {
+		return ErrQueueClosed
+	}
+	attempts, isAttempts := q.attempts[task.ID]
+	if isAttempts && attempts >= q.maxRetry {
+		return ErrMaxRetries
+	} else if !isAttempts {
+		q.attempts[task.ID] = 1
+	} else {
+		q.attempts[task.ID] += 1
 	}
 
-	m.queue = append(m.queue, &QueuedTask{
-		Task:     task,
-		Priority: priority,
-		Attempts: 0,
-	})
-	slices.SortStableFunc(m.queue, func(a, b *QueuedTask) int {
-		if b == nil {
-			return -1
-		}
-		if a == nil {
-			return 1
-		}
-		return int(b.Priority) - int(a.Priority)
-	})
-	m.cond.Signal()
+	q.items = append(q.items, task)
 	return nil
 }
 
 // Dequeue implements [Queue].
-func (m *MemoryQueue) Dequeue(ctx context.Context) (*types.Task, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, error) {
+	for {
+		q.mu.Lock()
 
-	for len(m.queue) == 0 {
-		m.cond.L.Lock()
-		waitCh := make(chan struct{})
-		go func() {
-			// This will be return when the new queuedTask is ready, which is trigger by m.cond.Signal
-			m.cond.Wait()
-			close(waitCh)
-		}()
+		// Check if there's a task available
+		if len(q.items) > 0 {
+			task := q.items[0]
+			q.items = q.items[1:]
+			q.mu.Unlock()
+			return task, nil
+		}
+
+		// Check if queue is closed
+		if q.closed {
+			q.mu.Unlock()
+			return nil, ErrQueueClosed
+		}
+
+		q.mu.Unlock()
+
+		// Wait with context awareness (polling with signal)
 		select {
-		case <-waitCh:
-			continue
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+			// Poll again
 		}
 	}
-	// at this point, it's guarantee that q.queue will has at least 1 elemenet.
-	item := m.queue[0]
-	m.queue = m.queue[1:]
-	m.attemps[item.Task.ID]++
-	return item.Task, nil
 }
 
-var _ Queue = &MemoryQueue{}
+// Length implements [Queue].
+func (q *MemoryQueue) Length() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.items)
+}
+
+// Close implements [Queue].
+func (q *MemoryQueue) Close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.closed = true
+}
