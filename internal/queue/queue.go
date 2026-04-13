@@ -21,10 +21,6 @@ type Queue interface {
 	Enqueue(task *types.HiveTask) error
 	// Dequeue removes and returns the next task. Blocks until a task is available or context is cancelled.
 	Dequeue(ctx context.Context) (*types.HiveTask, error)
-	// Ack acknowledges a task as successfully processed.
-	Ack(taskID string) error
-	// Nack negatively acknowledges a task. If requeue is true, the task will be requeued.
-	Nack(taskID string, requeue bool) error
 	// Length returns the current number of tasks waiting in the queue.
 	Length() int
 	// Close shuts down the queue, unblocking all waiting Dequeue calls.
