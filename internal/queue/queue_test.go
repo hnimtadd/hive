@@ -77,6 +77,23 @@ func TestQueue(t *testing.T) {
 				require.ErrorIs(t, context.DeadlineExceeded, err)
 			},
 		},
+		{
+			name:       "retries exceed",
+			maxAttemps: 2,
+			tasks:      []queue.Priority{queue.PriorityNormal},
+			validation: func(t *testing.T, q queue.Queue) {
+				// high first
+				task, err := q.Dequeue(context.Background())
+				require.NoError(t, err)
+				assert.Equal(t, "0:1", task.ID)
+				// attempts = 1
+				require.NoError(t, q.Enqueue(task, queue.PriorityLow)) // First retry, ok
+				task, err = q.Dequeue(context.Background())
+				require.NoError(t, err)
+				assert.Equal(t, "0:1", task.ID)
+				require.ErrorIs(t, q.Enqueue(task, queue.PriorityLow), queue.ErrMaxRetriesExceed) // Second retry, false, as this is already 3rd attemp
+			},
+		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {

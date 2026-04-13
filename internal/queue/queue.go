@@ -43,7 +43,7 @@ func (m *MemoryQueue) Enqueue(task *types.Task, priority Priority) error {
 	defer m.mu.Unlock()
 
 	attemps, isRetried := m.attemps[task.ID]
-	if isRetried && attemps > m.maxRetry {
+	if isRetried && attemps >= m.maxRetry {
 		return ErrMaxRetriesExceed
 	} else if !isRetried {
 		m.attemps[task.ID] = 0
