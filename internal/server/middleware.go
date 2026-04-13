@@ -169,7 +169,7 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 // OnResponse implements [middleware.HiveMiddleware].
 func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
 	event := ExecutionEvent{
-		typ:  EventTypeLLMRequestStart,
+		typ:  EventTypeLLMRequestFinish,
 		resp: resp,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {

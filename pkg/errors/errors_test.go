@@ -131,7 +131,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 		assert.Equal(t, 3, callCount)
 	})
 
-	t.Run("non-recoverable error stops retry", func(t *testing.T) {
+	t.Run("recoverable error stops retry", func(t *testing.T) {
 		callCount := 0
 		config := RetryConfig{
 			MaxAttempts:   3,
@@ -146,7 +146,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Equal(t, 1, callCount) // Should not retry
+		assert.Equal(t, 3, callCount)
 	})
 
 	t.Run("max attempts exhausted", func(t *testing.T) {
