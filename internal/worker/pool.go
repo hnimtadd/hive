@@ -12,13 +12,13 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/bee/system"
 	"github.com/hnimtadd/hive/internal/channel"
-	"github.com/hnimtadd/hive/internal/mapper"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
 	toolSystem "github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/hnimtadd/hive/pkg/utils"
 )
 
 // Pool manages a set of worker goroutines that execute tasks from the queue.
@@ -65,7 +65,7 @@ func (p *Pool) Start(ctx context.Context) {
 	p.ctx = ctx
 	p.cancel = cancel
 
-	for i := 0; i < p.size; i++ {
+	for i := range p.size {
 		p.workers.Add(1)
 		go p.worker(i)
 	}
@@ -122,19 +122,10 @@ func (p *Pool) worker(id int) {
 					)
 					// Mark task as failed
 					task.Status = types.TaskStatusFailed
-					task.Messages = append(task.Messages, types.Message{
-						Role:    "assistant",
-						Content: fmt.Sprintf("Worker panic: %v", r),
-					})
+					task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Worker panic: %v", r)))
 					_ = p.storage.Update(task)
 					ch := p.channels.ForTask(task.ID)
-					ch.OutputCh <- &agentv1.ExecuteTaskResponse{
-						Payload: &agentv1.ExecuteTaskResponse_Error{
-							Error: &agentv1.ErrorUpdate{
-								Message: fmt.Sprintf("Worker panic: %v", r),
-							},
-						},
-					}
+					ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Worker panic: %v", r))
 					close(ch.DoneCh)
 					p.channels.Cleanup(task.ID)
 				}
@@ -157,14 +148,8 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	if err != nil {
 		log.Error("failed to create supervisor", slog.Any("error", err))
 		task.Status = types.TaskStatusFailed
-		p.storage.Update(task) //nolint:errcheck
-		ch.OutputCh <- &agentv1.ExecuteTaskResponse{
-			Payload: &agentv1.ExecuteTaskResponse_Error{
-				Error: &agentv1.ErrorUpdate{
-					Message: fmt.Sprintf("Failed to create supervisor: %v", err),
-				},
-			},
-		}
+		_ = p.storage.Update(task)
+		ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Failed to create supervisor: %v", err))
 		return
 	}
 
@@ -174,33 +159,21 @@ func (p *Pool) processTask(task *types.HiveTask) {
 		case <-p.ctx.Done():
 			log.Info("context cancelled during execution")
 			task.Status = types.TaskStatusFailed
-			p.storage.Update(task) //nolint:errcheck
+			_ = p.storage.Update(task)
 			return
 
 		case req := <-ch.InputCh:
 			// Handle feedback from client
 			if fb := req.GetFeedback(); fb != nil {
-				task.Messages = append(task.Messages, types.Message{
-					Role:    "user",
-					Content: fb.GetFeedback(),
-				})
+				task.Messages = append(task.Messages, types.NewMessage(types.RoleUser, fb.GetFeedback()))
 				log.Info("received feedback", slog.String("feedback", fb.GetFeedback()))
 			}
 			if req.GetCancel() != nil {
 				log.Info("task cancelled by user")
 				task.Status = types.TaskStatusFailed
-				task.Messages = append(task.Messages, types.Message{
-					Role:    "assistant",
-					Content: "Task cancelled by user",
-				})
-				p.storage.Update(task) //nolint:errcheck
-				ch.OutputCh <- &agentv1.ExecuteTaskResponse{
-					Payload: &agentv1.ExecuteTaskResponse_Error{
-						Error: &agentv1.ErrorUpdate{
-							Message: "Task cancelled by user",
-						},
-					},
-				}
+				task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, "Task cancelled by user"))
+				_ = p.storage.Update(task)
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr("Task cancelled by user")
 				return
 			}
 
@@ -214,52 +187,41 @@ func (p *Pool) processTask(task *types.HiveTask) {
 					Role:    "assistant",
 					Content: fmt.Sprintf("Supervisor error: %v", err),
 				})
-				_ = p.storage.Update(task) //nolint:errcheck
-				ch.OutputCh <- &agentv1.ExecuteTaskResponse{
-					Payload: &agentv1.ExecuteTaskResponse_Error{
-						Error: &agentv1.ErrorUpdate{
-							Message: fmt.Sprintf("Supervisor error: %v", err),
-						},
-					},
-				}
+				_ = p.storage.Update(task)
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Supervisor error: %v", err))
 				return
 			}
 
 			// Handle output based on status
 			task.Status = output.Status
-			task.Messages = append(task.Messages, types.Message{
-				Role:    "assistant",
-				Content: output.Content,
-			})
+			task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, output.Content))
 
 			// Persist state
-			_ = p.storage.Update(task) //nolint:errcheck
+			_ = p.storage.Update(task)
 
 			// Send update to client
-			var resp *agentv1.ExecuteTaskResponse
 			switch output.Status {
 			case types.TaskStatusCompleted:
-				resp = mapper.ToTaskUpdateSuccess(output)
-				ch.OutputCh <- resp
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseSuccess(utils.SanitizeUTF8(output.Content))
 				log.Info("task completed")
 				return
 
 			case types.TaskStatusFailed:
-				resp = mapper.ToTaskUpdateFailed(output)
-				ch.OutputCh <- resp
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(utils.SanitizeUTF8(output.Content))
 				log.Info("task failed")
 				return
 
 			case types.TaskStatusPaused:
-				resp = mapper.ToTaskUpdateRequireFeedback(output)
-				ch.OutputCh <- resp
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseFeedback(utils.SanitizeUTF8(output.Content))
 				log.Info("task paused, waiting for feedback")
 				// Don't return, wait for feedback via InputCh
 				continue
 
 			case types.TaskStatusInProgress:
-				resp = mapper.ToTaskUpdateInProgress(output)
-				ch.OutputCh <- resp
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate(
+					utils.SanitizeUTF8(string(output.Status)),
+					utils.SanitizeUTF8(fmt.Sprintf("%s-next: %s", output.Content, output.NextAction)),
+				)
 				log.Info("task in progress")
 				// Continue to next iteration
 			}
