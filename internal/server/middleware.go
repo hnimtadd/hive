@@ -20,8 +20,8 @@ func (s *HiveServer) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler,
 	) (any, error) {
 		// Create trace context
-		ctx = trace.ContextWithTraceContext(ctx, trace.NewRootTraceContext())
-		ctx = middleware.ContextWithMiddleware(ctx, trace.NewTraceMiddleware(s.sessionLogger))
+		// ctx = trace.ContextWithTraceContext(ctx, trace.NewRootTraceContext())
+		// ctx = middleware.ContextWithMiddleware(ctx, trace.NewTraceMiddleware(s.sessionLogger))
 
 		trace.Logger(ctx).Info("grpc request received",
 			slog.String("method", info.FullMethod),
@@ -55,8 +55,8 @@ func (s *HiveServer) StreamServerInterceptor() grpc.StreamServerInterceptor {
 		ctx := stream.Context()
 
 		// Create trace context
-		ctx = trace.ContextWithTraceContext(ctx, trace.NewRootTraceContext())
-		ctx = middleware.ContextWithMiddleware(ctx, trace.NewTraceMiddleware(s.sessionLogger))
+		// ctx = trace.ContextWithTraceContext(ctx, trace.NewRootTraceContext())
+		// ctx = middleware.ContextWithMiddleware(ctx, trace.NewTraceMiddleware(s.sessionLogger))
 
 		trace.Logger(ctx).Info("grpc stream started",
 			slog.String("method", info.FullMethod),
