@@ -9,7 +9,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 )
 
@@ -43,7 +42,7 @@ func DelegateTool() (tool.InvokableTool, error) {
 					},
 				}, nil
 			}
-			i := &bee.WorkerInput{
+			i := &registry.WorkerInput{
 				Context:   input.Context,
 				Artifacts: input.Artifacts,
 				Task:      input.Task,

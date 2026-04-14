@@ -19,24 +19,24 @@ import (
 // NewBeeRegistry manages available agents in the system.
 type Registry interface {
 	// ListAgents returns all registered agents
-	ListAgents() []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
+	ListAgents() []bee.CustomBee[WorkerInput, WorkerOutput]
 	// GetByID get agent by agent ID
-	GetByID(id string) (bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], bool)
+	GetByID(id string) (bee.CustomBee[WorkerInput, WorkerOutput], bool)
 }
 
 type registry struct {
-	bees  map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]
+	bees  map[string]bee.CustomBee[WorkerInput, WorkerOutput]
 	tools map[string]tool.InvokableTool
 	path  string
 	llm   llm.Provider
 }
 
 // ListAgents implements [Registry].
-func (a *registry) ListAgents() []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput] {
+func (a *registry) ListAgents() []bee.CustomBee[WorkerInput, WorkerOutput] {
 	return slices.Collect(maps.Values(a.bees))
 }
 
-func (a *registry) GetByID(id string) (bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], bool) {
+func (a *registry) GetByID(id string) (bee.CustomBee[WorkerInput, WorkerOutput], bool) {
 	agent, ok := a.bees[id]
 
 	return agent, ok
@@ -44,17 +44,17 @@ func (a *registry) GetByID(id string) (bee.CustomBee[bee.WorkerInput, bee.Worker
 
 // scan scans the agent folder and create agent with different persona and
 // discovery tool registered also.
-func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput], error) {
+func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[WorkerInput, WorkerOutput], error) {
 	entries, err := os.ReadDir(a.path)
 	if err != nil {
 		log.Printf("failed to read agents home: %s\n", err)
-		return []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]{}, nil
+		return []bee.CustomBee[WorkerInput, WorkerOutput]{}, nil
 	}
 
 	// Use server timeout as default for agents, with a reasonable max cap (2x default)
 	defaultTimeoutSec := int(cfg.Bees.DefaultTimeout.Seconds())
 
-	agents := []bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]{}
+	agents := []bee.CustomBee[WorkerInput, WorkerOutput]{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -89,7 +89,7 @@ func (a *registry) scan(cfg *config.Config) ([]bee.CustomBee[bee.WorkerInput, be
 		beeConfig.ID = entry.Name() + "-" + beeConfig.ID
 		beeConfig.Tools = tools
 		beeConfig.ModelPool = a.llm.ModelPool(llm.TierDefault)
-		workerAgent, err := bee.NewCustomBee[bee.WorkerInput, bee.WorkerOutput](beeConfig)
+		workerAgent, err := bee.NewCustomBee[WorkerInput, WorkerOutput](beeConfig)
 		if err != nil {
 			log.Printf("failed to init worker agent: %s", err)
 			continue
@@ -104,7 +104,7 @@ func NewBeeRegistry(appConfig *config.Config, llm llm.Provider, tools toolRegist
 	agentTools := tools.ListTools()
 	log.Println("available tools", agentTools)
 	reg := &registry{
-		bees:  make(map[string]bee.CustomBee[bee.WorkerInput, bee.WorkerOutput]),
+		bees:  make(map[string]bee.CustomBee[WorkerInput, WorkerOutput]),
 		tools: agentTools,
 		path:  appConfig.Bees.Dir,
 		llm:   llm,
