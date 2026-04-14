@@ -35,6 +35,7 @@ type AIConfig struct {
 type BeeConfig struct {
 	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
 	Dir            string
+	PoolSize       int `mapstructure:"pool_size"`
 }
 
 type ToolConfig struct {
@@ -195,6 +196,7 @@ func setDefaults() {
 	viper.SetDefault("task.timeout", 10*time.Minute)
 	viper.SetDefault("task.storage", hiveSpace+"/storage")
 	viper.SetDefault("bee.default_timeout", 2*time.Minute)
+	viper.SetDefault("bee.pool_size", 3)
 	viper.SetDefault("tool.default_timeout", 1*time.Minute)
 
 	viper.SetDefault("workspace", hiveSpace+"/workspace")
