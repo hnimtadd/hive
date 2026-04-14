@@ -77,3 +77,4 @@ config.json
 /server
 .envrc
 docs
+.qwen

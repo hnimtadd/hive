@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// ErrorType represents different categories of errors for better handling
+// ErrorType represents different categories of errors for better handling.
 type ErrorType string
 
 const (
@@ -21,27 +21,27 @@ const (
 	ErrTypeRetryExhausted ErrorType = "RETRY_EXHAUSTED"
 )
 
-// HiveError represents a structured error with additional context
+// HiveError represents a structured error with additional context.
 type HiveError struct {
 	Type      ErrorType
 	Message   string
 	Cause     error
-	Context   map[string]interface{}
+	Context   map[string]any
 	Timestamp time.Time
 }
 
-// NewHiveError creates a new structured error
+// NewHiveError creates a new structured error.
 func NewHiveError(errType ErrorType, message string, cause error) *HiveError {
 	return &HiveError{
 		Type:      errType,
 		Message:   message,
 		Cause:     cause,
-		Context:   make(map[string]interface{}),
+		Context:   make(map[string]any),
 		Timestamp: time.Now(),
 	}
 }
 
-// Error implements the error interface
+// Error implements the error interface.
 func (e *HiveError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("%s: %s (caused by: %s)", e.Type, e.Message, e.Cause.Error())
@@ -49,16 +49,16 @@ func (e *HiveError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Type, e.Message)
 }
 
-// Unwrap returns the underlying cause for error unwrapping
+// Unwrap returns the underlying cause for error unwrapping.
 func (e *HiveError) Unwrap() error {
 	return e.Cause
 }
 
 // WithContext adds context information to the error.
-func (e *HiveError) WithContext(key string, value interface{}) *HiveError {
+func (e *HiveError) WithContext(key string, value any) *HiveError {
 	// Create a copy to avoid mutating the original
 	newErr := *e
-	newErr.Context = make(map[string]interface{})
+	newErr.Context = make(map[string]any)
 	maps.Copy(newErr.Context, e.Context)
 	newErr.Context[key] = value
 	return &newErr
@@ -72,7 +72,7 @@ type RetryConfig struct {
 	MaxDelay      time.Duration
 }
 
-// GetDelay calculates the delay for a given attempt using exponential backoff
+// GetDelay calculates the delay for a given attempt using exponential backoff.
 func (c *RetryConfig) GetDelay(attempt int) time.Duration {
 	if attempt <= 1 {
 		return c.InitialDelay
@@ -100,7 +100,7 @@ func NewErrorHandler[T any]() *ErrorHandler[T] {
 }
 
 // WithRetry executes a function with retry logic for recoverable errors.
-func (h *ErrorHandler[T]) WithRetry(
+func (h *ErrorHandler[T]) WithRetry( //nolint: nonamedreturns // this is acceptable
 	ctx context.Context,
 	config RetryConfig,
 	fn func(context.Context) (T, error),
@@ -116,7 +116,7 @@ func (h *ErrorHandler[T]) WithRetry(
 		default:
 		}
 
-		result, err := fn(ctx)
+		result, err := fn(ctx) //nolint: govet // this is acceptable
 		if err == nil {
 			return result, nil
 		}

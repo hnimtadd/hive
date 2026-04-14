@@ -22,11 +22,6 @@ type TaskPlan struct {
 	Status Status `json:"status" db:"status"`
 }
 
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
 // HiveTask represents a single task in the distributed system.
 type HiveTask struct {
 	// Core identifiers
@@ -69,4 +64,21 @@ func (t *HiveTask) JSONString() (string, error) {
 // Non-terminal states are: not_started, in_progress, paused.
 func (s Status) IsTerminal() bool {
 	return s == TaskStatusCompleted || s == TaskStatusFailed
+}
+
+type Role string
+
+const RoleUser Role = "user"
+const RoleAssistant Role = "assistant"
+
+type Message struct {
+	Role    Role   `json:"role"`
+	Content string `json:"content"`
+}
+
+func NewMessage(role Role, content string) Message {
+	return Message{
+		Role:    role,
+		Content: content,
+	}
 }
