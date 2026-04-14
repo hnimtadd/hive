@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -13,7 +13,9 @@ import (
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/manager"
 	"github.com/hnimtadd/hive/internal/model/llm"
+	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
+	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
 	"google.golang.org/grpc"
 )
@@ -25,15 +27,46 @@ type HiveServer struct {
 	config         *config.Config
 	taskManager    *manager.Manager
 	channelManager *channel.Manager
+	workerPool     *worker.Pool
+	poolCtx        context.Context
+	poolCancel     context.CancelFunc
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
 func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.Storage) (*HiveServer, error) {
-	panic("not implemented")
+	// Create task queue
+	taskQueue := queue.NewMemoryQueue()
+
+	// Create channel manager for per-task communication
+	channels := channel.NewManager()
+
+	// Create task manager (storage + queue)
+	taskMgr := manager.NewManager(storage, taskQueue)
+
+	// Create worker pool
+	poolSize := cfg.Bees.PoolSize
+	if poolSize <= 0 {
+		poolSize = 3 // Default: 3 concurrent workers
+	}
+
+	pool := worker.NewPool(poolSize, taskQueue, storage, channels, reg, provider, cfg)
+
+	return &HiveServer{
+		config:         cfg,
+		taskManager:    taskMgr,
+		channelManager: channels,
+		workerPool:     pool,
+	}, nil
 }
 
 func (s *HiveServer) Serve(addr string) error {
+	logger := slog.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.workerPool.Start(ctx)
+	s.poolCancel = cancel
+	s.poolCtx = ctx
+
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -53,7 +86,7 @@ func (s *HiveServer) Serve(addr string) error {
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
 	s.grpcServer = grpcServer
 
-	log.Printf("HiveServer starting on %s with max request timeout %s", addr, s.config.Server.MaxTimeout)
+	logger.Info("server: starting on %s with max request timeout %s", addr, s.config.Server.MaxTimeout)
 
 	if err = grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
@@ -62,32 +95,39 @@ func (s *HiveServer) Serve(addr string) error {
 }
 
 func (s *HiveServer) Stop() {
-	if s.grpcServer == nil {
-		return
+	logger := slog.Default()
+	if s.grpcServer != nil {
+		// Use configured graceful shutdown timeout
+		timeout := s.config.Server.GracefulShutdownTimeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		// 1. Stop accepting new requests (gRPC graceful shutdown)
+		done := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			logger.Info("server: gRPC graceful shutdown completed")
+		case <-ctx.Done():
+			logger.Info("server: gRPC shutdown timeout exceeded, forcing stop")
+			s.grpcServer.Stop()
+		}
 	}
 
-	// Use configured graceful shutdown timeout
-	timeout := s.config.Server.GracefulShutdownTimeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
+	// 2. Stop worker pool (cancels context, waits for in-flight tasks)
+	if s.poolCancel != nil {
+		s.poolCancel()
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	// Attempt graceful shutdown with timeout
-	done := make(chan struct{})
-	go func() {
-		s.grpcServer.GracefulStop()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Println("Graceful shutdown completed")
-	case <-ctx.Done():
-		log.Println("Graceful shutdown timeout exceeded, forcing stop")
-		s.grpcServer.Stop()
+	if s.workerPool != nil {
+		s.workerPool.Stop()
 	}
 }
 
