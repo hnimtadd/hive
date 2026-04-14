@@ -108,7 +108,7 @@ func (p *Pool) worker(id int) {
 		}
 
 		// Pull task from queue
-		task, err := p.queue.Dequeue(p.ctx)
+		task, attempts, err := p.queue.Dequeue(p.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, queue.ErrQueueClosed) {
 				return // Context cancelled or queue closed, shut down
@@ -119,27 +119,8 @@ func (p *Pool) worker(id int) {
 
 		log.Info("processing task", slog.String("task_id", task.ID))
 
-		// Execute task with recovery
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Error("worker panic recovered",
-						slog.String("task_id", task.ID),
-						slog.Any("panic", r),
-					)
-					// Mark task as failed
-					task.Status = types.TaskStatusFailed
-					task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Worker panic: %v", r)))
-					_ = p.storage.Update(task)
-					ch := p.channels.ForTask(task.ID)
-					ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Worker panic: %v", r))
-					close(ch.DoneCh)
-					p.channels.Cleanup(task.ID)
-				}
-			}()
-
-			p.processTask(task)
-		}()
+		// Execute task with retry logic
+		p.executeWithRetry(task, attempts)
 	}
 }
 
@@ -264,6 +245,36 @@ func (p *Pool) createSupervisor(taskID string) (system.QueenBee, error) {
 	}
 
 	return system.NewQueenBee(config)
+}
+
+// executeWithRetry executes a task with retry support.
+// It runs the task and schedules retry via queue if task is not terminal.
+func (p *Pool) executeWithRetry(task *types.HiveTask, attempt uint) {
+	// Run task with panic recovery
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("worker panic recovered",
+					slog.String("task_id", task.ID),
+					slog.Any("panic", r),
+				)
+				task.Status = types.TaskStatusFailed
+				task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Worker panic: %v", r)))
+				_ = p.storage.Update(task)
+				ch := p.channels.ForTask(task.ID)
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Worker panic: %v", r))
+				close(ch.DoneCh)
+				p.channels.Cleanup(task.ID)
+			}
+		}()
+
+		p.processTask(task)
+	}()
+
+	// If task is not terminal, schedule retry via queue
+	if !task.Status.IsTerminal() {
+		_ = ScheduleRetry(p.ctx, p.queue, task, attempt+1, nil)
+	}
 }
 
 // buildSupervisorPersona builds the system prompt for the supervisor.

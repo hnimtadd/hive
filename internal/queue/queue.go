@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -20,11 +21,16 @@ type Queue interface {
 	// Enqueue adds a task to the queue.
 	Enqueue(task *types.HiveTask) error
 	// Dequeue removes and returns the next task. Blocks until a task is available or context is cancelled.
-	Dequeue(ctx context.Context) (*types.HiveTask, error)
+	Dequeue(ctx context.Context) (*types.HiveTask, uint, error)
 	// Length returns the current number of tasks waiting in the queue.
 	Length() int
 	// Close shuts down the queue, unblocking all waiting Dequeue calls.
 	Close()
+	// MaxRetries returns the maximum number of retries for a task.
+	MaxRetries() int
+	// ScheduleRetry schedules a task to be re-enqueued after a backoff delay.
+	// The ctx is used to cancel the retry if the queue is closed.
+	ScheduleRetry(ctx context.Context, task *types.HiveTask, attempt uint) error
 }
 
 // MemoryQueue is an in-memory implementation of Queue.
@@ -84,7 +90,7 @@ func (q *MemoryQueue) Enqueue(task *types.HiveTask) error {
 }
 
 // Dequeue implements [Queue].
-func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, error) {
+func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, uint, error) {
 	for {
 		q.mu.Lock()
 
@@ -93,13 +99,14 @@ func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, error) {
 			task := q.items[0]
 			q.items = q.items[1:]
 			q.mu.Unlock()
-			return task, nil
+
+			return task, uint(q.attempts[task.ID]), nil
 		}
 
 		// Check if queue is closed
 		if q.closed {
 			q.mu.Unlock()
-			return nil, ErrQueueClosed
+			return nil, 0, ErrQueueClosed
 		}
 
 		q.mu.Unlock()
@@ -107,7 +114,7 @@ func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, error) {
 		// Wait with context awareness (polling with signal)
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, 0, ctx.Err()
 		case <-time.After(10 * time.Millisecond):
 			// Poll again
 		}
@@ -127,4 +134,40 @@ func (q *MemoryQueue) Close() {
 	defer q.mu.Unlock()
 
 	q.closed = true
+}
+
+// MaxRetries implements [Queue].
+func (q *MemoryQueue) MaxRetries() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.maxRetry
+}
+
+// ScheduleRetry schedules a task to be re-enqueued after a backoff delay.
+// It spawns a goroutine to handle the delay and re-enqueue.
+func (q *MemoryQueue) ScheduleRetry(ctx context.Context, task *types.HiveTask, attempt uint) error {
+	baseDelay := 1 * time.Second
+	maxDelay := 30 * time.Second
+
+	delay := min(baseDelay<<attempt, maxDelay)
+
+	go func() {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return
+		}
+
+		slog.Info("re-enqueueing task after backoff",
+			slog.String("task_id", task.ID),
+			slog.Uint64("attempt", uint64(attempt)),
+			slog.Duration("delay", delay),
+		)
+		if err := q.Enqueue(task); err != nil {
+			slog.Info("failed to re-enqueueing task", slog.String("err", err.Error()))
+			return
+		}
+	}()
+
+	return nil
 }

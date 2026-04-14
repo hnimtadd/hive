@@ -24,7 +24,7 @@ func TestEnqueueDequeue(t *testing.T) {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
 
-	got, err := q.Dequeue(context.Background())
+	got, _, err := q.Dequeue(context.Background())
 	if err != nil {
 		t.Fatalf("Dequeue failed: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestDequeueBlocks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := q.Dequeue(ctx)
+	_, _, err := q.Dequeue(ctx)
 	if err != context.DeadlineExceeded {
 		t.Fatalf("Expected deadline exceeded, got: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestDequeueWakesOnEnqueue(t *testing.T) {
 	// Start dequeue in goroutine (will block)
 	resultCh := make(chan *types.HiveTask, 1)
 	go func() {
-		task, _ := q.Dequeue(context.Background())
+		task, _, _ := q.Dequeue(context.Background())
 		resultCh <- task
 	}()
 
@@ -97,7 +97,7 @@ func TestClose(t *testing.T) {
 	// Start blocking dequeue
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := q.Dequeue(context.Background())
+		_, _, err := q.Dequeue(context.Background())
 		errCh <- err
 	}()
 
@@ -168,11 +168,11 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 
 	// Concurrent dequeuers
 	results := make(chan *types.HiveTask, count)
-	for i := 0; i < count; i++ {
+	for range count {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			task, _ := q.Dequeue(context.Background())
+			task, _, _ := q.Dequeue(context.Background())
 			results <- task
 		}()
 	}
