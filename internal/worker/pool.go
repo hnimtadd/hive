@@ -2,9 +2,11 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cloudwego/eino/components/tool"
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
@@ -35,6 +37,7 @@ type Pool struct {
 	done    chan struct{}
 	cancel  context.CancelFunc
 	ctx     context.Context
+	stopped atomic.Bool
 }
 
 // NewPool creates a new worker pool.
@@ -73,6 +76,10 @@ func (p *Pool) Start(ctx context.Context) {
 
 // Stop gracefully shuts down all workers.
 func (p *Pool) Stop() {
+	if !p.stopped.CompareAndSwap(false, true) {
+		return // Already stopped
+	}
+
 	if p.cancel != nil {
 		p.cancel()
 	}
@@ -103,8 +110,8 @@ func (p *Pool) worker(id int) {
 		// Pull task from queue
 		task, err := p.queue.Dequeue(p.ctx)
 		if err != nil {
-			if p.ctx.Err() != nil {
-				return // Context cancelled, shut down
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, queue.ErrQueueClosed) {
+				return // Context cancelled or queue closed, shut down
 			}
 			log.Error("failed to dequeue task", slog.Any("error", err))
 			continue

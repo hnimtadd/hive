@@ -62,8 +62,8 @@ func TestPoolStartStop(t *testing.T) {
 	ctx := context.Background()
 	pool.Start(ctx)
 
-	// Give workers time to start
-	time.Sleep(50 * time.Millisecond)
+	// Give workers time to enter Dequeue() (polling interval is 10ms)
+	time.Sleep(100 * time.Millisecond)
 
 	// Stop should complete without hanging
 	done := make(chan struct{})
