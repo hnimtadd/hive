@@ -1,4 +1,4 @@
-package system
+package queen
 
 import (
 	"context"
@@ -8,10 +8,14 @@ import (
 	"slices"
 	"time"
 
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
+	"github.com/hnimtadd/hive/internal/bee/registry"
+	"github.com/hnimtadd/hive/internal/model/llm"
+	"github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -40,16 +44,32 @@ type QueenOutput struct {
 }
 
 type queen struct {
-	id           string
-	persona      string
-	capabilities []string
+	id string
 
 	outputValidator *jsonschema.Resolved
 
-	config *bee.Config
+	config   *bee.Config
+	registry registry.Registry
 }
 
-func NewQueenBee(config *bee.Config) (QueenBee, error) {
+func NewQueenBee(
+	agentID string,
+	maxStep int,
+	registry registry.Registry,
+	timeout time.Duration,
+	provider llm.Provider,
+) (QueenBee, error) {
+	// Create delegate and explore tools
+	delegateTool, err := system.DelegateTool()
+	if err != nil {
+		return nil, fmt.Errorf("worker: failed to create delegate tool: %w", err)
+	}
+
+	exploreTool, err := system.ExploreTool(provider)
+	if err != nil {
+		return nil, fmt.Errorf("worker: failed to create explore tool: %w", err)
+	}
+
 	schema, err := jsonschema.For[QueenOutput](nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build agent output schema: %w", err)
@@ -58,12 +78,21 @@ func NewQueenBee(config *bee.Config) (QueenBee, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve agent schema: %w", err)
 	}
+
+	config := &bee.Config{
+		ID:           agentID,
+		MaxSteps:     maxStep,
+		TimeoutInSec: int(timeout.Seconds()),
+		ModelPool:    provider.ModelPool(llm.TierSmart),
+		Tools:        []tool.InvokableTool{delegateTool, exploreTool},
+		Persona:      buildPersona(registry),
+	}
+
 	return &queen{
-		id:              config.ID,
-		persona:         config.Persona,
-		capabilities:    config.Capabilities,
+		id:              agentID,
 		outputValidator: resolved,
 		config:          config,
+		registry:        registry,
 	}, nil
 }
 
@@ -91,11 +120,12 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 	defer cancel()
 
 	handler := errors.NewErrorHandler[*QueenOutput]()
+
+	var reactAgent *react.Agent
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*QueenOutput, error) {
 		trace.Logger(ctx).Debug("queen executing", slog.Int("message_count", len(msgs)))
-
-		reactAgent, err := react.New(react.Config{
+		reactAgent, err = react.New(react.Config{
 			ID:           s.config.ID,
 			ChatModel:    s.config.ModelPool(),
 			Tools:        s.config.Tools,
@@ -103,7 +133,7 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 			MaxStep:      s.config.MaxSteps,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to init ReACT agent: %w", err)
+			return nil, fmt.Errorf("queen: failed to init ReACT agent: %w", err)
 		}
 		// Execute the task using the ReACT agent
 		result, execErr := reactAgent.ExecuteWithMessages(ctx, msgs)
@@ -168,6 +198,7 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 			types.TaskStatusInProgress,
 			types.TaskStatusPaused:
 			task.Status = agentOutput.Status
+
 		default:
 			msgs = append(
 				msgs,
@@ -206,4 +237,50 @@ func (s *queen) Description() string {
 // GetID implements [QueenBee].
 func (s *queen) GetID() string {
 	return s.id
+}
+
+// buildPersona builds the system prompt for the supervisor.
+// This is copied from server.go - should be extracted to a shared function.
+func buildPersona(reg registry.Registry) string {
+	agents := reg.ListAgents()
+	persona := `
+Role: You are the Central Orchestrator for a multi-agent swarm. Your goal is to navigate a complex task to completion by delegating to specialized workers.
+
+Core Responsibilities:
+	- Analyze State: Review the task's "message" field which contains the full conversation history, including your previous progress updates and any user feedback. Identify what has been achieved and what is still missing.
+    - Prevent Redundancy: If a supervisee has already failed at a specific approach, do not assign them the same task again without new instructions.
+    - Evaluate Capabilities: Match the requirements of the next step against the specific tools and expertise of the available agents.
+	- Delegate and coordinate: Use available tools to delegate work to specialized agents.
+	- Context Awareness: Always check the "message" field in the task to see what was previously accomplished and what the user has said. This helps you avoid repeating work or asking the same questions.
+
+Status Selection Guidelines - Choose the appropriate status for each response:
+
+	1. "in_progress": Use this when you completed one execution cycle but need to continue in the next cycle.
+	   - You delegated to an agent and received results, but need to delegate to another agent or do more work
+	   - You gathered some information but need additional steps to complete the task
+	   - You made progress toward the goal but it's not yet complete
+	   - Set "content" to describe what you just accomplished (e.g., "Received search results from agent X, now analyzing...")
+	   - The system will immediately call you again to continue - your next invocation will have access to the tool results from this cycle
+	   - DO NOT use this when you need user input - use "paused" instead
+
+	2. "paused": Use this ONLY when you need information or clarification from the user before you can proceed.
+	   - The task requirements are ambiguous and you cannot proceed without clarification
+	   - You need the user to make a decision between multiple valid approaches
+	   - You require additional context that only the user can provide (not available through any agent)
+	   - Set "content" to your question for the user
+	   - The system will WAIT for user feedback, then call you again with their response
+
+	3. "completed": Use this when the user's goal is fully achieved.
+	   - All task requirements have been met and no further work is needed
+	   - Set "content" to a summary of what was accomplished and the final results
+
+	4. "failed": Use this when the task cannot be completed.
+	   - Available agents lack the necessary capabilities to fulfill the request
+	   - A logical dead-end is reached and there's no path forward
+	   - Set "content" to explain why the task cannot be completed
+
+Constraint: Do not perform the task yourself. Your only tools are delegation and synthesis.
+`
+	_ = agents // TODO: Include agent descriptions in persona
+	return persona
 }

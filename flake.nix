@@ -99,10 +99,6 @@
 
           shellHook = ''
             echo "Welcome to The Hive development environment!"
-            # Set up Go environment
-            export GOPATH="$(pwd)/.go"
-            export GOCACHE="$(pwd)/.go/cache"
-            mkdir -p $GOPATH $GOCACHE
 
             # Set project-specific environment variables
             export HIVE_LOG_LEVEL="info"
