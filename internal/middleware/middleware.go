@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hnimtadd/hive/internal/types"
 )
@@ -27,18 +28,22 @@ type noopMiddleware struct {
 
 // OnRequest implements [LLMMiddleware].
 func (n noopMiddleware) OnRequest(_ context.Context, _ string, _ types.LLMRequest) {
+	fmt.Println("<====== NOOP.OnRequest")
 }
 
 // OnResponse implements [LLMMiddleware].
 func (n noopMiddleware) OnResponse(_ context.Context, _ string, _ types.LLMResponse) {
+	fmt.Println("<====== NOOP.OnResponse")
 }
 
 // OnToolCall implements [LLMMiddleware].
 func (n noopMiddleware) OnToolCall(_ context.Context, _ string, _ types.ToolCallRequest) {
+	fmt.Println("<====== NOOP.OnToolCall")
 }
 
 // OnToolCall implements [LLMMiddleware].
 func (n noopMiddleware) OnToolCallResponse(_ context.Context, _ string, _ types.ToolCallResponse) {
+	fmt.Println("<====== NOOP.OnToolResponse")
 }
 
 func NoopMiddleware() LLMMiddleware {

@@ -211,6 +211,7 @@ func (s *HiveServer) forwardOutput(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+
 		case msg, ok := <-ch:
 			if !ok {
 				return nil

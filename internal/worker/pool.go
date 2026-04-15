@@ -12,6 +12,8 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/queen"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
+	"github.com/hnimtadd/hive/internal/middleware"
+	"github.com/hnimtadd/hive/internal/middleware/system"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
@@ -127,6 +129,8 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	ch := p.channels.ForTask(task.ID)
 	defer p.channels.Cleanup(task.ID)
 	defer close(ch.DoneCh)
+	mw, eventCh := system.EventStreamMiddleware()
+	ctx := middleware.ContextWithMiddleware(p.ctx, mw)
 
 	// Create supervisor
 	supervisor, err := p.createSupervisor(task.ID)
@@ -138,10 +142,12 @@ func (p *Pool) processTask(task *types.HiveTask) {
 		return
 	}
 
+	go forwardEvent(ctx, ch, eventCh)
+
 	// Execute supervisor loop
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			log.Info("context cancelled during execution")
 			task.Status = types.TaskStatusFailed
 			_ = p.storage.Update(task)
@@ -165,7 +171,7 @@ func (p *Pool) processTask(task *types.HiveTask) {
 		default:
 			// Execute supervisor iteration
 			var output *queen.QueenOutput
-			output, err = supervisor.Execute(p.ctx, task)
+			output, err = supervisor.Execute(ctx, task)
 			if err != nil {
 				log.Error("supervisor execution failed", slog.Any("error", err))
 				task.Status = types.TaskStatusFailed
@@ -244,5 +250,44 @@ func (p *Pool) executeWithRetry(task *types.HiveTask, attempt uint) {
 	// If task is not terminal, schedule retry via queue
 	if !task.Status.IsTerminal() {
 		_ = ScheduleRetry(p.ctx, p.queue, task, attempt+1, nil)
+	}
+}
+
+func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan system.ExecutionEvent) {
+	logger := slog.Default()
+	for {
+		select {
+		case <-ctx.Done():
+		case event := <-eventCh:
+			switch event.Type {
+			case system.EventTypeToolCallStart:
+				logger.DebugContext(ctx, "receive tool call event")
+				status := fmt.Sprintf("call_id: %s, agent_id: %s, tool_name: %s, input: %s", event.ToolReq.CallID, event.ToolReq.AgentID, event.ToolReq.ToolName, event.ToolReq.Arguments)
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_start", utils.SanitizeUTF8(status))
+
+			case system.EventTypeToolCallFinish:
+				logger.DebugContext(ctx, "receive tool finish event")
+				toolResp := event.ToolResp
+				var status string
+				if toolResp.Succeed {
+					status = fmt.Sprintf("call_id: %s, output: %s", toolResp.CallID, toolResp.Output)
+				} else {
+					status = fmt.Sprintf("call_id: %s, error: %s", toolResp.CallID, toolResp.Error)
+				}
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_response", utils.SanitizeUTF8(status))
+
+			case system.EventTypeLLMRequestStart:
+				logger.DebugContext(ctx, "receive llm start event")
+				llmReq := event.Req
+				status := fmt.Sprintf("agent_id: %s, input: %s", llmReq.AgentID, llmReq.Input)
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_start", utils.SanitizeUTF8(status))
+
+			case system.EventTypeLLMRequestFinish:
+				logger.DebugContext(ctx, "receive llm finish event")
+				llmResp := event.Resp
+				status := fmt.Sprintf("agent_id: %s, finish_reason: %s, token_used: %d", llmResp.AgentID, llmResp.FinishReason, llmResp.TokenUsed.TotalTokens)
+				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_response", utils.SanitizeUTF8(status))
+			}
+		}
 	}
 }

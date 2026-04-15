@@ -2,12 +2,9 @@ package server
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
-	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/trace"
-	"github.com/hnimtadd/hive/internal/types"
 	"google.golang.org/grpc"
 )
 
@@ -128,104 +125,4 @@ type timeoutServerStream struct {
 
 func (s *timeoutServerStream) Context() context.Context {
 	return s.ctx
-}
-
-type eventStreamMiddleware struct {
-	eventCh chan<- ExecutionEvent
-}
-
-type EventType string
-
-const (
-	EventTypeLLMRequestStart  EventType = "llm_request_start"
-	EventTypeLLMRequestFinish EventType = "llm_request_finish"
-	EventTypeToolCallStart    EventType = "tool_call_start"
-	EventTypeToolCallFinish   EventType = "tool_call_finish"
-)
-
-type ExecutionEvent struct {
-	typ          EventType
-	req          types.LLMRequest
-	resp         types.LLMResponse
-	toolRequest  types.ToolCallRequest
-	toolResponse types.ToolCallResponse
-}
-
-// OnRequest implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
-	event := ExecutionEvent{
-		typ: EventTypeLLMRequestStart,
-		req: req,
-	}
-
-	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
-			slog.String("agent_id", agentID),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-// OnResponse implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
-	event := ExecutionEvent{
-		typ:  EventTypeLLMRequestFinish,
-		resp: resp,
-	}
-	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
-			slog.String("agent_id", agentID),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-// OnToolCall implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
-	event := ExecutionEvent{
-		typ:         EventTypeToolCallStart,
-		toolRequest: toolEvent,
-	}
-	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
-			slog.String("agent_id", agentID),
-			slog.String("call_id", toolEvent.CallID),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-// OnToolCall implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
-	event := ExecutionEvent{
-		typ:          EventTypeToolCallFinish,
-		toolResponse: toolEvent,
-	}
-	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
-			slog.String("agent_id", agentID),
-			slog.String("call_id", toolEvent.CallID),
-			slog.String("error", err.Error()),
-		)
-	}
-}
-
-func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEvent) error {
-	select {
-	case e.eventCh <- event:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return errors.New("execution channel full")
-	}
-}
-
-var _ middleware.LLMMiddleware = &eventStreamMiddleware{}
-
-func (s *HiveServer) EventStreamMiddleware() (middleware.LLMMiddleware, <-chan ExecutionEvent) {
-	eventCh := make(chan ExecutionEvent, 100)
-	return &eventStreamMiddleware{
-		eventCh: eventCh,
-	}, eventCh
 }
