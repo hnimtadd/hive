@@ -108,7 +108,7 @@ type TraceConfig struct {
 	SessionLog SessionLogConfig `mapstructure:"session_log"`
 }
 
-// SessionLogConfig configures session logging for agent/LLM interactions
+// SessionLogConfig configures session logging for agent/LLM interactions.
 type SessionLogConfig struct {
 	// Enabled turns on session logging
 	Enabled bool `mapstructure:"enabled"`

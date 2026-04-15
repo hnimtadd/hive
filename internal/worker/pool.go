@@ -93,7 +93,7 @@ func (p *Pool) Done() <-chan struct{} {
 func (p *Pool) worker(id int) {
 	defer p.workers.Done()
 
-	log := slog.With(slog.Int("worker_id", id))
+	log := slog.Default().With(slog.Int("worker_id", id))
 	log.Info("worker started")
 
 	for {
@@ -123,7 +123,7 @@ func (p *Pool) worker(id int) {
 
 // processTask executes a single task using the supervisor (Queen Bee).
 func (p *Pool) processTask(task *types.HiveTask) {
-	log := slog.With(slog.String("task_id", task.ID))
+	log := slog.Default().With(slog.String("task_id", task.ID))
 	ch := p.channels.ForTask(task.ID)
 	defer p.channels.Cleanup(task.ID)
 	defer close(ch.DoneCh)
@@ -131,7 +131,7 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	// Create supervisor
 	supervisor, err := p.createSupervisor(task.ID)
 	if err != nil {
-		log.Error("failed to create supervisor", slog.Any("error", err))
+		log.Error("worker: failed to create supervisor", slog.Any("error", err))
 		task.Status = types.TaskStatusFailed
 		_ = p.storage.Update(task)
 		ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Failed to create supervisor: %v", err))

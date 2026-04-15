@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"log/slog"
 	"sync"
 
 	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
@@ -30,6 +31,7 @@ func NewManager() *Manager {
 // ForTask returns the channels for a given task ID.
 // Creates and caches new channels on first call.
 func (m *Manager) ForTask(taskID string) *TaskChannels {
+	slog.Default().Debug("channel manager open for task", slog.String("task_id", taskID))
 	if ch, ok := m.channels.Load(taskID); ok {
 		return ch.(*TaskChannels) //nolint:errcheck // this is always true.
 	}

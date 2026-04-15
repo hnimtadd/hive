@@ -36,13 +36,13 @@ var _ agentv1.AgentServiceServer = &HiveServer{}
 
 func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.Storage) (*HiveServer, error) {
 	// Create task queue
-	taskQueue := queue.NewMemoryQueue()
+	tq := queue.NewMemoryQueue()
 
 	// Create channel manager for per-task communication
-	channels := channel.NewManager()
+	cm := channel.NewManager()
 
 	// Create task manager (storage + queue)
-	taskMgr := manager.NewManager(storage, taskQueue)
+	tm := manager.NewManager(storage, tq)
 
 	// Create worker pool
 	poolSize := cfg.Bees.PoolSize
@@ -50,12 +50,12 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 		poolSize = 3 // Default: 3 concurrent workers
 	}
 
-	pool := worker.NewPool(poolSize, taskQueue, storage, channels, reg, provider, cfg)
+	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, cfg)
 
 	return &HiveServer{
 		config:         cfg,
-		taskManager:    taskMgr,
-		channelManager: channels,
+		taskManager:    tm,
+		channelManager: cm,
 		workerPool:     pool,
 	}, nil
 }

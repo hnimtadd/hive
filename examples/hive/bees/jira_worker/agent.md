@@ -9,7 +9,6 @@ max_steps: 5
 timeout_seconds: 120
 tools:
   - jira_get_issue
-  - jira_search_issues
 model_name: aws/us.anthropic.claude-haiku-4-5-20251001-v1:0
 ---
 

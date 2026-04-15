@@ -9,8 +9,6 @@ max_steps: 5
 timeout_seconds: 120
 tools:
   - gitlab_get_mr
-  - gitlab_list_mrs
-  - gitlab_get_issue
 model_name: aws/us.anthropic.claude-haiku-4-5-20251001-v1:0
 ---
 
