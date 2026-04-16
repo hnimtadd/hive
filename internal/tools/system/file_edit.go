@@ -29,6 +29,29 @@ type FileEditInput struct {
 }
 
 func fileEdit(_ context.Context, input *FileEditInput) (*schema.ToolResult, error) {
+	// Validate input
+	if input == nil {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "ERROR: file_edit received nil input"},
+			},
+		}, nil
+	}
+	if input.Path == "" {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "ERROR: file path is required"},
+			},
+		}, nil
+	}
+	if input.Operation == "" {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "ERROR: operation is required"},
+			},
+		}, nil
+	}
+
 	// Resolve path
 	absPath, err := filepath.Abs(input.Path)
 	if err != nil {

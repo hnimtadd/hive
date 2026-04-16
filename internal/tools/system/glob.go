@@ -24,15 +24,32 @@ type GlobOutput struct {
 }
 
 func glob(_ context.Context, input *GlobInput) (*GlobOutput, error) {
+	// Validate input
+	if input == nil {
+		return &GlobOutput{
+			Matches: []string{"ERROR: glob received nil input"},
+		}, nil
+	}
+	if input.Query == "" {
+		return &GlobOutput{
+			Matches: []string{"ERROR: query pattern is required"},
+		}, nil
+	}
+
 	matches, err := filepath.Glob(input.Query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run glob: %w", err)
+		return &GlobOutput{
+			Matches: []string{fmt.Sprintf("ERROR: Invalid glob pattern '%s': %s", input.Query, err.Error())},
+		}, nil
 	}
 
 	// Load .gitignore patterns if file exists
 	wd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
+		// Continue without gitignore filtering if we can't get working directory
+		return &GlobOutput{
+			Matches: matches,
+		}, nil
 	}
 
 	gitignorePath := filepath.Join(wd, ".gitignore")

@@ -368,6 +368,15 @@ func (s *ShellSession) Close() error {
 }
 
 func Shell(ctx context.Context, input *ShellInput) (*schema.ToolResult, error) {
+	// Validate input
+	if input == nil {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "ERROR: shell received nil input"},
+			},
+		}, nil
+	}
+
 	// Extract trace ID from context
 	traceCtx, ok := trace.TraceContextFromContext(ctx)
 	if !ok {

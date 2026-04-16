@@ -22,6 +22,22 @@ type FileReadInput struct {
 }
 
 func fileRead(_ context.Context, input *FileReadInput) (*schema.ToolResult, error) {
+	// Validate input
+	if input == nil {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "ERROR: file_read received nil input"},
+			},
+		}, nil
+	}
+	if input.Path == "" {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "ERROR: file path is required"},
+			},
+		}, nil
+	}
+
 	// Resolve path
 	absPath, err := filepath.Abs(input.Path)
 	if err != nil {

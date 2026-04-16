@@ -3,7 +3,6 @@ package system
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,13 +30,28 @@ type GrepOutput struct {
 }
 
 func grep(_ context.Context, input *GrepInput) (*GrepOutput, error) {
+	// Validate input
+	if input == nil {
+		return &GrepOutput{
+			Matches: []string{"ERROR: grep received nil input"},
+		}, nil
+	}
+	if input.Pattern == "" {
+		return &GrepOutput{
+			Matches: []string{"ERROR: pattern is required"},
+		}, nil
+	}
+	if input.Path == "" {
+		return &GrepOutput{
+			Matches: []string{"ERROR: path is required"},
+		}, nil
+	}
+
 	// Set defaults
 	if input.MaxResults == 0 {
 		input.MaxResults = 100
 	}
-	if !input.LineNumbers {
-		input.LineNumbers = true
-	}
+	input.LineNumbers = true // Always show line numbers by default
 
 	// Compile regex pattern
 	var re *regexp.Regexp
@@ -48,16 +62,20 @@ func grep(_ context.Context, input *GrepInput) (*GrepOutput, error) {
 		re, err = regexp.Compile(input.Pattern)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern: %w", err)
+		return &GrepOutput{
+			Matches: []string{fmt.Sprintf("ERROR: Invalid regex pattern '%s': %s", input.Pattern, err.Error())},
+		}, nil
 	}
 
-	var results []string
+	results := make([]string, 0) // Initialize to avoid nil slice
 	resultCount := 0
 
 	// Check if path is file or directory
 	info, err := os.Stat(input.Path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to access path: %w", err)
+		return &GrepOutput{
+			Matches: []string{fmt.Sprintf("ERROR: Cannot access path '%s': %s", input.Path, err.Error())},
+		}, nil
 	}
 
 	var filesToSearch []string
@@ -73,14 +91,24 @@ func grep(_ context.Context, input *GrepInput) (*GrepOutput, error) {
 				return nil
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to walk directory: %w", err)
+				return &GrepOutput{
+					Matches: []string{fmt.Sprintf("ERROR: Failed to walk directory '%s': %s", input.Path, err.Error())},
+				}, nil
 			}
 		} else {
-			return nil, errors.New("path is a directory. Set recursive=true to search recursively.")
-
+			return &GrepOutput{
+				Matches: []string{fmt.Sprintf("ERROR: Path '%s' is a directory. Set recursive=true to search recursively or provide a file path.", input.Path)},
+			}, nil
 		}
 	} else {
 		filesToSearch = append(filesToSearch, input.Path)
+	}
+
+	// Check if any files to search
+	if len(filesToSearch) == 0 {
+		return &GrepOutput{
+			Matches: []string{fmt.Sprintf("No files found to search in '%s'", input.Path)},
+		}, nil
 	}
 
 	// Search in files
