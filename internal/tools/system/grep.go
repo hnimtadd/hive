@@ -3,15 +3,14 @@ package system
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/cloudwego/eino/schema"
 )
 
 func GrepTool() (tool.InvokableTool, error) {
@@ -27,7 +26,11 @@ type GrepInput struct {
 	MaxResults  int    `json:"max_results"                        jsonschema_description:"Maximum number of results to return (default: 100)"`
 }
 
-func grep(_ context.Context, input *GrepInput) (*schema.ToolResult, error) {
+type GrepOutput struct {
+	Matches []string `json:"matches"`
+}
+
+func grep(_ context.Context, input *GrepInput) (*GrepOutput, error) {
 	// Set defaults
 	if input.MaxResults == 0 {
 		input.MaxResults = 100
@@ -45,11 +48,7 @@ func grep(_ context.Context, input *GrepInput) (*schema.ToolResult, error) {
 		re, err = regexp.Compile(input.Pattern)
 	}
 	if err != nil {
-		return &schema.ToolResult{
-			Parts: []schema.ToolOutputPart{
-				{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Invalid regex pattern: %s", err)},
-			},
-		}, nil
+		return nil, fmt.Errorf("invalid regex pattern: %w", err)
 	}
 
 	var results []string
@@ -58,11 +57,7 @@ func grep(_ context.Context, input *GrepInput) (*schema.ToolResult, error) {
 	// Check if path is file or directory
 	info, err := os.Stat(input.Path)
 	if err != nil {
-		return &schema.ToolResult{
-			Parts: []schema.ToolOutputPart{
-				{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to access path: %s", err)},
-			},
-		}, nil
+		return nil, fmt.Errorf("failed to access path: %w", err)
 	}
 
 	var filesToSearch []string
@@ -78,18 +73,11 @@ func grep(_ context.Context, input *GrepInput) (*schema.ToolResult, error) {
 				return nil
 			})
 			if err != nil {
-				return &schema.ToolResult{
-					Parts: []schema.ToolOutputPart{
-						{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to walk directory: %s", err)},
-					},
-				}, nil
+				return nil, fmt.Errorf("failed to walk directory: %w", err)
 			}
 		} else {
-			return &schema.ToolResult{
-				Parts: []schema.ToolOutputPart{
-					{Type: schema.ToolPartTypeText, Text: "Path is a directory. Set recursive=true to search recursively."},
-				},
-			}, nil
+			return nil, errors.New("path is a directory. Set recursive=true to search recursively.")
+
 		}
 	} else {
 		filesToSearch = append(filesToSearch, input.Path)
@@ -137,17 +125,7 @@ func grep(_ context.Context, input *GrepInput) (*schema.ToolResult, error) {
 		}
 	}
 
-	if len(results) == 0 {
-		return &schema.ToolResult{
-			Parts: []schema.ToolOutputPart{
-				{Type: schema.ToolPartTypeText, Text: "No matches found"},
-			},
-		}, nil
-	}
-
-	return &schema.ToolResult{
-		Parts: []schema.ToolOutputPart{
-			{Type: schema.ToolPartTypeText, Text: strings.Join(results, "\n")},
-		},
+	return &GrepOutput{
+		Matches: results,
 	}, nil
 }

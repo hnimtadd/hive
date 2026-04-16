@@ -3,12 +3,12 @@ package system
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/cloudwego/eino/schema"
+	gitignore "github.com/sabhiram/go-gitignore"
 )
 
 func GlobTool() (tool.InvokableTool, error) {
@@ -19,18 +19,47 @@ type GlobInput struct {
 	Query string `json:"query" jsonschema:"required" jsonschema_description:"Search keyword"`
 }
 
-func glob(_ context.Context, input *GlobInput) (*schema.ToolResult, error) {
+type GlobOutput struct {
+	Matches []string `json:"matches" jsonschema:"Matches files"`
+}
+
+func glob(_ context.Context, input *GlobInput) (*GlobOutput, error) {
 	matches, err := filepath.Glob(input.Query)
 	if err != nil {
-		return &schema.ToolResult{
-			Parts: []schema.ToolOutputPart{
-				{Type: schema.ToolPartTypeText, Text: fmt.Sprintf("Failed to run glob: %s", err)},
-			},
-		}, nil
+		return nil, fmt.Errorf("failed to run glob: %w", err)
 	}
-	return &schema.ToolResult{
-		Parts: []schema.ToolOutputPart{
-			{Type: schema.ToolPartTypeText, Text: strings.Join(matches, "\n")},
-		},
+
+	// Load .gitignore patterns if file exists
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	gitignorePath := filepath.Join(wd, ".gitignore")
+	var ignorer *gitignore.GitIgnore
+	if _, err := os.Stat(gitignorePath); err == nil {
+		ignorer, err = gitignore.CompileIgnoreFile(gitignorePath)
+		if err != nil {
+			// Continue without filtering if .gitignore parsing fails
+			ignorer = nil
+		}
+	}
+
+	// Filter matches against gitignore patterns
+	filtered := make([]string, 0, len(matches))
+	for _, match := range matches {
+		relPath, err := filepath.Rel(wd, match)
+		if err != nil {
+			relPath = match
+		}
+
+		// Include file if no ignorer or if not ignored
+		if ignorer == nil || !ignorer.MatchesPath(relPath) {
+			filtered = append(filtered, match)
+		}
+	}
+
+	return &GlobOutput{
+		Matches: filtered,
 	}, nil
 }
