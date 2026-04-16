@@ -177,16 +177,6 @@ func LoadConfig() (*Config, error) {
 
 // setDefaults sets default configuration values.
 func setDefaults() {
-	// Redis defaults
-	viper.SetDefault("redis.addr", "localhost:6379")
-	viper.SetDefault("redis.password", "")
-	viper.SetDefault("redis.db", 0)
-	viper.SetDefault("redis.pool_size", 10)
-
-	// AI defaults - supporting both standard Anthropic and company setup
-	viper.SetDefault("ai.provider", "Anthropic")
-	viper.SetDefault("ai.model", "Anthropic-3-5-sonnet-20241022")
-
 	// Agent defaults
 	viper.SetDefault("agents.max_concurrent", 5)
 	viper.SetDefault("agents.timeout_seconds", 300)
