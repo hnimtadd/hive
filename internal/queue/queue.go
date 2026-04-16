@@ -34,20 +34,19 @@ type Queue interface {
 }
 
 // MemoryQueue is an in-memory implementation of Queue.
-// Suitable for personal use
 type MemoryQueue struct {
 	mu       sync.Mutex
 	items    []*types.HiveTask
 	closed   bool
-	attempts map[string]int // taskID → retry count
-	maxRetry int
+	attempts map[string]uint // taskID → retry count
+	maxRetry uint
 }
 
 // MemoryQueueOption configures the MemoryQueue.
 type MemoryQueueOption func(*MemoryQueue)
 
 // WithMaxAttempts sets the maximum number of retries before a task is considered failed.
-func WithMaxAttempts(n int) MemoryQueueOption {
+func WithMaxAttempts(n uint) MemoryQueueOption {
 	return func(q *MemoryQueue) {
 		q.maxRetry = n
 	}
@@ -57,7 +56,7 @@ func WithMaxAttempts(n int) MemoryQueueOption {
 func NewMemoryQueue(opts ...MemoryQueueOption) *MemoryQueue {
 	q := &MemoryQueue{
 		items:    make([]*types.HiveTask, 0),
-		attempts: make(map[string]int),
+		attempts: make(map[string]uint),
 		maxRetry: 3, // Default: 3 retries
 	}
 
@@ -77,12 +76,13 @@ func (q *MemoryQueue) Enqueue(task *types.HiveTask) error {
 		return ErrQueueClosed
 	}
 	attempts, isAttempts := q.attempts[task.ID]
-	if isAttempts && attempts >= q.maxRetry {
+	switch {
+	case isAttempts && attempts >= q.maxRetry:
 		return ErrMaxRetries
-	} else if !isAttempts {
+	case !isAttempts:
 		q.attempts[task.ID] = 1
-	} else {
-		q.attempts[task.ID] += 1
+	default:
+		q.attempts[task.ID]++
 	}
 
 	q.items = append(q.items, task)
@@ -91,6 +91,7 @@ func (q *MemoryQueue) Enqueue(task *types.HiveTask) error {
 
 // Dequeue implements [Queue].
 func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, uint, error) {
+	tickCh := time.Tick(time.Millisecond * 10)
 	for {
 		q.mu.Lock()
 
@@ -115,7 +116,7 @@ func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, uint, error
 		select {
 		case <-ctx.Done():
 			return nil, 0, ctx.Err()
-		case <-time.After(10 * time.Millisecond):
+		case <-tickCh:
 			// Poll again
 		}
 	}
@@ -140,7 +141,7 @@ func (q *MemoryQueue) Close() {
 func (q *MemoryQueue) MaxRetries() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.maxRetry
+	return int(q.maxRetry)
 }
 
 // ScheduleRetry schedules a task to be re-enqueued after a backoff delay.

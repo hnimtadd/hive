@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee/queen"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
@@ -20,6 +19,7 @@ import (
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 // Pool manages a set of worker goroutines that execute tasks from the queue.
