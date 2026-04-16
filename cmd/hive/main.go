@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 
-	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/spf13/cobra"

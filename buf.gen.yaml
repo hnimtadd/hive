@@ -7,9 +7,9 @@ managed:
 plugins:
   # generate shared go types
   - remote: buf.build/protocolbuffers/go:v1.34.0
-    out: gen
+    out: proto
     opt: paths=source_relative
     # generate grpc server/cleint
   - remote: buf.build/grpc/go:v1.5.1
-    out: gen
+    out: proto
     opt: paths=source_relative

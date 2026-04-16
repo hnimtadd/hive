@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee/queen"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"

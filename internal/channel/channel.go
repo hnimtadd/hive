@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"sync"
 
-	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 // TaskChannels holds the communication channels for a single task.

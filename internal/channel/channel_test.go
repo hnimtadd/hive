@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 func TestForTask_CreatesNewChannels(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	agentv1 "github.com/hnimtadd/hive/gen/agent/v1"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/manager"
