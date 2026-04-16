@@ -81,3 +81,4 @@ docs
 .kilo
 .claude
 models.json
+examples/hive/sessions
