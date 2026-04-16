@@ -8,15 +8,16 @@ import (
 	"sync"
 	"time"
 
-	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/manager"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 )
 
@@ -49,8 +50,12 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	if poolSize <= 0 {
 		poolSize = 3 // Default: 3 concurrent workers
 	}
+	sessionLogger, err := trace.NewSessionLogger(&cfg.Tracing.SessionLog)
+	if err != nil {
+		return nil, err
+	}
 
-	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, cfg)
+	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, sessionLogger, cfg)
 
 	return &HiveServer{
 		config:         cfg,

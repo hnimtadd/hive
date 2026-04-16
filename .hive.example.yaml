@@ -16,6 +16,17 @@ ai:
     max_tokens: "4096"
     temperature: "0.1"
 
+  # Context management - prevents context window overflow through automatic summarization
+  context:
+    # Maximum messages per task before hard truncation
+    max_messages_per_task: 10
+    # Trigger summarization when message count reaches this threshold
+    summary_trigger_threshold: 8
+    # Target token count for generated summaries (approximate)
+    summary_target_tokens: 500
+    # Maximum tokens allowed for task description JSON
+    max_task_description_tokens: 2000
+
 gitlab:
   url: "https://gitlab.com"
   token_env: "GITLAB_TOKEN"

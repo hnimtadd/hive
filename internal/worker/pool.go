@@ -16,7 +16,9 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
+	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
+	context_pkg "github.com/hnimtadd/hive/pkg/context"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
@@ -24,13 +26,14 @@ import (
 
 // Pool manages a set of worker goroutines that execute tasks from the queue.
 type Pool struct {
-	size     int
-	queue    queue.Queue
-	storage  storage.Storage
-	channels *channel.Manager
-	registry registry.Registry
-	provider llm.Provider
-	cfg      *config.Config
+	size          int
+	queue         queue.Queue
+	storage       storage.Storage
+	channels      *channel.Manager
+	registry      registry.Registry
+	provider      llm.Provider
+	sessionLogger *trace.SessionLogger
+	cfg           *config.Config
 
 	workers sync.WaitGroup
 	done    chan struct{}
@@ -47,17 +50,19 @@ func NewPool(
 	channels *channel.Manager,
 	reg registry.Registry,
 	provider llm.Provider,
+	sessionLogger *trace.SessionLogger,
 	cfg *config.Config,
 ) *Pool {
 	return &Pool{
-		size:     size,
-		queue:    q,
-		storage:  store,
-		channels: channels,
-		registry: reg,
-		provider: provider,
-		cfg:      cfg,
-		done:     make(chan struct{}),
+		size:          size,
+		queue:         q,
+		storage:       store,
+		channels:      channels,
+		registry:      reg,
+		provider:      provider,
+		sessionLogger: sessionLogger,
+		cfg:           cfg,
+		done:          make(chan struct{}),
 	}
 }
 
@@ -129,8 +134,13 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	ch := p.channels.ForTask(task.ID)
 	defer p.channels.Cleanup(task.ID)
 	defer close(ch.DoneCh)
-	mw, eventCh := system.EventStreamMiddleware()
-	ctx := middleware.ContextWithMiddleware(p.ctx, mw)
+	eventMW, eventCh := system.EventStreamMiddleware()
+	traceMW := trace.NewTraceMiddleware(p.sessionLogger)
+	ctx := middleware.ContextWithMiddleware(p.ctx, middleware.JointMiddleware(eventMW, traceMW))
+
+	// Inject context budget for context management
+	budget := context_pkg.NewContextBudget(p.cfg.AI.Context)
+	ctx = context_pkg.ContextWithBudget(ctx, budget)
 
 	// Create supervisor
 	supervisor, err := p.createSupervisor(task.ID)

@@ -31,6 +31,7 @@ type AIConfig struct {
 	OpenAI    *OpenAIConfig        `mapstructure:"openai"`
 	Ollama    *OllamaConfig        `mapstructure:"ollama"`
 	MaxStep   int                  `mapstructure:"max_step"`
+	Context   ContextConfig        `mapstructure:"context"`
 }
 type BeeConfig struct {
 	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
@@ -46,6 +47,14 @@ type ToolConfig struct {
 type TaskConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
 	Storage string        `mapstructure:"storage"`
+}
+
+// ContextConfig holds context management configuration.
+type ContextConfig struct {
+	MaxMessagesPerTask       int `mapstructure:"max_messages_per_task"`
+	SummaryTriggerThreshold  int `mapstructure:"summary_trigger_threshold"`
+	SummaryTargetTokens      int `mapstructure:"summary_target_tokens"`
+	MaxTaskDescriptionTokens int `mapstructure:"max_task_description_tokens"`
 }
 
 type ModelTiers struct {
@@ -183,6 +192,12 @@ func setDefaults() {
 	viper.SetDefault("agents.timeout_seconds", 300)
 
 	viper.SetDefault("ai.max_step", 5)
+
+	// Context management defaults
+	viper.SetDefault("ai.context.max_messages_per_task", 10)
+	viper.SetDefault("ai.context.summary_trigger_threshold", 8)
+	viper.SetDefault("ai.context.summary_target_tokens", 500)
+	viper.SetDefault("ai.context.max_task_description_tokens", 2000)
 
 	// Server defaults
 	viper.SetDefault("server.port", 8080)
