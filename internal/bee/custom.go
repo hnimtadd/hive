@@ -161,7 +161,12 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 				slog.String("raw_output", result.Content), // Log the actual output
 				slog.Int("raw_output_length", len(result.Content)),
 			)
-			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output is not a valid JSON: %s", err)))
+			errorMsg := "ERROR: Your output is not valid JSON. You must respond with ONLY a JSON object.\n\n" +
+				"Your output was:\n" + result.Content + "\n\n" +
+				"Please respond with ONLY the JSON object, no markdown code blocks (no ``` json), no explanations, no extra text.\n\n" +
+				"Example valid response:\n" +
+				`{"summary": "Found 5 files", "relevant_files": [...]}`
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output to agent output schema", err).WithContext("raw_output", result.Content)
 		}
 
@@ -174,7 +179,15 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 				slog.String("extracted_content", content),
 				slog.String("raw_output", result.Content),
 			)
-			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
+			errorMsg := "ERROR: Your JSON is malformed and cannot be parsed.\n\n" +
+				"Your JSON:\n" + content + "\n\n" +
+				"Parse error: " + err.Error() + "\n\n" +
+				"Please ensure:\n" +
+				"- All strings are in double quotes\n" +
+				"- No trailing commas\n" +
+				"- Proper JSON syntax\n" +
+				"- Arrays use [], objects use {}"
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output to agent output schema", err).
 				WithContext("extracted_content", content).
 				WithContext("raw_output", result.Content)
@@ -191,7 +204,16 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 				slog.String("extracted_content", content),
 				slog.String("raw_output", result.Content),
 			)
-			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("output is not followed JSON schema: %s", err)))
+			errorMsg := "ERROR: Your JSON doesn't match the required schema.\n\n" +
+				"Your output:\n" + content + "\n\n" +
+				"Schema validation error: " + err.Error() + "\n\n" +
+				"Please review the CRITICAL output format section in your system prompt and ensure your JSON output matches the exact schema required.\n\n" +
+				"Tips:\n" +
+				"- Check that all required fields are present\n" +
+				"- Verify field names match exactly (case-sensitive)\n" +
+				"- Ensure field types are correct (string, array, object)\n" +
+				"- Remove any extra fields not in the schema"
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to validate output schema", err).
 				WithContext("parsed_output", output).
 				WithContext("extracted_content", content).
@@ -206,7 +228,16 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 				slog.String("error", err.Error()),
 				slog.String("content", content),
 			)
-			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("invalid JSON output: %s", err)))
+			errorMsg := "ERROR: JSON structure is valid but field types are incorrect.\n\n" +
+				"Your JSON:\n" + content + "\n\n" +
+				"Type error: " + err.Error() + "\n\n" +
+				"Common issues:\n" +
+				"- Using numbers instead of strings (use \"123\" not 123)\n" +
+				"- Using booleans instead of strings (use \"true\" not true)\n" +
+				"- Missing quotes around string values\n" +
+				"- Incorrect array/object structure\n\n" +
+				"Ensure all field types match the schema exactly."
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "failed to parse output to agent output schema", err).
 				WithContext("content", content)
 		}

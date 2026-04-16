@@ -17,6 +17,7 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/tools/system"
 	"github.com/hnimtadd/hive/internal/trace"
+	context_pkg "github.com/hnimtadd/hive/pkg/context"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
@@ -50,6 +51,7 @@ type queen struct {
 
 	config   *bee.Config
 	registry registry.Registry
+	provider llm.Provider
 }
 
 func NewQueenBee(
@@ -93,6 +95,7 @@ func NewQueenBee(
 		outputValidator: resolved,
 		config:          config,
 		registry:        registry,
+		provider:        provider,
 	}, nil
 }
 
@@ -105,17 +108,67 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 		slog.String("task_status", string(task.Status)),
 	)
 
+	// Check context budget and trigger summarization if needed
+	if budget, ok := context_pkg.BudgetFromContext(ctx); ok {
+		if budget.ShouldTriggerSummary(task) {
+			logger.InfoContext(ctx, "context budget exceeded, triggering summarization",
+				slog.Int("message_count", len(task.Messages)),
+				slog.Int("threshold", budget.SummaryTriggerThreshold),
+			)
+
+			// Summarize all but last 3 messages
+			messagesToSummarize := task.Messages
+			recentMessages := []types.Message{}
+			if len(task.Messages) > 3 {
+				messagesToSummarize = task.Messages[:len(task.Messages)-3]
+				recentMessages = task.Messages[len(task.Messages)-3:]
+			}
+
+			summary, err := system.SummarizeTaskHistory(
+				ctx,
+				s.provider,
+				messagesToSummarize,
+				budget.SummaryTargetTokens,
+			)
+
+			if err != nil {
+				logger.WarnContext(ctx, "summarization failed, continuing without summary",
+					slog.Any("error", err),
+				)
+			} else {
+				// Update task with summary
+				task.Summary = summary
+				task.Messages = recentMessages
+
+				logger.InfoContext(ctx, "context summarized successfully",
+					slog.Int("original_message_count", len(messagesToSummarize)),
+					slog.Int("remaining_message_count", len(recentMessages)),
+					slog.Int("summary_length", len(summary)),
+				)
+			}
+		}
+	}
+
 	retryConfig := errors.RetryConfig{
 		MaxAttempts:   s.config.MaxSteps,
 		InitialDelay:  500,
 		BackoffFactor: 2.0,
 		MaxDelay:      5000,
 	}
-	taskDescription, err := task.JSONString()
+	taskDescription, err := task.CompactJSONString()
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to serialize task to JSON", slog.Any("error", err))
 		return nil, fmt.Errorf("task could be tranlsated to JSON: %w", err)
 	}
+
+	// Log context size metrics
+	estimatedTokens := len(taskDescription) / 4
+	logger.InfoContext(ctx, "context_size_estimate",
+		slog.Int("message_count", len(task.Messages)),
+		slog.Int("task_json_bytes", len(taskDescription)),
+		slog.Int("estimated_tokens", estimatedTokens),
+		slog.Bool("has_summary", task.Summary != ""),
+	)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.config.TimeoutInSec)*time.Second)
 	defer cancel()
 
@@ -160,21 +213,66 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 
 		content, err = hiveutils.HeristicallyExtractJSONString(content)
 		if err != nil {
-			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not a valid JSON"))
+			errorMsg := fmt.Sprintf(`ERROR: Your output is not valid JSON. You must respond with ONLY a JSON object, nothing else.
+
+Your output was:
+%s
+
+Required format:
+{"status": "in_progress|paused|completed|failed", "content": "description", "next_action": "optional next step"}
+
+Example valid response:
+{"status": "in_progress", "content": "Delegated search to explore agent", "next_action": "Will analyze results"}
+
+Please try again with ONLY the JSON object, no markdown, no explanations.`, result.Content)
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output to agent output schema", err).
 				WithContext("raw_output", result.Content)
 		}
 
 		var output map[string]any
 		if err = json.Unmarshal([]byte(content), &output); err != nil {
-			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to map output to an object"))
+			errorMsg := fmt.Sprintf(`ERROR: Your JSON is malformed and cannot be parsed.
+
+Your JSON:
+%s
+
+Error: %s
+
+Required format:
+{"status": "in_progress", "content": "your message", "next_action": "optional"}
+
+Please ensure:
+- All strings are in double quotes
+- No trailing commas
+- Proper JSON syntax`, content, err.Error())
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema: failed to parse output to agent output schema", err).
 				WithContext("extracted_content", content).
 				WithContext("raw_output", result.Content)
 		}
 
 		if err = s.outputValidator.Validate(output); err != nil {
-			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, output is not follow schema"))
+			errorMsg := fmt.Sprintf(`ERROR: Your JSON doesn't match the required schema.
+
+Your output:
+%s
+
+Validation error: %s
+
+Required fields:
+- "status": Must be one of: "in_progress", "paused", "completed", "failed"
+- "content": String describing what happened or what you need (required)
+- "next_action": String describing next step (optional, recommended for "in_progress")
+
+Example valid outputs:
+{"status": "in_progress", "content": "Retrieved data from API", "next_action": "Will process and analyze"}
+{"status": "completed", "content": "Task completed successfully. Created 3 files and ran tests."}
+{"status": "paused", "content": "Which approach should I use: A or B?"}
+{"status": "failed", "content": "Cannot proceed: missing required API credentials"}
+
+Please try again with the correct format.`, content, err.Error())
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err).
 				WithContext("parsed_output", output).
 				WithContext("extracted_content", content).
@@ -183,7 +281,20 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 
 		agentOutput := QueenOutput{}
 		if err = json.Unmarshal([]byte(content), &agentOutput); err != nil {
-			msgs = append(msgs, schema.SystemMessage("invalid agent output schema, failed to parse output JSON"))
+			errorMsg := fmt.Sprintf(`ERROR: JSON structure is valid but field types are incorrect.
+
+Your JSON:
+%s
+
+Error: %s
+
+Correct field types:
+- "status": string (one of: "in_progress", "paused", "completed", "failed")
+- "content": string (not number, not boolean)
+- "next_action": string or omit (not required)
+
+Ensure all values are properly quoted strings.`, content, err.Error())
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid agent output schema", err).
 				WithContext("content", content)
 		}
@@ -200,15 +311,19 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 			task.Status = agentOutput.Status
 
 		default:
-			msgs = append(
-				msgs,
-				schema.UserMessage(
-					fmt.Sprintf(
-						"invalid task output status: %s. Valid statuses are: 'in_progress' (need another execution cycle), 'paused' (need user input), 'completed' (task done), 'failed' (cannot complete)",
-						agentOutput.Status,
-					),
-				),
-			)
+			errorMsg := fmt.Sprintf(`ERROR: Invalid status value "%s"
+
+Valid status values are:
+- "in_progress": You completed this cycle but need to continue in the next cycle
+- "paused": You need user input or clarification before proceeding
+- "completed": The task is fully done and successful
+- "failed": The task cannot be completed
+
+Your current output:
+{"status": "%s", "content": "%s"}
+
+Please respond with one of the valid status values.`, agentOutput.Status, agentOutput.Status, agentOutput.Content)
+			msgs = append(msgs, schema.SystemMessage(errorMsg))
 			return nil, errors.NewHiveError(errors.ErrTypeValidation, "invalid task status", nil)
 		}
 		return &agentOutput, nil
@@ -253,7 +368,17 @@ Core Responsibilities:
 	- Delegate and coordinate: Use available tools to delegate work to specialized agents.
 	- Context Awareness: Always check the "message" field in the task to see what was previously accomplished and what the user has said. This helps you avoid repeating work or asking the same questions.
 
-Status Selection Guidelines - Choose the appropriate status for each response:
+CRITICAL OUTPUT FORMAT REQUIREMENT:
+You MUST respond with ONLY a valid JSON object. NO markdown, NO explanations, NO extra text before or after the JSON.
+
+Required JSON Schema:
+{
+  "status": "in_progress" | "paused" | "completed" | "failed",
+  "content": "string describing what happened or what you need",
+  "next_action": "string describing what you'll do next (optional, mainly for in_progress)"
+}
+
+Status Selection Guidelines:
 
 	1. "in_progress": Use this when you completed one execution cycle but need to continue in the next cycle.
 	   - You delegated to an agent and received results, but need to delegate to another agent or do more work
@@ -262,6 +387,7 @@ Status Selection Guidelines - Choose the appropriate status for each response:
 	   - Set "content" to describe what you just accomplished (e.g., "Received search results from agent X, now analyzing...")
 	   - The system will immediately call you again to continue - your next invocation will have access to the tool results from this cycle
 	   - DO NOT use this when you need user input - use "paused" instead
+	   Example: {"status": "in_progress", "content": "Delegated file search to explore agent, received 15 matching files", "next_action": "Will analyze the files and identify the bug location"}
 
 	2. "paused": Use this ONLY when you need information or clarification from the user before you can proceed.
 	   - The task requirements are ambiguous and you cannot proceed without clarification
@@ -269,17 +395,22 @@ Status Selection Guidelines - Choose the appropriate status for each response:
 	   - You require additional context that only the user can provide (not available through any agent)
 	   - Set "content" to your question for the user
 	   - The system will WAIT for user feedback, then call you again with their response
+	   Example: {"status": "paused", "content": "Should I use approach A (faster but less reliable) or approach B (slower but more thorough)?"}
 
 	3. "completed": Use this when the user's goal is fully achieved.
 	   - All task requirements have been met and no further work is needed
 	   - Set "content" to a summary of what was accomplished and the final results
+	   Example: {"status": "completed", "content": "Successfully fixed the bug in authentication.go:42. The issue was a null pointer dereference. Applied fix and verified with tests."}
 
 	4. "failed": Use this when the task cannot be completed.
 	   - Available agents lack the necessary capabilities to fulfill the request
 	   - A logical dead-end is reached and there's no path forward
 	   - Set "content" to explain why the task cannot be completed
+	   Example: {"status": "failed", "content": "Cannot proceed: no agents available with database access capabilities, and this task requires direct database queries."}
 
 Constraint: Do not perform the task yourself. Your only tools are delegation and synthesis.
+
+REMINDER: Output ONLY the JSON object. Do not include markdown code blocks, explanations, or any other text.
 `
 	_ = agents // TODO: Include agent descriptions in persona
 	return persona
