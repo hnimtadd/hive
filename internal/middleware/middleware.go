@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/hnimtadd/hive/internal/types"
 )
@@ -48,4 +49,42 @@ func (n noopMiddleware) OnToolCallResponse(_ context.Context, _ string, _ types.
 
 func NoopMiddleware() LLMMiddleware {
 	return noopMiddleware{}
+}
+
+type joinMiddleware struct {
+	mws []LLMMiddleware
+}
+
+// OnRequest implements [LLMMiddleware].
+func (j *joinMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
+	for mw := range slices.Values(j.mws) {
+		mw.OnRequest(ctx, agentID, req)
+	}
+}
+
+// OnResponse implements [LLMMiddleware].
+func (j *joinMiddleware) OnResponse(ctx context.Context, agentID string, response types.LLMResponse) {
+	for mw := range slices.Values(j.mws) {
+		mw.OnResponse(ctx, agentID, response)
+	}
+}
+
+// OnToolCall implements [LLMMiddleware].
+func (j *joinMiddleware) OnToolCall(ctx context.Context, agentID string, toolRequest types.ToolCallRequest) {
+	for mw := range slices.Values(j.mws) {
+		mw.OnToolCall(ctx, agentID, toolRequest)
+	}
+}
+
+// OnToolCallResponse implements [LLMMiddleware].
+func (j *joinMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolResponse types.ToolCallResponse) {
+	for mw := range slices.Values(j.mws) {
+		mw.OnToolCallResponse(ctx, agentID, toolResponse)
+	}
+}
+
+func JointMiddleware(mws ...LLMMiddleware) LLMMiddleware {
+	return &joinMiddleware{
+		mws: mws,
+	}
 }
