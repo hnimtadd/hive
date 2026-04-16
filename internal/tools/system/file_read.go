@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -111,6 +112,14 @@ func fileRead(_ context.Context, input *FileReadInput) (*schema.ToolResult, erro
 				},
 			}, nil
 		}
+	}
+
+	if !utf8.ValidString(string(content)) {
+		return &schema.ToolResult{
+			Parts: []schema.ToolOutputPart{
+				{Type: schema.ToolPartTypeText, Text: "File is not a text file, not readable"},
+			},
+		}, nil
 	}
 
 	return &schema.ToolResult{
