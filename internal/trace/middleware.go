@@ -2,6 +2,7 @@ package trace
 
 import (
 	"context"
+	"sync"
 
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/types"
@@ -13,6 +14,7 @@ const defaultTraceID = "unavailable"
 type traceMiddleware struct {
 	logger    *SessionLogger
 	toolCalls map[string]*ToolCallLog
+	mu        sync.Mutex // Protects toolCalls map from concurrent access
 }
 
 func (t *traceMiddleware) IsEnabled() bool {
@@ -79,7 +81,9 @@ func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEv
 		ToolName: toolEvent.ToolName,
 		Input:    toolEvent.Arguments,
 	}
+	t.mu.Lock()
 	t.toolCalls[toolEvent.CallID] = toolCall
+	t.mu.Unlock()
 }
 
 // OnToolCall implements [middleware.LLMMiddleware].
@@ -87,8 +91,10 @@ func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, tool
 	if !t.IsEnabled() {
 		return
 	}
+	t.mu.Lock()
 	toolCall, ok := t.toolCalls[toolEvent.CallID]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 
@@ -98,9 +104,17 @@ func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, tool
 	if toolEvent.Error != nil {
 		toolCall.Error = toolEvent.Error.Error()
 	}
+	// Remove from map to prevent memory leak
+	delete(t.toolCalls, toolEvent.CallID)
+	t.mu.Unlock()
+
+	// Log outside of lock
 	t.logger.LogToolCall(ctx, toolCall)
 }
 
 func NewTraceMiddleware(sessionLogger *SessionLogger) middleware.LLMMiddleware {
-	return &traceMiddleware{logger: sessionLogger}
+	return &traceMiddleware{
+		logger:    sessionLogger,
+		toolCalls: make(map[string]*ToolCallLog),
+	}
 }
