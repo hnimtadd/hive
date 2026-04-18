@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -91,7 +92,7 @@ func (s *HiveServer) Serve(addr string) error {
 	agentv1.RegisterAgentServiceServer(grpcServer, s)
 	s.grpcServer = grpcServer
 
-	logger.Info("server: starting on %s with max request timeout %s", addr, s.config.Server.MaxTimeout)
+	logger.Info("server.starting", "addr", addr, "max_timeout", s.config.Server.MaxTimeout)
 
 	if err = grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
@@ -167,19 +168,30 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	go func() {
 		defer wg.Done()
 		if err = s.forwardInput(ctx, srv, ch.InputCh); err != nil {
-			cancel(err)
+			if errors.Is(err, context.Canceled) {
+				cancel(nil)
+			} else {
+				cancel(err)
+			}
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
 		if err = s.forwardOutput(ctx, srv, ch.OutputCh); err != nil {
-			cancel(err) // Signal failure to everyone
+			if errors.Is(err, context.Canceled) {
+				cancel(nil)
+			} else {
+				cancel(err)
+			}
 		}
 	}()
 
 	wg.Wait()
-	return context.Cause(ctx)
+	if err = context.Cause(ctx); errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
 
 func (s *HiveServer) forwardInput(
@@ -201,7 +213,7 @@ func (s *HiveServer) forwardInput(
 			select {
 			case ch <- msg:
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil
 			}
 		}
 	}

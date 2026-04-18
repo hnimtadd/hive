@@ -131,8 +131,6 @@ func (p *Pool) worker(id int) {
 func (p *Pool) processTask(task *types.HiveTask) {
 	log := slog.Default().With(slog.String("task_id", task.ID))
 	ch := p.channels.ForTask(task.ID)
-	defer p.channels.Cleanup(task.ID)
-	defer close(ch.DoneCh)
 
 	eventMW, eventCh := system.EventStreamMiddleware()
 	traceMW := observability.NewTraceMiddleware(p.sessionLogger)
@@ -249,7 +247,6 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 				_ = p.storage.Update(task)
 				ch := p.channels.ForTask(task.ID)
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Worker panic: %v", r))
-				close(ch.DoneCh)
 				p.channels.Cleanup(task.ID)
 			}
 		}()
@@ -260,6 +257,8 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 	// If task is not terminal, schedule retry via queue
 	if !task.Status.IsTerminal() {
 		_ = p.queue.ScheduleRetry(p.ctx, task)
+	} else {
+		p.channels.Cleanup(task.ID)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	gitignore "github.com/sabhiram/go-gitignore"
@@ -16,7 +17,8 @@ func GlobTool() (tool.InvokableTool, error) {
 }
 
 type GlobInput struct {
-	Query string `json:"query" jsonschema:"required" jsonschema_description:"Search keyword"`
+	Query      string `json:"query"       jsonschema:"required"    jsonschema_description:"Search keyword"`
+	IncludeAll bool   `json:"include_all" jsonschema:"include_all" jsonschema_description:"if true, then search ignore files and hidden files also, recommended to turn off by default, default: false"`
 }
 
 type GlobOutput struct {
@@ -36,25 +38,32 @@ func glob(_ context.Context, input *GlobInput) (*GlobOutput, error) {
 		}, nil
 	}
 
-	matches, err := filepath.Glob(input.Query)
+	opts := []doublestar.GlobOption{}
+	if !input.IncludeAll {
+		opts = append(opts, doublestar.WithNoHidden())
+	}
+	matches, err := doublestar.FilepathGlob(input.Query, opts...)
 	if err != nil {
 		return &GlobOutput{
 			Matches: []string{fmt.Sprintf("ERROR: Invalid glob pattern '%s': %s", input.Query, err.Error())},
 		}, nil
 	}
 
-	// Load .gitignore patterns if file exists
-	wd, err := os.Getwd()
-	if err != nil {
-		// Continue without gitignore filtering if we can't get working directory
+	if input.IncludeAll {
 		return &GlobOutput{
 			Matches: matches,
 		}, nil
 	}
 
+	// Load .gitignore patterns if file exists
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
 	gitignorePath := filepath.Join(wd, ".gitignore")
 	var ignorer *gitignore.GitIgnore
-	if _, err := os.Stat(gitignorePath); err == nil {
+	if _, err = os.Stat(gitignorePath); err == nil {
 		ignorer, err = gitignore.CompileIgnoreFile(gitignorePath)
 		if err != nil {
 			// Continue without filtering if .gitignore parsing fails
@@ -65,7 +74,8 @@ func glob(_ context.Context, input *GlobInput) (*GlobOutput, error) {
 	// Filter matches against gitignore patterns
 	filtered := make([]string, 0, len(matches))
 	for _, match := range matches {
-		relPath, err := filepath.Rel(wd, match)
+		var relPath string
+		relPath, err = filepath.Rel(wd, match)
 		if err != nil {
 			relPath = match
 		}

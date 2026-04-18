@@ -14,7 +14,6 @@ import (
 type TaskChannels struct {
 	InputCh  chan *agentv1.ExecuteTaskRequest
 	OutputCh chan *agentv1.ExecuteTaskResponse
-	DoneCh   chan struct{}
 }
 
 // Manager manages per-task communication channels.
@@ -39,7 +38,6 @@ func (m *Manager) ForTask(taskID string) *TaskChannels {
 	ch := &TaskChannels{
 		InputCh:  make(chan *agentv1.ExecuteTaskRequest, 10),
 		OutputCh: make(chan *agentv1.ExecuteTaskResponse, 100),
-		DoneCh:   make(chan struct{}),
 	}
 	m.channels.Store(taskID, ch)
 	return ch
@@ -52,6 +50,5 @@ func (m *Manager) Cleanup(taskID string) {
 		tasksCh := ch.(*TaskChannels) //nolint:errcheck // this is always true.
 		close(tasksCh.OutputCh)
 		close(tasksCh.InputCh)
-		// DoneCh is closed by the worker when task completes
 	}
 }

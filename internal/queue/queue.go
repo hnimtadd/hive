@@ -44,8 +44,8 @@ type MemoryQueue struct {
 // MemoryQueueOption configures the MemoryQueue.
 type MemoryQueueOption func(*MemoryQueue)
 
-// WithMaxAttempts sets the maximum number of retries before a task is considered failed.
-func WithMaxAttempts(n uint) MemoryQueueOption {
+// WithMaxRetries sets the maximum number of retries before a task is considered failed.
+func WithMaxRetries(n uint) MemoryQueueOption {
 	return func(q *MemoryQueue) {
 		q.maxRetries = n
 	}

@@ -1,4 +1,4 @@
-package queue
+package queue_test
 
 import (
 	"context"
@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +20,7 @@ func newTestTask(id string) *types.HiveTask {
 }
 
 func TestEnqueueDequeue(t *testing.T) {
-	q := NewMemoryQueue()
+	q := queue.NewMemoryQueue()
 	task := newTestTask("task-1")
 
 	if err := q.Enqueue(context.Background(), task); err != nil {
@@ -36,18 +38,16 @@ func TestEnqueueDequeue(t *testing.T) {
 }
 
 func TestDequeueBlocks(t *testing.T) {
-	q := NewMemoryQueue()
+	q := queue.NewMemoryQueue()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
 	_, err := q.Dequeue(ctx)
-	if err != context.DeadlineExceeded {
-		t.Fatalf("Expected deadline exceeded, got: %v", err)
-	}
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestDequeueWakesOnEnqueue(t *testing.T) {
-	q := NewMemoryQueue()
+	q := queue.NewMemoryQueue()
 
 	// Start dequeue in goroutine (will block)
 	resultCh := make(chan *types.HiveTask, 1)
@@ -60,20 +60,18 @@ func TestDequeueWakesOnEnqueue(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	task := newTestTask("task-1")
-	q.Enqueue(context.Background(), task) //nolint:errcheck
+	require.NoError(t, q.Enqueue(context.Background(), task))
 
 	select {
 	case got := <-resultCh:
-		if got.ID != task.ID {
-			t.Fatalf("Expected task ID %s, got %s", task.ID, got.ID)
-		}
+		assert.Equal(t, task.ID, got.ID)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Dequeue did not wake after enqueue")
 	}
 }
 
 func TestDepth(t *testing.T) {
-	q := NewMemoryQueue()
+	q := queue.NewMemoryQueue()
 
 	if q.Length() != 0 {
 		t.Fatal("Expected empty queue depth")
@@ -86,14 +84,16 @@ func TestDepth(t *testing.T) {
 		t.Fatalf("Expected depth 2, got %d", q.Length())
 	}
 
-	q.Dequeue(context.Background()) //nolint:errcheck
+	_, err := q.Dequeue(context.Background())
+	require.NoError(t, err)
+
 	if q.Length() != 1 {
 		t.Fatalf("Expected depth 1, got %d", q.Length())
 	}
 }
 
 func TestClose(t *testing.T) {
-	q := NewMemoryQueue()
+	q := queue.NewMemoryQueue()
 
 	// Start blocking dequeue
 	errCh := make(chan error, 1)
@@ -107,75 +107,66 @@ func TestClose(t *testing.T) {
 
 	select {
 	case err := <-errCh:
-		if err != ErrQueueClosed {
-			t.Fatalf("Expected ErrQueueClosed, got: %v", err)
-		}
+		require.ErrorIs(t, err, queue.ErrQueueClosed)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Close did not unblock waiting dequeue")
 	}
 
 	// Enqueue after close should fail
-	if err := q.Enqueue(context.Background(), newTestTask("task-1")); err != ErrQueueClosed {
-		t.Fatalf("Expected ErrQueueClosed after close, got: %v", err)
-	}
+	require.ErrorIs(t, q.Enqueue(context.Background(), newTestTask("task-1")), queue.ErrQueueClosed)
 }
 
 func TestRequeue_ExceedsMaxRetries(t *testing.T) {
-	q := NewMemoryQueue(WithMaxAttempts(3))
+	q := queue.NewMemoryQueue(queue.WithMaxRetries(2))
 	task := newTestTask("task-1")
 
-	q.Enqueue(context.TODO(), task) //nolint:errcheck
-	q.Dequeue(context.Background()) //nolint:errcheck
+	require.NoError(t, q.Enqueue(context.TODO(), task))
+	_, err := q.Dequeue(context.Background())
+	require.NoError(t, err)
 
 	// First retry
-	if err := q.Enqueue(context.TODO(), task); err != nil {
-		t.Fatalf("First requeue failed: %v", err)
-	}
+	require.NoError(t, q.ScheduleRetry(context.TODO(), task))
+
 	time.Sleep(50 * time.Millisecond)
-	q.Dequeue(context.Background()) //nolint:errcheck
+	_, err = q.Dequeue(context.Background())
+	require.NoError(t, err)
 
 	// Second retry
-	if err := q.Enqueue(context.TODO(), task); err != nil {
-		t.Fatalf("Second requeue failed: %v", err)
-	}
+	require.NoError(t, q.ScheduleRetry(context.TODO(), task))
+
 	time.Sleep(50 * time.Millisecond)
-	q.Dequeue(context.Background()) //nolint: errcheck
+	_, err = q.Dequeue(context.Background())
+	require.NoError(t, err)
 
 	// Third retry should fail (max 2)
-	if err := q.Enqueue(context.TODO(), task); err != ErrMaxRetries {
-		t.Fatalf("Expected ErrMaxRetries, got: %v", err)
-	}
+	require.ErrorIs(t, q.ScheduleRetry(context.TODO(), task), queue.ErrMaxRetries)
 }
 
 func TestConcurrentEnqueueDequeue(t *testing.T) {
-	q := NewMemoryQueue()
+	q := queue.NewMemoryQueue()
 	var wg sync.WaitGroup
 	count := 100
 
 	// Concurrent enqueuers
-	for i := 0; i < count; i++ {
+	for i := range count {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			q.Enqueue(context.TODO(), newTestTask(string(rune(id)))) //nolint:errcheck
+			q.Enqueue(context.TODO(), newTestTask(string(rune(id))))
 		}(i)
 	}
 
 	wg.Wait()
 
-	if q.Length() != count {
-		t.Fatalf("Expected depth %d, got %d", count, q.Length())
-	}
+	assert.Equal(t, count, q.Length())
 
 	// Concurrent dequeuers
 	results := make(chan *types.HiveTask, count)
 	for range count {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			task, _ := q.Dequeue(context.Background())
 			results <- task
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -183,13 +174,9 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 
 	seen := make(map[string]bool)
 	for task := range results {
-		if seen[task.ID] {
-			t.Fatal("Same task dequeued twice")
-		}
+		require.NotContains(t, seen, task.ID, "Same task dequeued twice")
 		seen[task.ID] = true
 	}
 
-	if len(seen) != count {
-		t.Fatalf("Expected %d unique tasks, got %d", count, len(seen))
-	}
+	require.Len(t, seen, count)
 }

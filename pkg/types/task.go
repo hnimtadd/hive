@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -38,6 +39,7 @@ type HiveTask struct {
 
 	Context context.Context `json:"-"`
 	Retries uint            `json:"retries"`
+	once    sync.Once
 }
 
 // NewHiveTask creates a new task with default values.
