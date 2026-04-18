@@ -166,6 +166,7 @@ func (p *Pool) processTask(task *types.HiveTask) {
 			if fb := req.GetFeedback(); fb != nil {
 				task.Messages = append(task.Messages, types.NewMessage(types.RoleUser, fb.GetFeedback()))
 				log.Info("received feedback", slog.String("feedback", fb.GetFeedback()))
+				continue // Wait for next iteration to execute supervisor with new context
 			}
 			if req.GetCancel() != nil {
 				log.Info("task cancelled by user")
@@ -175,6 +176,7 @@ func (p *Pool) processTask(task *types.HiveTask) {
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr("Task cancelled by user")
 				return
 			}
+			continue // Unknown request type, wait for next input
 
 		default:
 			// Execute supervisor iteration
@@ -211,8 +213,25 @@ func (p *Pool) processTask(task *types.HiveTask) {
 			case types.TaskStatusPaused:
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseFeedback(utils.SanitizeUTF8(output.Content))
 				log.Info("task paused, waiting for feedback")
-				// Don't return, wait for feedback via InputCh
-				continue
+				// Wait for feedback before continuing to execute supervisor
+				select {
+				case <-ctx.Done():
+					log.Info("context cancelled while waiting for feedback")
+					continue
+				case req := <-ch.InputCh:
+					if fb := req.GetFeedback(); fb != nil {
+						task.Messages = append(task.Messages, types.NewMessage(types.RoleUser, fb.GetFeedback()))
+						log.Info("received feedback", slog.String("feedback", fb.GetFeedback()))
+					}
+					if req.GetCancel() != nil {
+						log.Info("task cancelled by user")
+						task.Status = types.TaskStatusFailed
+						task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, "Task cancelled by user"))
+						_ = p.storage.Update(task)
+						ch.OutputCh <- agentv1.NewExecuteTaskResponseErr("Task cancelled by user")
+						return
+					}
+				}
 
 			case types.TaskStatusInProgress:
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate(
