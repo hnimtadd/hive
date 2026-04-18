@@ -30,8 +30,8 @@ func TestEnqueueDequeue(t *testing.T) {
 		t.Fatalf("Dequeue failed: %v", err)
 	}
 
-	if got.Task.ID != task.ID {
-		t.Fatalf("Expected task ID %s, got %s", task.ID, got.Task.ID)
+	if got.ID != task.ID {
+		t.Fatalf("Expected task ID %s, got %s", task.ID, got.ID)
 	}
 }
 
@@ -50,7 +50,7 @@ func TestDequeueWakesOnEnqueue(t *testing.T) {
 	q := NewMemoryQueue()
 
 	// Start dequeue in goroutine (will block)
-	resultCh := make(chan *QueueTask[*types.HiveTask], 1)
+	resultCh := make(chan *types.HiveTask, 1)
 	go func() {
 		task, _ := q.Dequeue(context.Background())
 		resultCh <- task
@@ -64,8 +64,8 @@ func TestDequeueWakesOnEnqueue(t *testing.T) {
 
 	select {
 	case got := <-resultCh:
-		if got.Task.ID != task.ID {
-			t.Fatalf("Expected task ID %s, got %s", task.ID, got.Task.ID)
+		if got.ID != task.ID {
+			t.Fatalf("Expected task ID %s, got %s", task.ID, got.ID)
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Dequeue did not wake after enqueue")
@@ -168,7 +168,7 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 	}
 
 	// Concurrent dequeuers
-	results := make(chan *QueueTask[*types.HiveTask], count)
+	results := make(chan *types.HiveTask, count)
 	for range count {
 		wg.Add(1)
 		go func() {
@@ -183,10 +183,10 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 
 	seen := make(map[string]bool)
 	for task := range results {
-		if seen[task.Task.ID] {
+		if seen[task.ID] {
 			t.Fatal("Same task dequeued twice")
 		}
-		seen[task.Task.ID] = true
+		seen[task.ID] = true
 	}
 
 	if len(seen) != count {

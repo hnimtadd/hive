@@ -16,19 +16,12 @@ var (
 	ErrTaskNotFound = errors.New("task not found")
 )
 
-type QueueTask[t any] struct {
-	Task t
-	Ctx  context.Context
-
-	retries uint
-}
-
 // Queue defines the interface for task scheduling.
-type Queue[t any] interface {
+type Queue interface {
 	// Enqueue adds a task to the queue.
-	Enqueue(ctx context.Context, task t) error
+	Enqueue(ctx context.Context, task *types.HiveTask) error
 	// Dequeue removes and returns the next task. Blocks until a task is available or context is cancelled.
-	Dequeue(ctx context.Context) (*QueueTask[t], error)
+	Dequeue(ctx context.Context) (*types.HiveTask, error)
 	// Length returns the current number of tasks waiting in the queue.
 	Length() int
 	// Close shuts down the queue, unblocking all waiting Dequeue calls.
@@ -37,13 +30,13 @@ type Queue[t any] interface {
 	MaxRetries() uint
 	// ScheduleRetry schedules a task to be re-enqueued after a backoff delay
 	// The ctx is used to cancel the retry if the queue is closed.
-	ScheduleRetry(ctx context.Context, task *QueueTask[t]) error
+	ScheduleRetry(ctx context.Context, task *types.HiveTask) error
 }
 
 // MemoryQueue is an in-memory implementation of Queue.
 type MemoryQueue struct {
 	mu         sync.Mutex
-	items      []*QueueTask[*types.HiveTask]
+	items      []*types.HiveTask
 	closed     bool
 	maxRetries uint
 }
@@ -59,9 +52,9 @@ func WithMaxAttempts(n uint) MemoryQueueOption {
 }
 
 // NewMemoryQueue creates a new in-memory task queue.
-func NewMemoryQueue(opts ...MemoryQueueOption) Queue[*types.HiveTask] {
+func NewMemoryQueue(opts ...MemoryQueueOption) Queue {
 	q := &MemoryQueue{
-		items:      make([]*QueueTask[*types.HiveTask], 0),
+		items:      make([]*types.HiveTask, 0),
 		maxRetries: 3, // Default: 3 retries
 	}
 
@@ -74,16 +67,13 @@ func NewMemoryQueue(opts ...MemoryQueueOption) Queue[*types.HiveTask] {
 
 // Enqueue implements [Queue].
 func (q *MemoryQueue) Enqueue(ctx context.Context, task *types.HiveTask) error {
-	queueTask := &QueueTask[*types.HiveTask]{
-		Task:    task,
-		Ctx:     ctx,
-		retries: 0,
-	}
+	task.Context = ctx
+	task.Retries = 0
 
-	return q.enqueue(queueTask)
+	return q.enqueue(task)
 }
 
-func (q *MemoryQueue) enqueue(qt *QueueTask[*types.HiveTask]) error {
+func (q *MemoryQueue) enqueue(qt *types.HiveTask) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -96,7 +86,7 @@ func (q *MemoryQueue) enqueue(qt *QueueTask[*types.HiveTask]) error {
 }
 
 // Dequeue implements [Queue].
-func (q *MemoryQueue) Dequeue(ctx context.Context) (*QueueTask[*types.HiveTask], error) {
+func (q *MemoryQueue) Dequeue(ctx context.Context) (*types.HiveTask, error) {
 	tickCh := time.Tick(time.Millisecond * 10)
 	for {
 		q.mu.Lock()
@@ -152,12 +142,12 @@ func (q *MemoryQueue) MaxRetries() uint {
 
 // ScheduleRetry schedules a task to be re-enqueued after a backoff delay.
 // It spawns a goroutine to handle the delay and re-enqueue.
-func (q *MemoryQueue) ScheduleRetry(ctx context.Context, task *QueueTask[*types.HiveTask]) error {
+func (q *MemoryQueue) ScheduleRetry(ctx context.Context, task *types.HiveTask) error {
 	baseDelay := 1 * time.Second
 	maxDelay := 30 * time.Second
-	task.retries++
+	task.Retries++
 
-	attempt := task.retries
+	attempt := task.Retries
 	if attempt > q.maxRetries {
 		return ErrMaxRetries
 	}
@@ -172,7 +162,7 @@ func (q *MemoryQueue) ScheduleRetry(ctx context.Context, task *QueueTask[*types.
 		}
 
 		slog.Info("re-enqueueing task after backoff",
-			slog.String("task_id", task.Task.ID),
+			slog.String("task_id", task.ID),
 			slog.Uint64("attempt", uint64(attempt)),
 			slog.Duration("delay", delay),
 		)

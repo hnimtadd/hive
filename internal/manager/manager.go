@@ -13,11 +13,11 @@ import (
 // It knows nothing about channels, events, or transport layers.
 type Manager struct {
 	storage storage.Storage
-	queue   queue.Queue[*types.HiveTask]
+	queue   queue.Queue
 }
 
 // NewManager creates a new task manager.
-func NewManager(storage storage.Storage, queue queue.Queue[*types.HiveTask]) *Manager {
+func NewManager(storage storage.Storage, queue queue.Queue) *Manager {
 	return &Manager{
 		storage: storage,
 		queue:   queue,

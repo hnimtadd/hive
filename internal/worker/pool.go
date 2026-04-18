@@ -27,7 +27,7 @@ import (
 // Pool manages a set of worker goroutines that execute tasks from the queue.
 type Pool struct {
 	size          int
-	queue         queue.Queue[*types.HiveTask]
+	queue         queue.Queue
 	storage       storage.Storage
 	channels      *channel.Manager
 	registry      registry.Registry
@@ -45,7 +45,7 @@ type Pool struct {
 // NewPool creates a new worker pool.
 func NewPool(
 	size int,
-	q queue.Queue[*types.HiveTask],
+	q queue.Queue,
 	store storage.Storage,
 	channels *channel.Manager,
 	reg registry.Registry,
@@ -121,7 +121,7 @@ func (p *Pool) worker(id int) {
 			continue
 		}
 
-		log.Info("processing task", slog.String("task_id", task.Task.ID))
+		log.Info("processing task", slog.String("task_id", task.ID))
 		// Execute task with retry logic
 		p.executeWithRetry(task)
 	}
@@ -133,9 +133,10 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	ch := p.channels.ForTask(task.ID)
 	defer p.channels.Cleanup(task.ID)
 	defer close(ch.DoneCh)
+
 	eventMW, eventCh := system.EventStreamMiddleware()
 	traceMW := observability.NewTraceMiddleware(p.sessionLogger)
-	ctx := middleware.ContextWithMiddleware(p.ctx, middleware.JointMiddleware(eventMW, traceMW))
+	ctx := middleware.ContextWithMiddleware(task.Context, middleware.JointMiddleware(eventMW, traceMW))
 
 	// Inject context budget for context management
 	budget := context_pkg.NewContextBudget(p.cfg.AI.Context)
@@ -234,8 +235,7 @@ func (p *Pool) createSupervisor(taskID string) (queen.QueenBee, error) {
 
 // executeWithRetry executes a task with retry support.
 // It runs the task and schedules retry via queue if task is not terminal.
-func (p *Pool) executeWithRetry(qt *queue.QueueTask[*types.HiveTask]) {
-	task := qt.Task
+func (p *Pool) executeWithRetry(task *types.HiveTask) {
 	// Run task with panic recovery
 	func() {
 		defer func() {
@@ -259,7 +259,7 @@ func (p *Pool) executeWithRetry(qt *queue.QueueTask[*types.HiveTask]) {
 
 	// If task is not terminal, schedule retry via queue
 	if !task.Status.IsTerminal() {
-		_ = p.queue.ScheduleRetry(qt.Ctx, qt)
+		_ = p.queue.ScheduleRetry(p.ctx, task)
 	}
 }
 

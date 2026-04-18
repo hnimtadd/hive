@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/google/uuid"
@@ -34,6 +35,9 @@ type HiveTask struct {
 	Summary          string            `json:"summary,omitempty"     jsonschema:"Compressed history of previous execution cycles"`
 	Messages         []Message         `json:"message"               jsonschema:"global conversation"`
 	Goal             string            `json:"context"               jsonschema:"Task core context and description"`
+
+	Context context.Context `json:"-"`
+	Retries uint            `json:"retries"`
 }
 
 // NewHiveTask creates a new task with default values.
