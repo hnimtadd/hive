@@ -63,7 +63,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tui.ChangeModeMsg:
 		if m.mode != tui.Mode(msg) {
 			m.mode = tui.Mode(msg)
-			cmd = append(cmd, m.footer.Update(msg))
+			switch m.mode {
+			case tui.ModeNormal:
+				m.chat.Update(tea.BlurMsg{})
+			case tui.ModeInsert:
+				m.chat.Update(tea.FocusMsg{})
+			}
+			m.footer.Update(msg)
 		}
 	case tea.KeyMsg:
 		// Pressing any key makes any info/error message in the footer disappear.
@@ -84,6 +90,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
+	default:
+		cmd = append(cmd, m.chat.Update(msg))
 	}
 	return m, tea.Batch(cmd...)
 }
@@ -91,21 +99,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements [tea.Model].
 func (m *model) View() tea.View {
 	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Top,
-		m.chat.View(),
-		m.footer.View(),
+		m.chat.View().Content,
+		m.footer.View().Content,
 	))
 	v.AltScreen = true
 	return v
 }
 
 // contentHeight returns the height available to the panes.
-func (m model) contentHeight() int {
+func (m *model) contentHeight() int {
 	vh := m.height - tui.FooterHeight
 	return max(tui.MinContentHeight, vh)
 }
 
 // contentWidth return the width available to the panes.
-func (m model) contentWidth() int {
+func (m *model) contentWidth() int {
 	return max(tui.MinContentWidth, m.width)
 }
 

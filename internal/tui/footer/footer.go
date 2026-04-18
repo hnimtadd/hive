@@ -61,8 +61,8 @@ func (f *Model) ResetStatus() {
 	f.info = ""
 }
 
-func (f *Model) View() string {
-	return f.renderStatus()
+func (f *Model) View() tea.View {
+	return tea.NewView(f.renderStatus())
 }
 
 var (
