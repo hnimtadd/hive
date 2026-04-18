@@ -1,23 +1,23 @@
-package manager
+package manager_test
 
 import (
 	"context"
 	"os"
 	"testing"
 
+	"github.com/hnimtadd/hive/internal/manager"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func setupTestManager(t *testing.T) (*Manager, func()) {
+func setupTestManager(t *testing.T) (*manager.Manager, func()) {
 	t.Helper()
 
 	// Create temp directory for storage
-	tmpDir, err := os.MkdirTemp("", "hive-manager-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
+	tmpDir := t.TempDir()
 
 	// Create storage
 	store, err := storage.NewLocalStorage(storage.Options{
@@ -31,7 +31,7 @@ func setupTestManager(t *testing.T) (*Manager, func()) {
 	q := queue.NewMemoryQueue()
 
 	// Create manager
-	mgr := NewManager(store, q)
+	mgr := manager.NewManager(store, q)
 
 	cleanup := func() {
 		q.Close()
@@ -46,22 +46,10 @@ func TestCreateTask(t *testing.T) {
 	defer cleanup()
 
 	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
-	if err != nil {
-		t.Fatalf("CreateTask failed: %v", err)
-	}
-
-	if task.ID == "" {
-		t.Fatal("Task should have an ID")
-	}
-
-	if task.Goal != "Test goal" {
-		t.Fatalf("Expected goal 'Test goal', got %s", task.Goal)
-	}
-
-	if task.Status != types.TaskStatusNotStarted {
-		t.Fatalf("Expected status not_started, got %s", task.Status)
-	}
-
+	require.NoError(t, err)
+	assert.NotEmpty(t, task.ID)
+	assert.Equal(t, "Test goal", task.Goal)
+	assert.Equal(t, types.TaskStatusNotStarted, task.Status)
 }
 
 func TestCreateTask_WithArtifacts(t *testing.T) {
@@ -74,18 +62,11 @@ func TestCreateTask_WithArtifacts(t *testing.T) {
 	}
 
 	task, err := mgr.CreateTask(context.Background(), "Test goal", artifacts)
-	if err != nil {
-		t.Fatalf("CreateTask failed: %v", err)
-	}
-
-	if len(task.Artifacts) != len(artifacts) {
-		t.Fatalf("Expected %d artifacts, got %d", len(artifacts), len(task.Artifacts))
-	}
-
+	require.NoError(t, err)
+	require.Len(t, task.Artifacts, len(artifacts))
 	for k, v := range artifacts {
-		if task.Artifacts[k] != v {
-			t.Fatalf("Expected artifact %s=%s, got %s=%s", k, v, k, task.Artifacts[k])
-		}
+		require.Contains(t, task.Artifacts, k)
+		require.Equal(t, v, task.Artifacts[k])
 	}
 }
 
@@ -128,25 +109,16 @@ func TestUpdateTask(t *testing.T) {
 	defer cleanup()
 
 	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
-	if err != nil {
-		t.Fatalf("CreateTask failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Update task status
 	task.Status = types.TaskStatusInProgress
-	if err := mgr.UpdateTask(task); err != nil {
-		t.Fatalf("UpdateTask failed: %v", err)
-	}
+	require.NoError(t, mgr.UpdateTask(task))
 
 	// Verify update persisted
 	loaded, err := mgr.LoadTask(task.ID)
-	if err != nil {
-		t.Fatalf("LoadTask failed: %v", err)
-	}
-
-	if loaded.Status != types.TaskStatusInProgress {
-		t.Fatalf("Expected status in_progress, got %s", loaded.Status)
-	}
+	require.NoError(t, err)
+	require.Equal(t, types.TaskStatusInProgress, loaded.Status)
 }
 
 func TestIsTerminal(t *testing.T) {
@@ -154,40 +126,31 @@ func TestIsTerminal(t *testing.T) {
 	defer cleanup()
 
 	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
-	if err != nil {
-		t.Fatalf("CreateTask failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Not started is not terminal
 	terminal, err := mgr.IsTerminal(task.ID)
-	if err != nil {
-		t.Fatalf("IsTerminal failed: %v", err)
-	}
-	if terminal {
-		t.Fatal("Not started task should not be terminal")
-	}
+	require.NoError(t, err)
+	require.False(t, terminal)
 
 	// In progress is not terminal
 	task.Status = types.TaskStatusInProgress
-	mgr.UpdateTask(task) //nolint:errcheck
-	terminal, _ = mgr.IsTerminal(task.ID)
-	if terminal {
-		t.Fatal("In progress task should not be terminal")
-	}
+	require.NoError(t, mgr.UpdateTask(task))
+	terminal, err = mgr.IsTerminal(task.ID)
+	require.NoError(t, err)
+	require.False(t, terminal)
 
 	// Completed is terminal
 	task.Status = types.TaskStatusCompleted
-	mgr.UpdateTask(task) //nolint:errcheck
-	terminal, _ = mgr.IsTerminal(task.ID)
-	if !terminal {
-		t.Fatal("Completed task should be terminal")
-	}
+	require.NoError(t, mgr.UpdateTask(task))
+	terminal, err = mgr.IsTerminal(task.ID)
+	require.NoError(t, err)
+	require.True(t, terminal)
 
 	// Failed is terminal
 	task.Status = types.TaskStatusFailed
-	mgr.UpdateTask(task) //nolint:errcheck
-	terminal, _ = mgr.IsTerminal(task.ID)
-	if !terminal {
-		t.Fatal("Failed task should be terminal")
-	}
+	require.NoError(t, mgr.UpdateTask(task))
+	terminal, err = mgr.IsTerminal(task.ID)
+	require.NoError(t, err)
+	require.True(t, terminal)
 }

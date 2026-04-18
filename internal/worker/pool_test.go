@@ -1,4 +1,4 @@
-package worker
+package worker_test
 
 import (
 	"context"
@@ -9,16 +9,14 @@ import (
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
+	"github.com/hnimtadd/hive/internal/worker"
 )
 
-func setupTestPool(t *testing.T) (*Pool, *channel.Manager, func()) {
+func setupTestPool(t *testing.T) (*worker.Pool, func()) {
 	t.Helper()
 
 	// Create temp directory for storage
-	tmpDir, err := os.MkdirTemp("", "hive-worker-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
+	tmpDir := t.TempDir()
 
 	// Create storage
 	store, err := storage.NewLocalStorage(storage.Options{
@@ -42,21 +40,14 @@ func setupTestPool(t *testing.T) (*Pool, *channel.Manager, func()) {
 		q.Close()
 		os.RemoveAll(tmpDir)
 	}
+	pool := worker.NewPool(2, q, store, channels, nil, nil, nil, nil)
 
 	// Return a minimal pool for testing
-	pool := &Pool{
-		size:     2,
-		queue:    q,
-		storage:  store,
-		channels: channels,
-		done:     make(chan struct{}),
-	}
-
-	return pool, channels, cleanup
+	return pool, cleanup
 }
 
 func TestPoolStartStop(t *testing.T) {
-	pool, _, cleanup := setupTestPool(t)
+	pool, cleanup := setupTestPool(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -81,7 +72,7 @@ func TestPoolStartStop(t *testing.T) {
 }
 
 func TestPoolDoneChannel(t *testing.T) {
-	pool, _, cleanup := setupTestPool(t)
+	pool, cleanup := setupTestPool(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -100,7 +91,7 @@ func TestPoolDoneChannel(t *testing.T) {
 }
 
 func TestPoolContextCancellation(t *testing.T) {
-	pool, _, cleanup := setupTestPool(t)
+	pool, cleanup := setupTestPool(t)
 	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())

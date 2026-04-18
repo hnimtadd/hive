@@ -100,7 +100,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			BackoffFactor: 2.0,
 		}
 
-		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
+		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (any, error) {
 			callCount++
 			return "success", nil
 		})
@@ -118,7 +118,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			BackoffFactor: 2.0,
 		}
 
-		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
+		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (any, error) {
 			callCount++
 			if callCount < 3 {
 				return nil, NewHiveError(ErrTypeNetwork, "network error", nil)
@@ -139,7 +139,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			BackoffFactor: 2.0,
 		}
 
-		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
+		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (any, error) {
 			callCount++
 			return nil, NewHiveError(ErrTypeValidation, "validation error", nil)
 		})
@@ -157,7 +157,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			BackoffFactor: 2.0,
 		}
 
-		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (interface{}, error) {
+		result, err := handler.WithRetry(context.Background(), config, func(ctx context.Context) (any, error) {
 			callCount++
 			return nil, NewHiveError(ErrTypeNetwork, "persistent network error", nil)
 		})
@@ -187,7 +187,7 @@ func TestErrorHandler_WithRetry(t *testing.T) {
 			cancel()
 		}()
 
-		result, err := handler.WithRetry(ctx, config, func(ctx context.Context) (interface{}, error) {
+		result, err := handler.WithRetry(ctx, config, func(ctx context.Context) (any, error) {
 			callCount++
 			return nil, NewHiveError(ErrTypeNetwork, "network error", nil)
 		})
@@ -205,10 +205,10 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 	t.Run("primary function succeeds", func(t *testing.T) {
 		result, err := handler.WithGracefulDegradation(
 			context.Background(),
-			func(ctx context.Context) (interface{}, error) {
+			func(ctx context.Context) (any, error) {
 				return "primary success", nil
 			},
-			func(ctx context.Context, err error) (interface{}, error) {
+			func(ctx context.Context, err error) (any, error) {
 				t.Errorf("Fallback should not be called")
 				return nil, fmt.Errorf("fallback called unexpectedly")
 			},
@@ -223,10 +223,10 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 
 		result, err := handler.WithGracefulDegradation(
 			context.Background(),
-			func(ctx context.Context) (interface{}, error) {
+			func(ctx context.Context) (any, error) {
 				return nil, primaryErr
 			},
-			func(ctx context.Context, err error) (interface{}, error) {
+			func(ctx context.Context, err error) (any, error) {
 				assert.Equal(t, primaryErr, err)
 				return "fallback success", nil
 			},
@@ -242,10 +242,10 @@ func TestErrorHandler_WithGracefulDegradation(t *testing.T) {
 
 		result, err := handler.WithGracefulDegradation(
 			context.Background(),
-			func(ctx context.Context) (interface{}, error) {
+			func(ctx context.Context) (any, error) {
 				return nil, primaryErr
 			},
-			func(ctx context.Context, err error) (interface{}, error) {
+			func(ctx context.Context, err error) (any, error) {
 				return nil, fallbackErr
 			},
 		)
