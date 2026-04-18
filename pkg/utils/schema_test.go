@@ -3,6 +3,9 @@ package utils
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFixUnescapedNewlines(t *testing.T) {
@@ -35,7 +38,7 @@ func TestFixUnescapedNewlines(t *testing.T) {
 			got := fixUnescapedNewlines(tt.input)
 
 			// Verify it's valid JSON
-			var obj interface{}
+			var obj any
 			if err := json.Unmarshal([]byte(got), &obj); err != nil {
 				t.Errorf("Result is not valid JSON: %v\nGot: %s", err, got)
 			}
@@ -47,29 +50,86 @@ func TestFixUnescapedNewlines(t *testing.T) {
 	}
 }
 
-func TestHeristicallyExtractJSONString_WithNewlines(t *testing.T) {
-	// This simulates what the agent outputs - raw JSON with literal newlines in strings
-	input := "{\n  \"summary\": \"test\",\n  \"code\": \"line1\nline2\nline3\"\n}"
-
-	got, err := HeristicallyExtractJSONString(input)
-	if err != nil {
-		t.Fatalf("HeristicallyExtractJSONString() error = %v", err)
+func TestHeristicallyExtractJSONString(t *testing.T) {
+	var tcs = []struct {
+		name     string
+		input    string
+		wantErr  bool
+		expected map[string]any
+	}{
+		{
+			name:     "plain JSON object",
+			input:    `{"name": "alice", "age": 30}`,
+			expected: map[string]any{"name": "alice", "age": float64(30)},
+		},
+		{
+			name:     "JSON in markdown code block",
+			input:    "```json\n{\"name\": \"alice\", \"age\": 30}\n```",
+			expected: map[string]any{"name": "alice", "age": float64(30)},
+		},
+		{
+			name:     "JSON with surrounding prose",
+			input:    `Here is the result: {"name": "alice", "age": 30} as requested.`,
+			expected: map[string]any{"name": "alice", "age": float64(30)},
+		},
+		{
+			name:     "JSON with leading and trailing whitespace",
+			input:    `   {"name": "alice"}   `,
+			expected: map[string]any{"name": "alice"},
+		},
+		{
+			name:     "JSON with unescaped newlines in string value",
+			input:    "{\"text\": \"line one\nline two\"}",
+			expected: map[string]any{"text": "line one\nline two"},
+		},
+		{
+			name:     "code block with extra whitespace after json tag",
+			input:    "```json   \n{\"key\": \"value\"}\n```",
+			expected: map[string]any{"key": "value"},
+		},
+		{
+			name:  "nested JSON object",
+			input: `{"user": {"name": "alice", "age": 30}}`,
+			expected: map[string]any{
+				"user": map[string]any{"name": "alice", "age": float64(30)},
+			},
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "no JSON object found",
+			input:   "hello there, no json here",
+			wantErr: true,
+		},
+		{
+			name:    "malformed JSON",
+			input:   `{"name": "alice"`,
+			wantErr: true,
+		},
+		{
+			name:    "closing brace before opening brace",
+			input:   `} "name": "alice" {`,
+			wantErr: true,
+		},
 	}
 
-	// Verify it's valid JSON
-	var obj map[string]interface{}
-	if err := json.Unmarshal([]byte(got), &obj); err != nil {
-		t.Errorf("Result is not valid JSON: %v\nGot: %s", err, got)
-	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := HeuristicallyExtractJSONString(tc.input)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Empty(t, got)
+			} else {
+				require.NoError(t, err)
 
-	// Check the code field has the correct value
-	code, ok := obj["code"].(string)
-	if !ok {
-		t.Fatal("code field not found or not a string")
-	}
-
-	// After parsing, the newlines should be actual newlines again
-	if code != "line1\nline2\nline3" {
-		t.Errorf("code field = %q, want %q", code, "line1\nline2\nline3")
+				// Verify it's valid JSON
+				var obj map[string]any
+				require.NoError(t, json.Unmarshal([]byte(got), &obj))
+				assert.Equal(t, tc.expected, obj)
+			}
+		})
 	}
 }

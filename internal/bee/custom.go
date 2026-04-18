@@ -152,7 +152,7 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 		observability.Logger(ctx).Debug("worker output received", slog.Int("content_length", len(content)))
 		msgs = append(msgs, result)
 
-		content, err = utils.HeristicallyExtractJSONString(content)
+		content, err = utils.HeuristicallyExtractJSONString(content)
 		if err != nil {
 			logger.ErrorContext(ctx, "validation failed - raw output preserved for debugging",
 				slog.String("agent_id", a.id),

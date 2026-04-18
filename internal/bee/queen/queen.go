@@ -211,7 +211,7 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 		}()
 		msgs = append(msgs, result)
 
-		content, err = hiveutils.HeristicallyExtractJSONString(content)
+		content, err = hiveutils.HeuristicallyExtractJSONString(content)
 		if err != nil {
 			errorMsg := fmt.Sprintf(`ERROR: Your output is not valid JSON. You must respond with ONLY a JSON object, nothing else.
 

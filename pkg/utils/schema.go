@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -65,24 +66,26 @@ func DescribeOutputJSON[T any]() (string, error) {
 	- If type is <string>, provide a standard JSON string.`, string(exampleJSON)), nil
 }
 
-func HeristicallyExtractJSONString(content string) (string, error) {
-	// The Pipeline:
-	//     Clean: Trim whitespace.
-	//     Strip: Remove ```json and ``` tags if present.
-	//     Snip: Use the strings.Index / strings.LastIndex method above.
+var (
+	jsonCodeBlockRe = regexp.MustCompile("(?:.*)```json(.*)```")
+)
+
+func HeuristicallyExtractJSONString(content string) (string, error) {
 	content = strings.TrimSpace(content)
-	content = strings.ReplaceAll(content, "```json", "")
-	content = strings.ReplaceAll(content, "```", "")
-	first, last := strings.Index(content, "{"), strings.LastIndex(content, "}")
-	if first == -1 || last < first {
-		return "", errors.New("invalid JSON, could not find JSON object")
+
+	// If there's a JSON code block, extract just its contents
+	if match := jsonCodeBlockRe.FindStringSubmatch(content); match != nil {
+		content = match[1]
 	}
-	content = content[first : last+1]
 
-	// Fix unescaped newlines inside JSON strings
-	// LLMs often output multi-line strings but don't escape them for JSON
+	// Otherwise use the whole string as-is
+	first := strings.Index(content, "{")
+	last := strings.LastIndex(content, "}")
+	if first == -1 || last < first {
+		return "", errors.New("invalid JSON: could not find JSON object")
+	}
+	content = strings.TrimSpace(content[first : last+1])
 	content = fixUnescapedNewlines(content)
-
 	return content, nil
 }
 
