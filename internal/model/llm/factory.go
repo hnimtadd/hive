@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/cloudwego/eino/components/model"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -59,7 +59,7 @@ func (p *provider) ModelPool(tier Tier) func() model.ToolCallingChatModel {
 
 // GetModel implements [Provider].
 func (p *provider) GetModel(ctx context.Context, tier Tier) (model.ToolCallingChatModel, bool) {
-	logger := trace.Logger(ctx)
+	logger := observability.Logger(ctx)
 	pool, isDefined := p.models[tier]
 	if !isDefined {
 		logger.InfoContext(ctx, "Model with tier is not defined, use default tier", slog.String("tier", string(tier)))

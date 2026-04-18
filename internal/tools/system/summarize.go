@@ -8,7 +8,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/hnimtadd/hive/internal/model/llm"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/pkg/types"
 )
 
@@ -30,7 +30,7 @@ func SummarizeTaskHistory(
 	messages []types.Message,
 	targetTokens int,
 ) (string, error) {
-	logger := trace.Logger(ctx)
+	logger := observability.Logger(ctx)
 
 	// Skip if too few messages
 	if len(messages) < 3 {

@@ -12,7 +12,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/schema"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 )
 
 // ShellSession manages a persistent Shell session.
@@ -378,7 +378,7 @@ func Shell(ctx context.Context, input *ShellInput) (*schema.ToolResult, error) {
 	}
 
 	// Extract trace ID from context
-	traceCtx, ok := trace.TraceContextFromContext(ctx)
+	traceCtx, ok := observability.TraceContextFromContext(ctx)
 	if !ok {
 		return &schema.ToolResult{
 			Parts: []schema.ToolOutputPart{

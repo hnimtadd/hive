@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"google.golang.org/grpc"
 )
 
@@ -17,22 +17,21 @@ func (s *HiveServer) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 		handler grpc.UnaryHandler,
 	) (any, error) {
 		// Create trace context
-		// ctx = trace.ContextWithTraceContext(ctx, trace.NewRootTraceContext())
-		// ctx = middleware.ContextWithMiddleware(ctx, trace.NewTraceMiddleware(s.sessionLogger))
+		ctx = observability.ContextWithTraceContext(ctx, observability.NewRootTraceContext())
 
-		trace.Logger(ctx).Info("grpc request received",
+		observability.Logger(ctx).Info("grpc request received",
 			slog.String("method", info.FullMethod),
 		)
 
 		resp, err := handler(ctx, req)
 
 		if err != nil {
-			trace.Logger(ctx).Error("grpc request failed",
+			observability.Logger(ctx).Error("grpc request failed",
 				slog.String("method", info.FullMethod),
 				slog.Any("error", err),
 			)
 		} else {
-			trace.Logger(ctx).Info("grpc request completed",
+			observability.Logger(ctx).Info("grpc request completed",
 				slog.String("method", info.FullMethod),
 			)
 		}
@@ -52,10 +51,9 @@ func (s *HiveServer) StreamServerInterceptor() grpc.StreamServerInterceptor {
 		ctx := stream.Context()
 
 		// Create trace context
-		// ctx = trace.ContextWithTraceContext(ctx, trace.NewRootTraceContext())
-		// ctx = middleware.ContextWithMiddleware(ctx, trace.NewTraceMiddleware(s.sessionLogger))
+		ctx = observability.ContextWithTraceContext(ctx, observability.NewRootTraceContext())
 
-		trace.Logger(ctx).Info("grpc stream started",
+		observability.Logger(ctx).Info("grpc stream started",
 			slog.String("method", info.FullMethod),
 		)
 
@@ -68,12 +66,12 @@ func (s *HiveServer) StreamServerInterceptor() grpc.StreamServerInterceptor {
 		err := handler(srv, wrapped)
 
 		if err != nil {
-			trace.Logger(ctx).Error("grpc stream failed",
+			observability.Logger(ctx).Error("grpc stream failed",
 				slog.String("method", info.FullMethod),
 				slog.Any("error", err),
 			)
 		} else {
-			trace.Logger(ctx).Info("grpc stream completed",
+			observability.Logger(ctx).Info("grpc stream completed",
 				slog.String("method", info.FullMethod),
 			)
 		}

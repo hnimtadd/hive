@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestTask(id string) *types.HiveTask {
@@ -20,17 +21,17 @@ func TestEnqueueDequeue(t *testing.T) {
 	q := NewMemoryQueue()
 	task := newTestTask("task-1")
 
-	if err := q.Enqueue(task); err != nil {
+	if err := q.Enqueue(context.Background(), task); err != nil {
 		t.Fatalf("Enqueue failed: %v", err)
 	}
 
-	got, _, err := q.Dequeue(context.Background())
+	got, err := q.Dequeue(context.Background())
 	if err != nil {
 		t.Fatalf("Dequeue failed: %v", err)
 	}
 
-	if got.ID != task.ID {
-		t.Fatalf("Expected task ID %s, got %s", task.ID, got.ID)
+	if got.Task.ID != task.ID {
+		t.Fatalf("Expected task ID %s, got %s", task.ID, got.Task.ID)
 	}
 }
 
@@ -39,7 +40,7 @@ func TestDequeueBlocks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, _, err := q.Dequeue(ctx)
+	_, err := q.Dequeue(ctx)
 	if err != context.DeadlineExceeded {
 		t.Fatalf("Expected deadline exceeded, got: %v", err)
 	}
@@ -49,9 +50,9 @@ func TestDequeueWakesOnEnqueue(t *testing.T) {
 	q := NewMemoryQueue()
 
 	// Start dequeue in goroutine (will block)
-	resultCh := make(chan *types.HiveTask, 1)
+	resultCh := make(chan *QueueTask[*types.HiveTask], 1)
 	go func() {
-		task, _, _ := q.Dequeue(context.Background())
+		task, _ := q.Dequeue(context.Background())
 		resultCh <- task
 	}()
 
@@ -59,12 +60,12 @@ func TestDequeueWakesOnEnqueue(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	task := newTestTask("task-1")
-	q.Enqueue(task) //nolint:errcheck
+	q.Enqueue(context.Background(), task) //nolint:errcheck
 
 	select {
 	case got := <-resultCh:
-		if got.ID != task.ID {
-			t.Fatalf("Expected task ID %s, got %s", task.ID, got.ID)
+		if got.Task.ID != task.ID {
+			t.Fatalf("Expected task ID %s, got %s", task.ID, got.Task.ID)
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Dequeue did not wake after enqueue")
@@ -78,8 +79,8 @@ func TestDepth(t *testing.T) {
 		t.Fatal("Expected empty queue depth")
 	}
 
-	q.Enqueue(newTestTask("task-1")) //nolint:errcheck
-	q.Enqueue(newTestTask("task-2")) //nolint:errcheck
+	require.NoError(t, q.Enqueue(context.Background(), newTestTask("task-1")))
+	require.NoError(t, q.Enqueue(context.Background(), newTestTask("task-2")))
 
 	if q.Length() != 2 {
 		t.Fatalf("Expected depth 2, got %d", q.Length())
@@ -97,7 +98,7 @@ func TestClose(t *testing.T) {
 	// Start blocking dequeue
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, err := q.Dequeue(context.Background())
+		_, err := q.Dequeue(context.Background())
 		errCh <- err
 	}()
 
@@ -114,7 +115,7 @@ func TestClose(t *testing.T) {
 	}
 
 	// Enqueue after close should fail
-	if err := q.Enqueue(newTestTask("task-1")); err != ErrQueueClosed {
+	if err := q.Enqueue(context.Background(), newTestTask("task-1")); err != ErrQueueClosed {
 		t.Fatalf("Expected ErrQueueClosed after close, got: %v", err)
 	}
 }
@@ -123,25 +124,25 @@ func TestRequeue_ExceedsMaxRetries(t *testing.T) {
 	q := NewMemoryQueue(WithMaxAttempts(3))
 	task := newTestTask("task-1")
 
-	q.Enqueue(task)                 //nolint:errcheck
+	q.Enqueue(context.TODO(), task) //nolint:errcheck
 	q.Dequeue(context.Background()) //nolint:errcheck
 
 	// First retry
-	if err := q.Enqueue(task); err != nil {
+	if err := q.Enqueue(context.TODO(), task); err != nil {
 		t.Fatalf("First requeue failed: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
 	q.Dequeue(context.Background()) //nolint:errcheck
 
 	// Second retry
-	if err := q.Enqueue(task); err != nil {
+	if err := q.Enqueue(context.TODO(), task); err != nil {
 		t.Fatalf("Second requeue failed: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
 	q.Dequeue(context.Background()) //nolint: errcheck
 
 	// Third retry should fail (max 2)
-	if err := q.Enqueue(task); err != ErrMaxRetries {
+	if err := q.Enqueue(context.TODO(), task); err != ErrMaxRetries {
 		t.Fatalf("Expected ErrMaxRetries, got: %v", err)
 	}
 }
@@ -156,7 +157,7 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			q.Enqueue(newTestTask(string(rune(id)))) //nolint:errcheck
+			q.Enqueue(context.TODO(), newTestTask(string(rune(id)))) //nolint:errcheck
 		}(i)
 	}
 
@@ -167,12 +168,12 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 	}
 
 	// Concurrent dequeuers
-	results := make(chan *types.HiveTask, count)
+	results := make(chan *QueueTask[*types.HiveTask], count)
 	for range count {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			task, _, _ := q.Dequeue(context.Background())
+			task, _ := q.Dequeue(context.Background())
 			results <- task
 		}()
 	}
@@ -182,10 +183,10 @@ func TestConcurrentEnqueueDequeue(t *testing.T) {
 
 	seen := make(map[string]bool)
 	for task := range results {
-		if seen[task.ID] {
+		if seen[task.Task.ID] {
 			t.Fatal("Same task dequeued twice")
 		}
-		seen[task.ID] = true
+		seen[task.Task.ID] = true
 	}
 
 	if len(seen) != count {

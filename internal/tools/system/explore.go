@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/model/llm"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
 )
 
@@ -124,7 +124,7 @@ CRITICAL: Return ONLY a raw JSON object that folow this JSON SCHEMA without mark
 func explore(provider llm.Provider) func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
 	return func(ctx context.Context, input *ExploreInput) (*ExploreOutput, error) {
 		uuid, _ := uuid.NewUUID()
-		logger := trace.Logger(ctx)
+		logger := observability.Logger(ctx)
 		logger.InfoContext(ctx,
 			"explore execution started",
 			slog.String("task", input.Task),

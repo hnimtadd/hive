@@ -15,7 +15,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/pkg/hive"
 	"github.com/hnimtadd/hive/pkg/secret"
 )
@@ -122,9 +122,9 @@ func (h hiveTool) handleNativeTool(ctx context.Context, argumentsInJSON string) 
 		return "", fmt.Errorf("failed to execute tools: %w", err)
 	}
 	if stderr.Len() > 0 {
-		trace.Logger(ctx).DebugContext(ctx, "tool stderr output", slog.String("stderr", stderr.String()))
+		observability.Logger(ctx).DebugContext(ctx, "tool stderr output", slog.String("stderr", stderr.String()))
 	}
-	trace.Logger(ctx).DebugContext(ctx, "tool stdout output", slog.Int("output_length", stdout.Len()))
+	observability.Logger(ctx).DebugContext(ctx, "tool stdout output", slog.Int("output_length", stdout.Len()))
 	return stdout.String(), nil
 }
 

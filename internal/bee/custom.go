@@ -11,7 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hnimtadd/hive/internal/bee/react"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/utils"
 )
@@ -90,7 +90,7 @@ func (a *customBee[I, O]) Capabilities() []string {
 
 // Execute implements [WorkerBee].
 func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
-	logger := trace.Logger(ctx)
+	logger := observability.Logger(ctx)
 	logger.InfoContext(ctx,
 		"worker execution started",
 		slog.String("agent_id", a.id),
@@ -149,7 +149,7 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 			return result.Content
 		}()
 
-		trace.Logger(ctx).Debug("worker output received", slog.Int("content_length", len(content)))
+		observability.Logger(ctx).Debug("worker output received", slog.Int("content_length", len(content)))
 		msgs = append(msgs, result)
 
 		content, err = utils.HeristicallyExtractJSONString(content)

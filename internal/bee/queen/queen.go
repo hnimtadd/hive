@@ -15,8 +15,8 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/model/llm"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/tools/system"
-	"github.com/hnimtadd/hive/internal/trace"
 	context_pkg "github.com/hnimtadd/hive/pkg/context"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -101,7 +101,7 @@ func NewQueenBee(
 
 // Execute implements [QueenBee].
 func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput, error) {
-	logger := trace.Logger(ctx)
+	logger := observability.Logger(ctx)
 	logger.InfoContext(ctx, "queen execution started",
 		slog.String("queen_id", s.id),
 		slog.String("task_id", task.ID),
@@ -177,7 +177,7 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 	var reactAgent *react.Agent
 	msgs := []*schema.Message{schema.UserMessage(taskDescription)}
 	msg, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*QueenOutput, error) {
-		trace.Logger(ctx).Debug("queen executing", slog.Int("message_count", len(msgs)))
+		observability.Logger(ctx).Debug("queen executing", slog.Int("message_count", len(msgs)))
 		reactAgent, err = react.New(react.Config{
 			ID:           s.config.ID,
 			ChatModel:    s.config.ModelPool(),
@@ -191,7 +191,7 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 		// Execute the task using the ReACT agent
 		result, execErr := reactAgent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
-			trace.Logger(ctx).Error("queen ReACT execution failed", slog.Any("error", execErr))
+			observability.Logger(ctx).Error("queen ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr
 		}
 

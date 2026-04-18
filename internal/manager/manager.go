@@ -13,11 +13,11 @@ import (
 // It knows nothing about channels, events, or transport layers.
 type Manager struct {
 	storage storage.Storage
-	queue   queue.Queue
+	queue   queue.Queue[*types.HiveTask]
 }
 
 // NewManager creates a new task manager.
-func NewManager(storage storage.Storage, queue queue.Queue) *Manager {
+func NewManager(storage storage.Storage, queue queue.Queue[*types.HiveTask]) *Manager {
 	return &Manager{
 		storage: storage,
 		queue:   queue,
@@ -34,7 +34,7 @@ func (m *Manager) CreateTask(ctx context.Context, goal string, artifacts map[str
 	}
 
 	// Enqueue for execution
-	if err := m.queue.Enqueue(task); err != nil {
+	if err := m.queue.Enqueue(ctx, task); err != nil {
 		return nil, fmt.Errorf("failed to enqueue task: %w", err)
 	}
 

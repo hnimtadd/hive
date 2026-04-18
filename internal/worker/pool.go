@@ -14,9 +14,9 @@ import (
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/middleware/system"
 	"github.com/hnimtadd/hive/internal/model/llm"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
-	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 	context_pkg "github.com/hnimtadd/hive/pkg/context"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -27,12 +27,12 @@ import (
 // Pool manages a set of worker goroutines that execute tasks from the queue.
 type Pool struct {
 	size          int
-	queue         queue.Queue
+	queue         queue.Queue[*types.HiveTask]
 	storage       storage.Storage
 	channels      *channel.Manager
 	registry      registry.Registry
 	provider      llm.Provider
-	sessionLogger *trace.SessionLogger
+	sessionLogger *observability.SessionLogger
 	cfg           *config.Config
 
 	workers sync.WaitGroup
@@ -45,12 +45,12 @@ type Pool struct {
 // NewPool creates a new worker pool.
 func NewPool(
 	size int,
-	q queue.Queue,
+	q queue.Queue[*types.HiveTask],
 	store storage.Storage,
 	channels *channel.Manager,
 	reg registry.Registry,
 	provider llm.Provider,
-	sessionLogger *trace.SessionLogger,
+	sessionLogger *observability.SessionLogger,
 	cfg *config.Config,
 ) *Pool {
 	return &Pool{
@@ -112,7 +112,7 @@ func (p *Pool) worker(id int) {
 		}
 
 		// Pull task from queue
-		task, attempts, err := p.queue.Dequeue(p.ctx)
+		task, err := p.queue.Dequeue(p.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, queue.ErrQueueClosed) {
 				return // Context cancelled or queue closed, shut down
@@ -121,10 +121,9 @@ func (p *Pool) worker(id int) {
 			continue
 		}
 
-		log.Info("processing task", slog.String("task_id", task.ID))
-
+		log.Info("processing task", slog.String("task_id", task.Task.ID))
 		// Execute task with retry logic
-		p.executeWithRetry(task, attempts)
+		p.executeWithRetry(task)
 	}
 }
 
@@ -135,7 +134,7 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	defer p.channels.Cleanup(task.ID)
 	defer close(ch.DoneCh)
 	eventMW, eventCh := system.EventStreamMiddleware()
-	traceMW := trace.NewTraceMiddleware(p.sessionLogger)
+	traceMW := observability.NewTraceMiddleware(p.sessionLogger)
 	ctx := middleware.ContextWithMiddleware(p.ctx, middleware.JointMiddleware(eventMW, traceMW))
 
 	// Inject context budget for context management
@@ -235,7 +234,8 @@ func (p *Pool) createSupervisor(taskID string) (queen.QueenBee, error) {
 
 // executeWithRetry executes a task with retry support.
 // It runs the task and schedules retry via queue if task is not terminal.
-func (p *Pool) executeWithRetry(task *types.HiveTask, attempt uint) {
+func (p *Pool) executeWithRetry(qt *queue.QueueTask[*types.HiveTask]) {
+	task := qt.Task
 	// Run task with panic recovery
 	func() {
 		defer func() {
@@ -259,7 +259,7 @@ func (p *Pool) executeWithRetry(task *types.HiveTask, attempt uint) {
 
 	// If task is not terminal, schedule retry via queue
 	if !task.Status.IsTerminal() {
-		_ = ScheduleRetry(p.ctx, p.queue, task, attempt+1, nil)
+		_ = p.queue.ScheduleRetry(qt.Ctx, qt)
 	}
 }
 

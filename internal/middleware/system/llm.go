@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/hnimtadd/hive/internal/middleware"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/types"
 )
 
@@ -39,7 +39,7 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 	}
 
 	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
 			slog.String("error", err.Error()),
 		)
@@ -53,7 +53,7 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 		Resp: resp,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
 			slog.String("error", err.Error()),
 		)
@@ -67,7 +67,7 @@ func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, 
 		ToolReq: toolEvent,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
 			slog.String("call_id", toolEvent.CallID),
 			slog.String("error", err.Error()),
@@ -82,7 +82,7 @@ func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID 
 		ToolResp: toolEvent,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
-		trace.Logger(ctx).WarnContext(ctx, "failed to push event",
+		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
 			slog.String("call_id", toolEvent.CallID),
 			slog.String("error", err.Error()),

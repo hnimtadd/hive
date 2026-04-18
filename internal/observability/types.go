@@ -1,4 +1,4 @@
-package trace
+package observability
 
 // LLMRequestLog represents a logged LLM request.
 type LLMRequestLog struct {

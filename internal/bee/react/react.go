@@ -14,7 +14,7 @@ import (
 	einoreact "github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 	"github.com/hnimtadd/hive/internal/middleware"
-	"github.com/hnimtadd/hive/internal/trace"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/types"
 	"github.com/samber/lo"
 )
@@ -82,8 +82,8 @@ func New(cfg Config) (*Agent, error) {
 
 // ExecuteWithMessages runs the ReACT agent with conversation history.
 func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Message) (*schema.Message, error) {
-	ctx, _ = trace.ContextWithChildSpan(ctx)
-	trace.Logger(ctx).DebugContext(ctx, "ReACT agent generating",
+	ctx, _ = observability.ContextWithChildSpan(ctx)
+	observability.Logger(ctx).DebugContext(ctx, "ReACT agent generating",
 		slog.String("agent_id", a.id),
 		slog.Int("message_count", len(messages)),
 	)
@@ -96,12 +96,12 @@ func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Mess
 	result, err := a.agent.Generate(ctx, messages)
 
 	if err != nil {
-		trace.Logger(ctx).ErrorContext(ctx, "ReACT generation failed",
+		observability.Logger(ctx).ErrorContext(ctx, "ReACT generation failed",
 			slog.String("agent_id", a.id),
 			slog.Any("error", err),
 		)
 	} else {
-		trace.Logger(ctx).DebugContext(ctx, "ReACT generation completed",
+		observability.Logger(ctx).DebugContext(ctx, "ReACT generation completed",
 			slog.String("agent_id", a.id),
 			slog.Int("response_length", len(result.Content)),
 		)
@@ -142,7 +142,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
-				ctx, _ = trace.ContextWithChildSpan(ctx)
+				ctx, _ = observability.ContextWithChildSpan(ctx)
 				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
@@ -173,7 +173,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 		EnhancedInvokable: func(next compose.EnhancedInvokableToolEndpoint) compose.EnhancedInvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedInvokableToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
-				ctx, _ = trace.ContextWithChildSpan(ctx)
+				ctx, _ = observability.ContextWithChildSpan(ctx)
 				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
@@ -205,7 +205,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 		EnhancedStreamable: func(next compose.EnhancedStreamableToolEndpoint) compose.EnhancedStreamableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedStreamableToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
-				ctx, _ = trace.ContextWithChildSpan(ctx)
+				ctx, _ = observability.ContextWithChildSpan(ctx)
 				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
@@ -249,7 +249,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 		Streamable: func(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
-				ctx, _ = trace.ContextWithChildSpan(ctx)
+				ctx, _ = observability.ContextWithChildSpan(ctx)
 				toolCall := types.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,

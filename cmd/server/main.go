@@ -8,10 +8,10 @@ import (
 
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/model/llm"
+	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/internal/storage"
 	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
-	"github.com/hnimtadd/hive/internal/trace"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -22,7 +22,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	trace.Initialize(&cfg.Tracing)
+	observability.Initialize(&cfg.Tracing)
 
 	llm, err := llm.NewLLMProvider(&cfg.AI)
 	if err != nil {
