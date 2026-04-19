@@ -1,16 +1,21 @@
 package tui
 
-import "charm.land/lipgloss/v2"
+import (
+	"charm.land/lipgloss/v2"
+)
 
 var (
 	Regular = lipgloss.NewStyle()
 	Bold    = Regular.Bold(true)
 	Padded  = Regular.Padding(0, 1)
 
-	Border      = Regular.Border(lipgloss.NormalBorder())
-	ThickBorder = Regular.Border(lipgloss.ThickBorder()).BorderForeground(Accent)
+	Border           = Regular.Border(lipgloss.NormalBorder())
+	ThickBorder      = Regular.Border(lipgloss.ThickBorder()).BorderForeground(Accent)
+	DefaultContainer = Regular.Background(Background).Foreground(Foreground)
+	Test             = Regular.Background(Blue).Foreground(Red)
 
-	Error = Regular.Background(Red).Foreground(White)
+	Error           = Regular.Background(Red).Foreground(White)
+	AccentContainer = Padded.Background(Accent).Foreground(White)
 )
 
 var (

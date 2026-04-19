@@ -93,7 +93,7 @@ func (f *Model) renderStatus() string {
 			Render(f.info)
 	default:
 		footer += tui.Padded.
-			Background(tui.Foreground).
+			Background(tui.Background).
 			Foreground(tui.Foreground).
 			Width(f.availableFooterMsgWidth(modeWidget, helpWidget, versionWidget)).
 			Render("")
