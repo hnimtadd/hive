@@ -21,31 +21,32 @@ type Model struct {
 	msgs []types.Message
 
 	width, height int
-	textarea      textarea.Model
+	input         textarea.Model
 	viewport      viewport.Model
 }
 
 func NewModel(opts ModelOptions) (*Model, error) {
 	ti := textarea.New()
-	ti.Placeholder = "Type your message... (Enter to send)"
+	ti.Placeholder = ""
 	ti.Prompt = ""
+	ti.CharLimit = 5000
 	ti.ShowLineNumbers = false
-	ti.MaxHeight = 6
 	ti.SetHeight(3)
-	defaultStylesStates := textarea.StyleState{
-		Base:             tui.DefaultContainer,
-		Text:             tui.DefaultContainer,
-		CursorLine:       tui.DefaultContainer,
-		EndOfBuffer:      tui.DefaultContainer,
-		LineNumber:       tui.DefaultContainer,
-		CursorLineNumber: tui.DefaultContainer,
-		Placeholder:      tui.DefaultContainer,
-		Prompt:           tui.DefaultContainer,
-	}
-	ti.SetStyles(textarea.Styles{
-		Blurred: defaultStylesStates,
-		Focused: defaultStylesStates,
-	})
+	ti.MaxHeight = 6
+
+	inputBg := lipgloss.NewStyle().Background(tui.InputBg).Foreground(tui.Foreground)
+	inputText := tui.Regular.Foreground(tui.Foreground)
+
+	styles := textarea.DefaultDarkStyles()
+	styles.Focused.Base = inputBg
+	styles.Focused.CursorLine = inputBg
+	styles.Focused.Text = inputText
+	styles.Blurred.Base = inputBg
+	styles.Blurred.CursorLine = inputBg
+	styles.Blurred.Text = inputText
+	styles.Focused.Placeholder = lipgloss.NewStyle()
+	styles.Blurred.Placeholder = lipgloss.NewStyle()
+	ti.SetStyles(styles)
 
 	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	vp.KeyMap.Left.SetEnabled(false)
@@ -55,7 +56,7 @@ func NewModel(opts ModelOptions) (*Model, error) {
 	model := &Model{
 		msgs:     []types.Message{},
 		viewport: vp,
-		textarea: ti,
+		input:    ti,
 	}
 
 	return model, nil
@@ -82,26 +83,27 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 
+		m.input.SetWidth(m.width)
+
 		m.viewport.SetWidth(m.width)
-		m.viewport.SetHeight(m.height - m.textarea.Height())
-		m.textarea.SetWidth(m.width)
+		m.viewport.SetHeight(m.height - m.input.Height())
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
 
 	case tea.FocusMsg:
-		m.textarea.Focus()
+		m.input.Focus()
 
 	case tea.BlurMsg:
-		m.textarea.Blur()
+		m.input.Blur()
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "enter":
-			if m.textarea.Value() != "" {
-				m.msgs = append(m.msgs, types.NewMessage(types.RoleUser, m.textarea.Value()))
+		case "ctrl+enter":
+			if m.input.Value() != "" {
+				m.msgs = append(m.msgs, types.NewMessage(types.RoleUser, m.input.Value()))
 				m.viewport.SetContent(m.renderMessages())
-				content := m.textarea.Value()
-				m.textarea.Reset()
+				content := m.input.Value()
+				m.input.Reset()
 				m.viewport.GotoBottom()
 				cmds = append(
 					cmds,
@@ -111,12 +113,12 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		default:
 			var cmd tea.Cmd
-			m.textarea, cmd = m.textarea.Update(msg)
+			m.input, cmd = m.input.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	case cursor.BlinkMsg:
 		var cmd tea.Cmd
-		m.textarea, cmd = m.textarea.Update(msg)
+		m.input, cmd = m.input.Update(msg)
 		cmds = append(cmds, cmd)
 	case ResponseMsg:
 		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
@@ -133,9 +135,10 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) View() string {
+	inputBg := lipgloss.NewStyle().Background(tui.InputBg).Width(m.width).Height(m.input.Height())
 	return lipgloss.JoinVertical(lipgloss.Top,
 		m.viewport.View(),
-		tui.Regular.Width(m.width).Height(m.textarea.Height()).AlignHorizontal(lipgloss.Center).Render(m.textarea.View()),
+		inputBg.Render(m.input.View()),
 	)
 }
 
@@ -143,6 +146,7 @@ func (m *Model) renderMessages() string {
 	if len(m.msgs) == 0 {
 		welcome := lipgloss.NewStyle().
 			Width(m.viewport.Width()).
+			Background(tui.Background).
 			Foreground(tui.Muted).
 			Align(lipgloss.Center).
 			Render("Welcome to Hive Agentic Chat!\n\nPress 'i' to enter insert mode and start chatting.\nPress '?' for help.\n\n")

@@ -30,4 +30,5 @@ var (
 	Muted      = lipgloss.Color("#6C757D")
 	Highlight  = lipgloss.Color("#FF4081")
 	White      = lipgloss.Color("#FFFFFF")
+	InputBg    = lipgloss.Color("#2C2C2C")
 )
