@@ -23,6 +23,10 @@ type Model struct {
 	width, height int
 	input         textarea.Model
 	viewport      viewport.Model
+
+	streamingContent strings.Builder
+	isStreaming      bool
+	streamingIndex   int // Index of the message currently streaming (-1 if none)
 }
 
 func NewModel(opts ModelOptions) (*Model, error) {
@@ -54,9 +58,10 @@ func NewModel(opts ModelOptions) (*Model, error) {
 	vp.Style = tui.DefaultContainer
 
 	model := &Model{
-		msgs:     []types.Message{},
-		viewport: vp,
-		input:    ti,
+		msgs:           []types.Message{},
+		viewport:       vp,
+		input:          ti,
+		streamingIndex: -1, // No message streaming initially
 	}
 
 	return model, nil
@@ -120,7 +125,59 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		cmds = append(cmds, cmd)
+
+	case SendMessageMsg:
+		return tui.MsgCmd(msg)
+
+	case StreamChunkMsg:
+		if msg.IsFirst {
+			m.streamingContent.Reset()
+			m.isStreaming = true
+		}
+		m.streamingContent.WriteString(msg.Content)
+
+		// Update or create assistant message
+		if len(m.msgs) > 0 && m.msgs[len(m.msgs)-1].Role == types.RoleAssistant && m.isStreaming {
+			m.msgs[len(m.msgs)-1].Content = m.streamingContent.String()
+			m.streamingIndex = len(m.msgs) - 1
+		} else if m.isStreaming {
+			m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, m.streamingContent.String()))
+			m.streamingIndex = len(m.msgs) - 1
+		}
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+
+	case StreamCompleteMsg:
+		// Update or create assistant message
+		if m.isStreaming {
+			if msg.Error != nil {
+				m.msgs[len(m.msgs)-1].Content = fmt.Sprintf("Error: %s", msg.Error.Error())
+			} else {
+				m.msgs[len(m.msgs)-1].Content = msg.Content
+			}
+		} else {
+			if msg.Error != nil {
+				m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Error: %s", msg.Error.Error())))
+			} else {
+				m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, msg.Content))
+			}
+		}
+		m.streamingIndex = -1
+		m.isStreaming = false
+
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+
+		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
+
+	case FeedbackRequestMsg:
+		// For now, just display the question as an assistant message
+		m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, "Feedback requested: "+msg.Question))
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+
 	case ResponseMsg:
+
 		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
 		if msg.Error != nil {
 			m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Error: %v", msg.Error)))
@@ -153,45 +210,96 @@ func (m *Model) renderMessages() string {
 		return welcome
 	}
 
-	var lines []string
-	for _, msg := range m.msgs {
-		lines = append(lines, m.formatMessage(msg))
+	var cards []string
+	for i, msg := range m.msgs {
+		isStreaming := (i == m.streamingIndex)
+		cards = append(cards, m.formatMessage(msg, isStreaming))
 	}
 	return lipgloss.NewStyle().
 		Width(m.viewport.Width()).
-		Render(strings.Join(lines, "\n"))
+		Background(tui.Background).
+		Render(strings.Join(cards, "\n\n"))
 }
 
-func (m *Model) formatMessage(msg types.Message) string {
-	var roleStyle, contentStyle lipgloss.Style
+func (m *Model) formatMessage(msg types.Message, isStreaming bool) string {
+	// Leave margin for borders
+	cardWidth := max(20, m.viewport.Width()-4)
+
+	var (
+		headerLabel     string
+		streamIndicator string
+	)
+
+	// Configure card style based on role
+	var headerStyle, contentStyle, cardBorder lipgloss.Style
 
 	switch msg.Role {
 	case types.RoleUser:
-		roleStyle = tui.Bold.Foreground(tui.Blue)
-		contentStyle = tui.Regular.Foreground(tui.Foreground)
+		headerLabel = "Input"
+		headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(tui.Blue).
+			Background(tui.InputBg).
+			Padding(0, 1)
+		contentStyle = lipgloss.NewStyle().
+			Width(cardWidth).
+			Background(tui.InputBg).
+			Foreground(tui.Foreground).
+			Padding(0, 1)
+		cardBorder = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tui.Blue).
+			Width(cardWidth)
+
 	case types.RoleAssistant:
-		roleStyle = tui.Bold.Foreground(tui.Green)
-		contentStyle = tui.Regular.Foreground(tui.Foreground)
-	default:
-		roleStyle = tui.Bold.Foreground(tui.Muted)
-		contentStyle = tui.Regular.Foreground(tui.Muted)
-	}
-
-	roleLabel := string(msg.Role)
-	if roleLabel == "user" {
-		roleLabel = "You"
-	}
-
-	rolePart := roleStyle.Render(roleLabel + ":")
-	lines := strings.Split(msg.Content, "\n")
-	var contentLines []string
-	for i, line := range lines {
-		if i == 0 {
-			contentLines = append(contentLines, contentStyle.Render(line))
-		} else {
-			contentLines = append(contentLines, contentStyle.PaddingLeft(lipgloss.Width(roleLabel)+2).Render(line))
+		headerLabel = "Output"
+		if isStreaming {
+			streamIndicator = " thinking..."
 		}
+		headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(tui.Green).
+			Background(tui.InputBg).
+			Padding(0, 1)
+		contentStyle = lipgloss.NewStyle().
+			Width(cardWidth).
+			Background(tui.InputBg).
+			Foreground(tui.Foreground).
+			Padding(0, 1)
+		cardBorder = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tui.Green).
+			Width(cardWidth)
+
+	default:
+		headerLabel = "Message"
+		headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(tui.Muted).
+			Background(tui.InputBg).
+			Padding(0, 1)
+		contentStyle = lipgloss.NewStyle().
+			Width(cardWidth).
+			Background(tui.InputBg).
+			Foreground(tui.Foreground).
+			Padding(0, 1)
+		cardBorder = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tui.Muted).
+			Width(cardWidth)
 	}
 
-	return rolePart + " " + strings.Join(contentLines, "\n")
+	// Format content
+	content := msg.Content
+	if content == "" && isStreaming {
+		content = "..."
+	}
+
+	// Build the card
+	header := headerStyle.Render(headerLabel + streamIndicator)
+	body := contentStyle.Render(content)
+
+	// Combine header and body, then wrap in border
+	card := lipgloss.JoinVertical(lipgloss.Left, header, body)
+	return cardBorder.Render(card)
 }

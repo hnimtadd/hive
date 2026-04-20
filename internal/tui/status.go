@@ -4,6 +4,6 @@ type Status string
 
 const (
 	StatusConnecting Status = "connecting..."
-	StatusReady      Status = "redy"
+	StatusReady      Status = "ready"
 	StatusThinking   Status = "thinking..."
 )
