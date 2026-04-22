@@ -1,35 +1,27 @@
 package chat
 
 import (
-	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/hnimtadd/hive/internal/tui"
-	"github.com/hnimtadd/hive/pkg/types"
 )
 
-type ModelOptions struct {
-	OnSendMessage func(string)
-}
+type ModelOptions struct{}
 
 type Model struct {
-	msgs []types.Message
+	msgs      []tui.Model
+	streaming map[string]tui.Model
 
 	width, height int
 	input         textarea.Model
 	viewport      viewport.Model
-
-	streamingContent strings.Builder
-	isStreaming      bool
-	streamingIndex   int // Index of the message currently streaming (-1 if none)
 }
 
-func NewModel(opts ModelOptions) (*Model, error) {
+func NewModel(_ ModelOptions) (*Model, error) {
 	ti := textarea.New()
 	ti.Placeholder = ""
 	ti.Prompt = ""
@@ -58,24 +50,13 @@ func NewModel(opts ModelOptions) (*Model, error) {
 	vp.Style = tui.DefaultContainer
 
 	model := &Model{
-		msgs:           []types.Message{},
-		viewport:       vp,
-		input:          ti,
-		streamingIndex: -1, // No message streaming initially
+		msgs:      []tui.Model{},
+		viewport:  vp,
+		input:     ti,
+		streaming: make(map[string]tui.Model),
 	}
 
 	return model, nil
-}
-
-func (m *Model) AddMessage(msg types.Message) {
-	m.msgs = append(m.msgs, msg)
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-}
-
-func (m *Model) ClearMessages() {
-	m.msgs = []types.Message{}
-	m.viewport.SetContent(m.renderMessages())
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -89,103 +70,77 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		m.width, m.height = msg.Width, msg.Height
 
 		m.input.SetWidth(m.width)
-
 		m.viewport.SetWidth(m.width)
+
+		for _, model := range m.msgs {
+			model.Update(msg)
+		}
+
 		m.viewport.SetHeight(m.height - m.input.Height())
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
-
-	case tea.FocusMsg:
-		m.input.Focus()
-
-	case tea.BlurMsg:
-		m.input.Blur()
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+enter":
 			if m.input.Value() != "" {
-				m.msgs = append(m.msgs, types.NewMessage(types.RoleUser, m.input.Value()))
-				m.viewport.SetContent(m.renderMessages())
 				content := m.input.Value()
+				m.msgs = append(m.msgs, newChatRequestModel(content, m.width))
+				cmds = append(cmds, tui.MsgCmd(SendMessageMsg{Content: content}))
+				m.viewport.SetContent(m.renderMessages())
 				m.input.Reset()
 				m.viewport.GotoBottom()
-				cmds = append(
-					cmds,
-					tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusThinking)),
-					tui.MsgCmd(SendMessageMsg{Content: content}),
-				)
 			}
 		default:
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
 			cmds = append(cmds, cmd)
 		}
-	case cursor.BlinkMsg:
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		cmds = append(cmds, cmd)
 
-	case SendMessageMsg:
-		return tui.MsgCmd(msg)
+	case StreamStartMsg:
+		model := newChatResponseModel(msg.TaskID, m.width)
+		m.msgs = append(m.msgs, model)
+		m.streaming[msg.TaskID] = model
+		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusThinking)))
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
 
 	case StreamChunkMsg:
-		if msg.IsFirst {
-			m.streamingContent.Reset()
-			m.isStreaming = true
+		model, isStreaming := m.streaming[msg.TaskID]
+		if isStreaming {
+			cmds = append(cmds, model.Update(msg))
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
 		}
-		m.streamingContent.WriteString(msg.Content)
-
-		// Update or create assistant message
-		if len(m.msgs) > 0 && m.msgs[len(m.msgs)-1].Role == types.RoleAssistant && m.isStreaming {
-			m.msgs[len(m.msgs)-1].Content = m.streamingContent.String()
-			m.streamingIndex = len(m.msgs) - 1
-		} else if m.isStreaming {
-			m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, m.streamingContent.String()))
-			m.streamingIndex = len(m.msgs) - 1
-		}
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
 
 	case StreamCompleteMsg:
-		// Update or create assistant message
-		if m.isStreaming {
-			if msg.Error != nil {
-				m.msgs[len(m.msgs)-1].Content = fmt.Sprintf("Error: %s", msg.Error.Error())
-			} else {
-				m.msgs[len(m.msgs)-1].Content = msg.Content
-			}
-		} else {
-			if msg.Error != nil {
-				m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Error: %s", msg.Error.Error())))
-			} else {
-				m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, msg.Content))
-			}
-		}
-		m.streamingIndex = -1
-		m.isStreaming = false
+		model, isStreaming := m.streaming[msg.TaskID]
+		if isStreaming {
+			cmds = append(cmds, model.Update(msg))
+			delete(m.streaming, msg.TaskID)
 
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		}
 
 		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
 
 	case FeedbackRequestMsg:
 		// For now, just display the question as an assistant message
-		m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, "Feedback requested: "+msg.Question))
+		m.msgs = append(m.msgs, newChatRequestModel(msg.Question, m.width))
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
 
-	case ResponseMsg:
+	case tea.BlurMsg:
+		m.input.Blur()
 
-		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
-		if msg.Error != nil {
-			m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Error: %v", msg.Error)))
-		} else {
-			m.msgs = append(m.msgs, types.NewMessage(types.RoleAssistant, msg.Content))
-		}
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
+	case tea.FocusMsg:
+		m.input.Focus()
+
+	default:
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
 	return tea.Batch(cmds...)
@@ -211,95 +166,11 @@ func (m *Model) renderMessages() string {
 	}
 
 	var cards []string
-	for i, msg := range m.msgs {
-		isStreaming := (i == m.streamingIndex)
-		cards = append(cards, m.formatMessage(msg, isStreaming))
+	for _, msg := range m.msgs {
+		cards = append(cards, msg.View())
 	}
 	return lipgloss.NewStyle().
 		Width(m.viewport.Width()).
 		Background(tui.Background).
-		Render(strings.Join(cards, "\n\n"))
-}
-
-func (m *Model) formatMessage(msg types.Message, isStreaming bool) string {
-	// Leave margin for borders
-	cardWidth := max(20, m.viewport.Width()-4)
-
-	var (
-		headerLabel     string
-		streamIndicator string
-	)
-
-	// Configure card style based on role
-	var headerStyle, contentStyle, cardBorder lipgloss.Style
-
-	switch msg.Role {
-	case types.RoleUser:
-		headerLabel = "Input"
-		headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(tui.Blue).
-			Background(tui.InputBg).
-			Padding(0, 1)
-		contentStyle = lipgloss.NewStyle().
-			Width(cardWidth).
-			Background(tui.InputBg).
-			Foreground(tui.Foreground).
-			Padding(0, 1)
-		cardBorder = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tui.Blue).
-			Width(cardWidth)
-
-	case types.RoleAssistant:
-		headerLabel = "Output"
-		if isStreaming {
-			streamIndicator = " thinking..."
-		}
-		headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(tui.Green).
-			Background(tui.InputBg).
-			Padding(0, 1)
-		contentStyle = lipgloss.NewStyle().
-			Width(cardWidth).
-			Background(tui.InputBg).
-			Foreground(tui.Foreground).
-			Padding(0, 1)
-		cardBorder = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tui.Green).
-			Width(cardWidth)
-
-	default:
-		headerLabel = "Message"
-		headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(tui.Muted).
-			Background(tui.InputBg).
-			Padding(0, 1)
-		contentStyle = lipgloss.NewStyle().
-			Width(cardWidth).
-			Background(tui.InputBg).
-			Foreground(tui.Foreground).
-			Padding(0, 1)
-		cardBorder = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tui.Muted).
-			Width(cardWidth)
-	}
-
-	// Format content
-	content := msg.Content
-	if content == "" && isStreaming {
-		content = "..."
-	}
-
-	// Build the card
-	header := headerStyle.Render(headerLabel + streamIndicator)
-	body := contentStyle.Render(content)
-
-	// Combine header and body, then wrap in border
-	card := lipgloss.JoinVertical(lipgloss.Left, header, body)
-	return cardBorder.Render(card)
+		Render(strings.Join(cards, "\n"))
 }

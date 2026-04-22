@@ -11,3 +11,7 @@ vet:
 .PHONY: clean
 clean:
 	rm -rf gen/*
+
+.PHONY: dev
+dev:
+	nix develop -c $$SHELL

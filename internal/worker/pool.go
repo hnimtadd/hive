@@ -262,11 +262,9 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 					slog.Any("panic", r),
 				)
 				task.Status = types.TaskStatusFailed
-				task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Worker panic: %v", r)))
 				_ = p.storage.Update(task)
 				ch := p.channels.ForTask(task.ID)
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Worker panic: %v", r))
-				p.channels.Cleanup(task.ID)
 			}
 		}()
 
@@ -277,6 +275,8 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 	if !task.Status.IsTerminal() {
 		_ = p.queue.ScheduleRetry(p.ctx, task)
 	} else {
+		ch := p.channels.ForTask(task.ID)
+		ch.CloseOutput()
 		p.channels.Cleanup(task.ID)
 	}
 }

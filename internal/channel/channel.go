@@ -14,6 +14,21 @@ import (
 type TaskChannels struct {
 	InputCh  chan *agentv1.ExecuteTaskRequest
 	OutputCh chan *agentv1.ExecuteTaskResponse
+
+	closeInput  sync.Once
+	closeOutput sync.Once
+}
+
+func (t *TaskChannels) CloseInput() {
+	t.closeInput.Do(func() {
+		close(t.InputCh)
+	})
+}
+
+func (t *TaskChannels) CloseOutput() {
+	t.closeOutput.Do(func() {
+		close(t.OutputCh)
+	})
 }
 
 // Manager manages per-task communication channels.
@@ -46,9 +61,5 @@ func (m *Manager) ForTask(taskID string) *TaskChannels {
 // Cleanup closes and removes channels for a task.
 // Safe to call multiple times.
 func (m *Manager) Cleanup(taskID string) {
-	if ch, ok := m.channels.LoadAndDelete(taskID); ok {
-		tasksCh := ch.(*TaskChannels) //nolint:errcheck // this is always true.
-		close(tasksCh.OutputCh)
-		close(tasksCh.InputCh)
-	}
+	m.channels.Delete(taskID)
 }

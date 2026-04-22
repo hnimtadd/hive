@@ -4,23 +4,24 @@ type SendMessageMsg struct {
 	Content string
 }
 
-type ResponseMsg struct {
-	Content string
-	Error   error
+type StreamStartMsg struct {
+	TaskID string
 }
 
 type StreamChunkMsg struct {
+	TaskID  string
 	Content string
 	Status  string
-	IsFirst bool
 }
 
 type StreamCompleteMsg struct {
+	TaskID  string
 	Success bool
 	Content string
 	Error   error
 }
 
 type FeedbackRequestMsg struct {
+	TaskID   string
 	Question string
 }

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytedance/gopkg/util/logger"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/manager"
@@ -162,7 +163,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 		return err
 	}
 	ch := s.channelManager.ForTask(task.ID)
-	defer s.channelManager.Cleanup(task.ID)
+	defer ch.CloseInput()
 
 	ch.OutputCh <- agentv1.NewExecuteTaskResponseACK(task.ID)
 
@@ -248,6 +249,7 @@ func (s *HiveServer) forwardOutput(
 			if !ok {
 				return nil
 			}
+			logger.Info("forward output", slog.Any("msg", msg.String()))
 
 			if err := srv.Send(msg); err != nil {
 				return fmt.Errorf("server: output stream error: %w", err)

@@ -49,10 +49,7 @@ func newModel(cfg *config.Config) (*model, error) {
 	if err != nil {
 		return nil, err
 	}
-	chat, err := chat.NewModel(chat.ModelOptions{
-		OnSendMessage: func(_ string) {
-		},
-	})
+	chat, err := chat.NewModel(chat.ModelOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +112,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Width:  m.width - 2,
 		})
 
+	case tui.ErrorMsg, tui.InfoMsg:
+		cmd = append(cmd, m.footer.Update(msg))
+
 	case tui.ChangeModeMsg:
 		if m.mode != tui.Mode(msg) {
 			m.mode = tui.Mode(msg)
@@ -132,13 +132,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.header.Update(msg)
 		}
 
-	case tui.ClearChatMsg:
-		m.chat.ClearMessages()
-
 	case chat.SendMessageMsg:
 		cmd = append(cmd, m.executeTask(msg.Content))
 
-	case chat.StreamChunkMsg, chat.StreamCompleteMsg, chat.FeedbackRequestMsg, chat.ResponseMsg:
+	case chat.StreamStartMsg, chat.StreamChunkMsg, chat.StreamCompleteMsg, chat.FeedbackRequestMsg:
 		// Forward streaming messages to chat model
 		cmd = append(cmd, m.chat.Update(msg))
 
@@ -147,8 +144,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		select {
 		case msg, ok := <-m.msgCh:
 			if ok {
-				// Forward the message to Update to be processed
-				cmd = append(cmd, func() tea.Msg { return msg })
+				cmd = append(cmd, tui.MsgCmd(msg))
 			}
 		default:
 			// No message ready
@@ -207,73 +203,83 @@ func (m *model) executeTask(content string) tea.Cmd {
 
 // listenToStream creates a command that executes the task and listens to streaming responses
 func (m *model) listenToStream(content string) tea.Cmd {
-	responseCh := make(chan *agentv1.ExecuteTaskResponse, 100)
+	responseCh, err := m.grpcClient.ExecuteTaskWithChannel(m.ctx, content)
+	if err != nil {
+		return tui.MsgCmd(tui.ErrorMsg(err))
+	}
 
 	go func() {
-		defer close(responseCh)
-		err := m.grpcClient.ExecuteTaskWithChannel(m.ctx, content, responseCh)
-		if err != nil {
+		taskID := ""
+		for {
 			select {
-			case m.msgCh <- chat.ResponseMsg{
-				Content: "",
-				Error:   err,
-			}:
 			case <-m.ctx.Done():
 				return
-			}
-		}
-	}()
 
-	go func() {
-		isFirst := true
-		for update := range responseCh {
-			switch msg := update.GetPayload().(type) {
-			case *agentv1.ExecuteTaskResponse_Update:
-				select {
-				case m.msgCh <- chat.StreamChunkMsg{
-					Content: msg.Update.GetContent(),
-					Status:  msg.Update.GetStatus(),
-					IsFirst: isFirst,
-				}:
-				case <-m.ctx.Done():
-					return
-				}
-				isFirst = false
-
-			case *agentv1.ExecuteTaskResponse_Success:
-				select {
-				case m.msgCh <- chat.StreamCompleteMsg{
-					Success: true,
-					Content: msg.Success.GetContent(),
-					Error:   nil,
-				}:
-				case <-m.ctx.Done():
+			case update, ok := <-responseCh:
+				if !ok {
 					return
 				}
 
-			case *agentv1.ExecuteTaskResponse_Error:
-				select {
-				case m.msgCh <- chat.StreamCompleteMsg{
-					Success: false,
-					Content: "",
-					Error:   errors.New(msg.Error.GetMessage()),
-				}:
-				case <-m.ctx.Done():
-					return
-				}
+				switch msg := update.GetPayload().(type) {
+				case *agentv1.ExecuteTaskResponse_Ack:
+					taskID = msg.Ack.GetTaskId()
+					select {
+					case m.msgCh <- chat.StreamStartMsg{
+						TaskID: taskID,
+					}:
+					case <-m.ctx.Done():
+						return
+					}
 
-			case *agentv1.ExecuteTaskResponse_Feedback:
-				select {
-				case m.msgCh <- chat.FeedbackRequestMsg{
-					Question: msg.Feedback.GetQuestion(),
-				}:
-				case <-m.ctx.Done():
-					return
+				case *agentv1.ExecuteTaskResponse_Update:
+					select {
+					case m.msgCh <- chat.StreamChunkMsg{
+						Content: msg.Update.GetContent(),
+						Status:  msg.Update.GetStatus(),
+						TaskID:  taskID,
+					}:
+					case <-m.ctx.Done():
+						return
+					}
+
+				case *agentv1.ExecuteTaskResponse_Success:
+					select {
+					case m.msgCh <- chat.StreamCompleteMsg{
+						Success: true,
+						Content: msg.Success.GetContent(),
+						Error:   nil,
+						TaskID:  taskID,
+					}:
+					case <-m.ctx.Done():
+						return
+					}
+
+				case *agentv1.ExecuteTaskResponse_Error:
+					select {
+					case m.msgCh <- chat.StreamCompleteMsg{
+						Success: false,
+						Content: "",
+						Error:   errors.New(msg.Error.GetMessage()),
+						TaskID:  taskID,
+					}:
+					case <-m.ctx.Done():
+						return
+					}
+
+				case *agentv1.ExecuteTaskResponse_Feedback:
+					select {
+					case m.msgCh <- chat.FeedbackRequestMsg{
+						Question: msg.Feedback.GetQuestion(),
+						TaskID:   taskID,
+					}:
+					case <-m.ctx.Done():
+						return
+					}
 				}
 			}
 		}
 	}()
 
 	// The ticker in Init() will poll msgCh continuously
-	return nil
+	return tui.NoopCmd
 }

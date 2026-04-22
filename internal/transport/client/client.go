@@ -34,20 +34,18 @@ func (c *Client) ExecuteTaskWithChannel(ctx context.Context, command string) (<-
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection to server: %w", err)
 	}
-	client := agentv1.NewAgentServiceClient(cc)
-	srv, err := client.ExecuteTask(ctx)
-	if err != nil {
-		cc.Close()      //nolint: gosec// this is acceptable
-		srv.CloseSend() //nolint: errcheck,gosec// this is acceptable
-		return nil, fmt.Errorf("failed to execute task: %w", err)
-	}
-
 	responseCh := make(chan *agentv1.ExecuteTaskResponse, 100)
 
 	go func() {
-		defer srv.CloseSend() //nolint: errcheck// this is acceptable
 		defer cc.Close()
 		defer close(responseCh)
+
+		client := agentv1.NewAgentServiceClient(cc)
+		srv, err := client.ExecuteTask(ctx)
+		if err != nil {
+			return
+		}
+		defer srv.CloseSend() //nolint: errcheck// this is acceptable
 
 		task := types.NewHiveTask(command, nil)
 		req := &agentv1.ExecuteTaskRequest{
