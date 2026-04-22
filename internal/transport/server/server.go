@@ -140,6 +140,7 @@ func (s *HiveServer) Stop() {
 func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse]) error {
 	ctx := srv.Context()
 	ctx, cancel := context.WithCancelCause(ctx)
+	logger := observability.Logger(ctx)
 
 	msg, err := srv.Recv()
 	if err != nil {
@@ -155,6 +156,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	}
 	task, err := s.taskManager.CreateTask(ctx, req.GetGlobalGoal(), req.GetInitialArtifacts())
 	if err != nil {
+		logger.Error("server: failed to create task", slog.Any("error", err))
 		err = fmt.Errorf("server: failed to create task: %w", err)
 		cancel(err)
 		return err
@@ -162,31 +164,31 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	ch := s.channelManager.ForTask(task.ID)
 	defer s.channelManager.Cleanup(task.ID)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		if err = s.forwardInput(ctx, srv, ch.InputCh); err != nil {
-			if errors.Is(err, context.Canceled) {
-				cancel(nil)
-			} else {
-				cancel(err)
-			}
-		}
-	}()
 	ch.OutputCh <- agentv1.NewExecuteTaskResponseACK(task.ID)
 
-	go func() {
-		defer wg.Done()
-		if err = s.forwardOutput(ctx, srv, ch.OutputCh); err != nil {
-			if errors.Is(err, context.Canceled) {
-				cancel(nil)
-			} else {
-				cancel(err)
-			}
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		err = s.forwardInput(ctx, srv, ch.InputCh)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("server: failed to forward output", slog.Any("error", err))
+			cancel(err)
+			return
 		}
-	}()
+		logger.Error("forward input return")
+		cancel(nil)
+	})
+
+	wg.Go(func() {
+		err = s.forwardOutput(ctx, srv, ch.OutputCh)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("server: failed to forward output", slog.Any("error", err))
+			cancel(err)
+			return
+		}
+		logger.Error("forward output return")
+		cancel(nil)
+	})
 
 	wg.Wait()
 	if err = context.Cause(ctx); errors.Is(err, context.Canceled) {
@@ -199,14 +201,26 @@ func (s *HiveServer) forwardInput(
 	ctx context.Context,
 	srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse],
 	ch chan *agentv1.ExecuteTaskRequest) error {
+	inputCh := make(chan *agentv1.ExecuteTaskRequest, 10)
+	go func() {
+		defer close(inputCh)
+		for {
+			msg, err := srv.Recv()
+			if err != nil {
+				return
+			}
+			inputCh <- msg
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
-			msg, err := srv.Recv()
-			if err != nil {
-				return fmt.Errorf("server: failed to receive user message: %w", err)
+
+		case msg, ok := <-inputCh:
+			if !ok {
+				return nil
 			}
 
 			// Use select here to avoid blocking forever on a full channel if the context was
