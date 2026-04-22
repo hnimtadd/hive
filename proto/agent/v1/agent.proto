@@ -11,6 +11,7 @@ service AgentService {
   // ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
   rpc ExecuteTask(stream ExecuteTaskRequest) returns (stream ExecuteTaskResponse);
 }
+
 message ExecuteTaskRequest {
   google.protobuf.Timestamp at = 1;
 
@@ -41,7 +42,12 @@ message ExecuteTaskResponse {
     SuccessUpdate success = 3; // The final output to the user
     ErrorUpdate error = 4; // Non-fatal or fatal error details
     FeedbackRequire feedback = 5; // in the middle feedback require
+    RequestAck ack = 6; // ack of the request including the initial information like request ID.
   }
+}
+
+message RequestAck {
+  string task_id = 1;
 }
 
 message InProgressUpdate {

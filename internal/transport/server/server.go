@@ -175,6 +175,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 			}
 		}
 	}()
+	ch.OutputCh <- agentv1.NewExecuteTaskResponseACK(task.ID)
 
 	go func() {
 		defer wg.Done()
