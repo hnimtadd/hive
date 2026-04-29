@@ -52,7 +52,7 @@ func NewExecuteTaskResponseSuccess(output string) *ExecuteTaskResponse {
 func NewExecuteTaskResponseACK(taskID string) *ExecuteTaskResponse {
 	return &ExecuteTaskResponse{
 		Payload: &ExecuteTaskResponse_Ack{
-			Ack: &AckRequest{
+			Ack: &RequestAck{
 				TaskId: taskID,
 			},
 		},

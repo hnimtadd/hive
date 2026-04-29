@@ -257,3 +257,16 @@ func (s *HiveServer) forwardOutput(
 		}
 	}
 }
+
+// OpenSession implements [agentv1.AgentServiceServer].
+func (s *HiveServer) OpenSession(context.Context, *agentv1.OpenSessionRequest) (*agentv1.OpenSessionResponse, error) {
+	// TODO: 1. create new session with storage, and return sessionID to the client
+	panic("unimplemented")
+}
+
+// SessionSendMessage implements [agentv1.AgentServiceServer].
+func (s *HiveServer) SessionSendMessage(grpc.BidiStreamingServer[agentv1.SessionSendMessageRequest, agentv1.SessionSendMessageResponse]) error {
+	// TODO: exepect the session to be open at this time (sessionID is valid, so server will load the session from storage)
+	// - for every incomming request, handle it like task currently, but we don't close the stream until the session is closed from client ( we might need to unified the handler logic to handle this and task)
+	panic("unimplemented")
+}

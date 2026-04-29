@@ -10,6 +10,51 @@ option go_package = "gen/agent/v1;agentv1";
 service AgentService {
   // ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
   rpc ExecuteTask(stream ExecuteTaskRequest) returns (stream ExecuteTaskResponse);
+
+  // OpenSession opens new hive session.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+
+  rpc SessionSendMessage(stream SessionSendMessageRequest) returns (stream SessionSendMessageResponse);
+}
+
+message SessionSendMessageRequest {
+  google.protobuf.Timestamp at = 1;
+
+  oneof payload {
+    TaskRequest request = 2; // Sent first to begin the loop
+    UserFeedback feedback = 3; // Sent when the supervisor ask a question
+    Cancel cancel = 4; // Sent if the user cancel the CLI request
+  }
+}
+
+message SessionSendMessageResponse {
+  google.protobuf.Timestamp at = 1;
+  string id = 2;
+
+  oneof payload {
+    InProgressUpdate update = 3; // The Supervisor's reasoning
+    SuccessUpdate success = 4; // The final output to the user
+    ErrorUpdate error = 5; // Non-fatal or fatal error details
+    FeedbackRequire feedback = 6; // in the middle feedback require
+    RequestAck ack = 7; // ack of the request including the initial information like request ID.
+  }
+}
+
+message OpenSessionRequest {
+  google.protobuf.Timestamp at = 1;
+  oneof payload {
+    string session_id = 2;
+    bool is_new = 3;
+  }
+}
+
+message OpenSessionResponse {
+  google.protobuf.Timestamp at = 1;
+
+  oneof payload {
+    string session_location = 2;
+    string session_id = 3;
+  }
 }
 
 message ExecuteTaskRequest {

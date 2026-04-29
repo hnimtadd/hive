@@ -57,12 +57,3 @@ func (m *Manager) UpdateTask(task *types.HiveTask) error {
 	}
 	return nil
 }
-
-// IsTerminal returns true if the task has reached a terminal state (completed or failed).
-func (m *Manager) IsTerminal(id string) (bool, error) {
-	task, err := m.LoadTask(id)
-	if err != nil {
-		return false, err
-	}
-	return task.Status == types.TaskStatusCompleted || task.Status == types.TaskStatusFailed, nil
-}

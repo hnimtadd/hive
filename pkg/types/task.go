@@ -3,7 +3,6 @@ package types
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/google/uuid"
 )
@@ -39,7 +38,6 @@ type HiveTask struct {
 
 	Context context.Context `json:"-"`
 	Retries uint            `json:"retries"`
-	once    sync.Once
 }
 
 // NewHiveTask creates a new task with default values.
@@ -83,10 +81,7 @@ func (t *HiveTask) CompactJSONString() (string, error) {
 	}
 
 	// Keep only the last 3 messages
-	recentCount := 3
-	if len(t.Messages) < recentCount {
-		recentCount = len(t.Messages)
-	}
+	recentCount := min(3, len(t.Messages))
 
 	compact := compactView{
 		ID:               t.ID,

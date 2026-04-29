@@ -19,7 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_ExecuteTask_FullMethodName = "/agent.v1.AgentService/ExecuteTask"
+	AgentService_ExecuteTask_FullMethodName        = "/agent.v1.AgentService/ExecuteTask"
+	AgentService_OpenSession_FullMethodName        = "/agent.v1.AgentService/OpenSession"
+	AgentService_SessionSendMessage_FullMethodName = "/agent.v1.AgentService/SessionSendMessage"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -30,6 +32,9 @@ const (
 type AgentServiceClient interface {
 	// ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
 	ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse], error)
+	// OpenSession opens new hive session.
+	OpenSession(ctx context.Context, in *OpenSessionRequest, opts ...grpc.CallOption) (*OpenSessionResponse, error)
+	SessionSendMessage(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SessionSendMessageRequest, SessionSendMessageResponse], error)
 }
 
 type agentServiceClient struct {
@@ -53,6 +58,29 @@ func (c *agentServiceClient) ExecuteTask(ctx context.Context, opts ...grpc.CallO
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_ExecuteTaskClient = grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse]
 
+func (c *agentServiceClient) OpenSession(ctx context.Context, in *OpenSessionRequest, opts ...grpc.CallOption) (*OpenSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OpenSessionResponse)
+	err := c.cc.Invoke(ctx, AgentService_OpenSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) SessionSendMessage(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SessionSendMessageRequest, SessionSendMessageResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[1], AgentService_SessionSendMessage_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SessionSendMessageRequest, SessionSendMessageResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_SessionSendMessageClient = grpc.BidiStreamingClient[SessionSendMessageRequest, SessionSendMessageResponse]
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -61,6 +89,9 @@ type AgentService_ExecuteTaskClient = grpc.BidiStreamingClient[ExecuteTaskReques
 type AgentServiceServer interface {
 	// ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
 	ExecuteTask(grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]) error
+	// OpenSession opens new hive session.
+	OpenSession(context.Context, *OpenSessionRequest) (*OpenSessionResponse, error)
+	SessionSendMessage(grpc.BidiStreamingServer[SessionSendMessageRequest, SessionSendMessageResponse]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -73,6 +104,12 @@ type UnimplementedAgentServiceServer struct{}
 
 func (UnimplementedAgentServiceServer) ExecuteTask(grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
+}
+func (UnimplementedAgentServiceServer) OpenSession(context.Context, *OpenSessionRequest) (*OpenSessionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenSession not implemented")
+}
+func (UnimplementedAgentServiceServer) SessionSendMessage(grpc.BidiStreamingServer[SessionSendMessageRequest, SessionSendMessageResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method SessionSendMessage not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -102,17 +139,53 @@ func _AgentService_ExecuteTask_Handler(srv interface{}, stream grpc.ServerStream
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_ExecuteTaskServer = grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]
 
+func _AgentService_OpenSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).OpenSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_OpenSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).OpenSession(ctx, req.(*OpenSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_SessionSendMessage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServiceServer).SessionSendMessage(&grpc.GenericServerStream[SessionSendMessageRequest, SessionSendMessageResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_SessionSendMessageServer = grpc.BidiStreamingServer[SessionSendMessageRequest, SessionSendMessageResponse]
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var AgentService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "agent.v1.AgentService",
 	HandlerType: (*AgentServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "OpenSession",
+			Handler:    _AgentService_OpenSession_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "ExecuteTask",
 			Handler:       _AgentService_ExecuteTask_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "SessionSendMessage",
+			Handler:       _AgentService_SessionSendMessage_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},
