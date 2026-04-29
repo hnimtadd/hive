@@ -144,6 +144,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chat.Update(tea.FocusMsg{})
 			}
 			m.footer.Update(msg)
+			// Forward the mode change to chat so inputbar can update
+			cmd = append(cmd, m.chat.Update(msg))
 		}
 	case tui.ChangeStatusMsg:
 		if m.status != tui.Status(msg) {

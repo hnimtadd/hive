@@ -2,6 +2,8 @@ module github.com/hnimtadd/hive
 
 go 1.25.0
 
+replace charm.land/bubbles/v2 v2.1.0 => github.com/hnimtadd/bubbles/v2 v2.1.1-fix-textarea
+
 require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.6
