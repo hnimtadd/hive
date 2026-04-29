@@ -20,3 +20,15 @@ func (m Mode) Short() string {
 		return "?"
 	}
 }
+
+// Long returns the full display name for the mode.
+func (m Mode) Long() string {
+	switch m {
+	case ModeInsert:
+		return "Insert Mode"
+	case ModeNormal:
+		return "Normal Mode"
+	default:
+		return "Unknown Mode"
+	}
+}

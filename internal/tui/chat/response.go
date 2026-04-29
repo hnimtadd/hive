@@ -7,12 +7,11 @@ import (
 )
 
 type chatResponseModel struct {
-	id       string
-	status   string
-	thinking string
-	output   string
-	error    string
-	state    state
+	id      string
+	status  string
+	content string // Unified field for both streaming and final content
+	error   string
+	state   state
 
 	width int
 }
@@ -46,11 +45,11 @@ func (c *chatResponseModel) Update(msg tea.Msg) tea.Cmd {
 		c.state = stateThinking
 	case StreamChunkMsg:
 		c.status = msg.Status
-		c.thinking += msg.Content
+		c.content += msg.Content
 	case StreamCompleteMsg:
 		if msg.Success {
 			c.state = stateSucceed
-			c.output = msg.Content
+			c.content = msg.Content
 		} else {
 			c.state = stateError
 			c.error = msg.Error.Error()
@@ -63,8 +62,8 @@ func (c *chatResponseModel) Update(msg tea.Msg) tea.Cmd {
 func (c *chatResponseModel) View() string {
 	// Configure card style based on role
 	var (
-		headerTile string
-		content    string
+		headerTitle string
+		content     string
 	)
 
 	headerStyle := lipgloss.NewStyle().
@@ -83,25 +82,25 @@ func (c *chatResponseModel) View() string {
 
 	switch c.state {
 	case stateThinking:
-		headerTile = "thinking..."
+		headerTitle = "thinking..."
 		headerStyle = headerStyle.Foreground(tui.Accent)
 		cardBorder = cardBorder.BorderForeground(tui.Accent)
-		content = c.thinking
+		content = c.content
 	case stateError:
-		headerTile = "error"
+		headerTitle = "error"
 		headerStyle = headerStyle.Foreground(tui.Red)
 		cardBorder = cardBorder.BorderForeground(tui.Red)
 		content = c.error
 	case stateSucceed:
-		headerTile = "output"
+		headerTitle = "output"
 		headerStyle = headerStyle.Foreground(tui.Green)
 		cardBorder = cardBorder.BorderForeground(tui.Green)
-		content = c.output
+		content = c.content
 	default:
 		return ""
 	}
 	// Build the card
-	header := headerStyle.Render(headerTile)
+	header := headerStyle.Render(headerTitle)
 	body := contentStyle.Render(content)
 
 	// Combine header and body, then wrap in border

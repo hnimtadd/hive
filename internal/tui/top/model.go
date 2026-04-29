@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -14,6 +13,7 @@ import (
 	"github.com/hnimtadd/hive/internal/tui/chat"
 	"github.com/hnimtadd/hive/internal/tui/footer"
 	"github.com/hnimtadd/hive/internal/tui/header"
+	"github.com/hnimtadd/hive/internal/tui/help"
 	"github.com/hnimtadd/hive/internal/tui/keys"
 	"github.com/hnimtadd/hive/pkg/config"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
@@ -28,6 +28,7 @@ type model struct {
 	header        *header.Model
 	chat          *chat.Model
 	footer        *footer.Model
+	help          *help.Model
 	height, width int
 
 	grpcClient *client.Client
@@ -59,6 +60,8 @@ func newModel(cfg *config.Config) (*model, error) {
 		return nil, fmt.Errorf("failed to create grpc client: %w", err)
 	}
 
+	helpModel := help.NewModel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &model{
@@ -67,6 +70,7 @@ func newModel(cfg *config.Config) (*model, error) {
 		header:     header,
 		footer:     footer,
 		chat:       chat,
+		help:       helpModel,
 		grpcClient: grpcClient,
 		msgCh:      make(chan tea.Msg, 100),
 		ctx:        ctx,
@@ -84,13 +88,23 @@ func (m *model) cleanup() {
 
 // Init implements [tea.Model].
 func (m *model) Init() tea.Cmd {
-	// Start the message pump ticker
-	return tea.Tick(time.Millisecond*10, func(t time.Time) tea.Msg {
-		return tickMsg(t)
-	})
+	return m.waitForChannelMessage()
 }
 
-type tickMsg time.Time
+// waitForChannelMessage creates a command that waits for messages from msgCh.
+func (m *model) waitForChannelMessage() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case msg, ok := <-m.msgCh:
+			if !ok {
+				return nil
+			}
+			return msg
+		case <-m.ctx.Done():
+			return nil
+		}
+	}
+}
 
 // Update implements [tea.Model].
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -108,6 +122,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 		m.chat.Update(tea.WindowSizeMsg{
+			Height: msg.Height - tui.FooterHeight - tui.HeaderHeight - 2,
+			Width:  m.width - 2,
+		})
+
+		m.help.Update(tea.WindowSizeMsg{
 			Height: msg.Height - tui.FooterHeight - tui.HeaderHeight - 2,
 			Width:  m.width - 2,
 		})
@@ -132,28 +151,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.header.Update(msg)
 		}
 
+	case tui.ToggleHelpMsg:
+		m.help.Toggle()
+
 	case chat.SendMessageMsg:
 		cmd = append(cmd, m.executeTask(msg.Content))
 
 	case chat.StreamStartMsg, chat.StreamChunkMsg, chat.StreamCompleteMsg, chat.FeedbackRequestMsg:
 		// Forward streaming messages to chat model
 		cmd = append(cmd, m.chat.Update(msg))
+		// Chain the next channel read
+		cmd = append(cmd, m.waitForChannelMessage())
 
-	case tickMsg:
-		// Poll msgCh for any pending messages
-		select {
-		case msg, ok := <-m.msgCh:
-			if ok {
-				cmd = append(cmd, tui.MsgCmd(msg))
-			}
-		default:
-			// No message ready
-		}
-		// Continue ticking if context is active
-		if m.ctx.Err() == nil {
-			cmd = append(cmd, tea.Tick(time.Millisecond*10, func(t time.Time) tea.Msg {
-				return tickMsg(t)
-			}))
+	case chat.FeedbackResponseMsg:
+		// Handle feedback response (send to server)
+		if err := m.grpcClient.SendFeedback(m.ctx, msg.TaskID, msg.Response); err != nil {
+			cmd = append(cmd, tui.MsgCmd(tui.ErrorMsg(err)))
 		}
 
 	case tea.KeyMsg:
@@ -162,20 +175,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.mode {
 		case tui.ModeInsert:
 			switch {
-			case key.Matches(msg, keys.Insert.Leave):
+			case key.Matches(msg, keys.HiveKeys.Insert.Leave):
 				return m, tui.MsgCmd(tui.ChangeModeMsg(tui.DefaultMode))
 			default:
 				cmd = append(cmd, m.chat.Update(msg))
 			}
 		case tui.ModeNormal:
 			switch {
-			case key.Matches(msg, keys.Normal.Insert):
+			case key.Matches(msg, keys.HiveKeys.Normal.Insert):
 				return m, tui.MsgCmd(tui.ChangeModeMsg(tui.ModeInsert))
-			case key.Matches(msg, keys.Normal.Quit):
+			case key.Matches(msg, keys.HiveKeys.Normal.Quit):
 				m.cleanup()
 				return m, tea.Quit
-			case key.Matches(msg, keys.Normal.Clear):
+			case key.Matches(msg, keys.HiveKeys.Normal.Clear):
 				return m, tui.MsgCmd(tui.ClearChatMsg{})
+			case key.Matches(msg, keys.HiveKeys.Normal.Help):
+				return m, tui.MsgCmd(tui.ToggleHelpMsg{})
 			}
 		}
 	default:
@@ -186,12 +201,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements [tea.Model].
 func (m *model) View() tea.View {
-	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Top,
+	var main string
+	if m.help.IsActive() {
+		main = tui.DefaultContainer.Width(m.width).PaddingBottom(2).AlignHorizontal(lipgloss.Center).Render(m.help.View())
+	} else {
+		main = tui.DefaultContainer.Width(m.width).PaddingBottom(2).AlignHorizontal(lipgloss.Center).Render(m.chat.View())
+	}
+	content := lipgloss.JoinVertical(lipgloss.Top,
 		m.header.View().Content,
-		tui.DefaultContainer.Width(m.width).PaddingBottom(2).AlignHorizontal(lipgloss.Center).Render(m.chat.View()),
+		main,
 		m.footer.View().Content,
-	))
+	)
 
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

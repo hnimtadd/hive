@@ -19,6 +19,9 @@ type Model struct {
 	width, height int
 	input         textarea.Model
 	viewport      viewport.Model
+
+	currentFeedbackTaskID   string
+	currentFeedbackQuestion string // New field to store question text
 }
 
 func NewModel(_ ModelOptions) (*Model, error) {
@@ -86,7 +89,17 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			if m.input.Value() != "" {
 				content := m.input.Value()
 				m.msgs = append(m.msgs, newChatRequestModel(content, m.width))
-				cmds = append(cmds, tui.MsgCmd(SendMessageMsg{Content: content}))
+				// Send as feedback if feedback task is pending, otherwise as regular message
+				if m.currentFeedbackTaskID != "" {
+					cmds = append(cmds, tui.MsgCmd(FeedbackResponseMsg{
+						TaskID:   m.currentFeedbackTaskID,
+						Response: content,
+					}))
+					m.currentFeedbackTaskID = ""
+					m.currentFeedbackQuestion = ""
+				} else {
+					cmds = append(cmds, tui.MsgCmd(SendMessageMsg{Content: content}))
+				}
 				m.viewport.SetContent(m.renderMessages())
 				m.input.Reset()
 				m.viewport.GotoBottom()
@@ -126,10 +139,24 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
 
 	case FeedbackRequestMsg:
-		// For now, just display the question as an assistant message
-		m.msgs = append(m.msgs, newChatRequestModel(msg.Question, m.width))
+		// Store the task ID and question for feedback response
+		m.currentFeedbackTaskID = msg.TaskID
+		m.currentFeedbackQuestion = msg.Question
+		// Switch to insert mode to allow user input (but context is now feedback)
+		cmds = append(cmds, tui.MsgCmd(tui.ChangeModeMsg(tui.ModeInsert)))
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
+
+	case tui.ClearChatMsg:
+		// Clear all messages if any exist
+		if len(m.msgs) > 0 {
+			m.msgs = []tui.Model{}
+			m.streaming = make(map[string]tui.Model)
+			m.currentFeedbackTaskID = ""
+			m.currentFeedbackQuestion = ""
+			m.input.Reset()
+			m.viewport.SetContent(m.renderMessages())
+		}
 
 	case tea.BlurMsg:
 		m.input.Blur()
@@ -147,10 +174,18 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) View() string {
-	inputBg := lipgloss.NewStyle().Background(tui.InputBg).Width(m.width).Height(m.input.Height())
+	inputArea := m.input.View()
+
+	// If feedback is pending, render the question prominently above input
+	if m.currentFeedbackQuestion != "" {
+		feedbackPrompt := m.renderFeedbackPrompt()
+		inputArea = lipgloss.JoinVertical(lipgloss.Left, feedbackPrompt, inputArea)
+	}
+
+	inputBg := lipgloss.NewStyle().Background(tui.InputBg).Width(m.width)
 	return lipgloss.JoinVertical(lipgloss.Top,
 		m.viewport.View(),
-		inputBg.Render(m.input.View()),
+		inputBg.Render(inputArea),
 	)
 }
 
@@ -173,4 +208,34 @@ func (m *Model) renderMessages() string {
 		Width(m.viewport.Width()).
 		Background(tui.Background).
 		Render(strings.Join(cards, "\n"))
+}
+
+// renderFeedbackPrompt renders the feedback question above the input.
+func (m *Model) renderFeedbackPrompt() string {
+	promptStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(tui.Accent).
+		Background(tui.InputBg).
+		Padding(0, 1).
+		Width(m.width - 2)
+
+	questionStyle := lipgloss.NewStyle().
+		Foreground(tui.Foreground).
+		Background(tui.InputBg).
+		Padding(0, 1).
+		Width(m.width - 2)
+
+	separator := lipgloss.NewStyle().
+		Foreground(tui.Muted).
+		Background(tui.InputBg).
+		Render(strings.Repeat("─", m.width-2))
+
+	prompt := promptStyle.Render("Agent asks:")
+	question := questionStyle.Render(m.currentFeedbackQuestion)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		prompt,
+		question,
+		separator,
+	)
 }

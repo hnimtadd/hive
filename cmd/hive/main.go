@@ -8,9 +8,9 @@ import (
 	"log"
 	"os"
 
-	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -71,10 +71,10 @@ func executeCommand(command string) error {
 	}
 
 	// Start monitoring task progress
-	if err := handleTask(srv, task); err != nil {
-		log.Printf("task handling failed: %s\n", err)
+	if taskErr := handleTask(srv, task); taskErr != nil {
+		log.Printf("task handling failed: %s\n", taskErr)
 		_ = srv.CloseSend()
-		return err
+		return taskErr
 	}
 	return nil
 }

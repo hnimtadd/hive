@@ -25,3 +25,8 @@ type FeedbackRequestMsg struct {
 	TaskID   string
 	Question string
 }
+
+type FeedbackResponseMsg struct {
+	TaskID   string
+	Response string
+}

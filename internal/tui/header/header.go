@@ -33,7 +33,7 @@ func (f *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tui.ChangeStatusMsg:
 		// Blindly set here at top model should take
-		// responsbility to check the global status
+		// responsibility to check the global status
 		f.status = tui.Status(msg)
 
 	case tea.WindowSizeMsg:
