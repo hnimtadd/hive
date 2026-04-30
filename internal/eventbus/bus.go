@@ -19,15 +19,15 @@ func NewEventBus[T any]() *EventBus[T] {
 
 func (e *EventBus[T]) Subscribe(topic string) <-chan T {
 	eventCh := make(chan T, channelBufferLength)
-	if brokerAny, ok := e.topics.Load(topic); !ok {
+	brokerAny, ok := e.topics.Load(topic)
+	if !ok {
 		e.topics.Store(topic, []chan<- T{eventCh})
 		return eventCh
-	} else {
-		// append the new event chan to the group
-		broker := brokerAny.([]chan<- T) //nolint: errcheck // this is always event channel
-		broker = append(broker, eventCh)
-		e.topics.Store(topic, broker)
 	}
+	// append the new event chan to the group
+	broker := brokerAny.([]chan<- T) //nolint: errcheck // this is always event channel
+	broker = append(broker, eventCh)
+	e.topics.Store(topic, broker)
 
 	return eventCh
 }
