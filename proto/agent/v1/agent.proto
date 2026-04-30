@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package agent.v1;
 
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "gen/agent/v1;agentv1";
@@ -11,50 +12,124 @@ service AgentService {
   // ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
   rpc ExecuteTask(stream ExecuteTaskRequest) returns (stream ExecuteTaskResponse);
 
-  // OpenSession opens new hive session.
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
-
-  rpc SessionSendMessage(stream SessionSendMessageRequest) returns (stream SessionSendMessageResponse);
+  // HiveSession opens new hive session.
+  rpc HiveSession(stream HiveSessionRequest) returns (stream HiveSessionResponse);
 }
 
-message SessionSendMessageRequest {
+message HiveSessionRequest {
+  // Client-generated request identifier for response correlation.
+  string request_id = 7;
   google.protobuf.Timestamp at = 1;
 
   oneof payload {
-    TaskRequest request = 2; // Sent first to begin the loop
-    UserFeedback feedback = 3; // Sent when the supervisor ask a question
-    Cancel cancel = 4; // Sent if the user cancel the CLI request
+    CreateConversationRequest create_conversation = 2;
+    TurnRequest turn_request = 3;
+    SubmitInputRequest input = 4;
+    Ping ping = 6;
   }
 }
 
-message SessionSendMessageResponse {
+message HiveSessionResponse {
+  // Echoes HiveSessionRequest.request_id when this response relates to a request.
+  string in_reply_to = 7;
   google.protobuf.Timestamp at = 1;
-  string id = 2;
 
   oneof payload {
-    InProgressUpdate update = 3; // The Supervisor's reasoning
-    SuccessUpdate success = 4; // The final output to the user
-    ErrorUpdate error = 5; // Non-fatal or fatal error details
-    FeedbackRequire feedback = 6; // in the middle feedback require
-    RequestAck ack = 7; // ack of the request including the initial information like request ID.
+    CreateConversationResponse create_conversation = 2;
+    TurnResponse turn_response = 3;
+    InputRequiredEvent input_required = 4;
+    Notification notification = 5;
+    Pong pong = 6;
   }
 }
 
-message OpenSessionRequest {
-  google.protobuf.Timestamp at = 1;
-  oneof payload {
-    string session_id = 2;
-    bool is_new = 3;
+message CreateConversationRequest {
+  oneof mode {
+    string resume_id = 1;
+    google.protobuf.Empty create_new = 2;
   }
 }
 
-message OpenSessionResponse {
+message CreateConversationResponse {
+  string conversation_id = 1;
+  string location = 2;
+}
+
+message TurnRequest {
+  // Optional conversation scope for this turn command.
+  string conversation_id = 5;
+  // Optional turn scope for this turn command.
+  string turn_id = 6;
   google.protobuf.Timestamp at = 1;
+  oneof payload {
+    CreateTurn create_turn = 2;
+    string cancel_turn_id = 3;
+    string retry_turn_id = 4;
+  }
+}
+
+message TurnResponse {
+  // Optional conversation scope for this turn event.
+  string conversation_id = 6;
+  // Optional turn scope for this turn event.
+  string turn_id = 7;
+  // Correlates to the originating TurnRequest when present.
+  string request_id = 1;
 
   oneof payload {
-    string session_location = 2;
-    string session_id = 3;
+    google.protobuf.Empty ack = 2;
+    TurnUpdate update = 3;
+    TurnCompleted completed = 5; // The final output to the user
   }
+}
+
+message TurnUpdate {
+  string turn_id = 1;
+}
+
+message InputRequiredEvent {
+  // Optional conversation scope for this interaction.
+  string conversation_id = 3;
+  // Optional turn scope for this interaction.
+  string turn_id = 4;
+  string correlation_id = 1;
+  string question = 2;
+}
+
+message SubmitInputRequest {
+  // Optional conversation scope for this interaction reply.
+  string conversation_id = 3;
+  // Optional turn scope for this interaction reply.
+  string turn_id = 4;
+  string correlation_id = 1;
+  string answer = 2;
+}
+
+message TurnCompleted {
+  oneof payload {
+    SuccessUpdate success = 1;
+    ErrorUpdate failed = 2;
+  }
+}
+
+message Notification {
+  oneof payload {
+    string error = 1;
+    string info = 2;
+  }
+}
+
+message CreateTurn {
+  string message = 1;
+  map<string, string> initial_artifacts = 2;
+}
+
+message Ping {
+  google.protobuf.Timestamp at = 1;
+}
+
+message Pong {
+  google.protobuf.Timestamp at = 1;
 }
 
 message ExecuteTaskRequest {
@@ -102,16 +177,6 @@ message InProgressUpdate {
 
 message FeedbackRequire {
   string question = 1;
-}
-
-message WorkerAction {
-  string agent_name = 1;
-  string instruction = 2;
-}
-
-message ArtifactFound {
-  string key = 1;
-  string summary = 2; // A short description of the new data
 }
 
 message SuccessUpdate {

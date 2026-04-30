@@ -19,6 +19,7 @@ import (
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/pkg/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 )
@@ -37,7 +38,7 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.Storage) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage, storage storage.Storage) (*HiveServer, error) {
 	// Create task queue
 	tq := queue.NewMemoryQueue()
 
@@ -45,14 +46,14 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	cm := channel.NewManager()
 
 	// Create task manager (storage + queue)
-	tm := manager.NewManager(storage, tq)
+	tm := manager.NewManager(sessionStorage, storage, tq)
 
 	// Create worker pool
 	poolSize := cfg.Bees.PoolSize
 	if poolSize <= 0 {
 		poolSize = 3 // Default: 3 concurrent workers
 	}
-	sessionLogger, err := observability.NewSessionLogger(&cfg.Tracing.SessionLog)
+	sessionLogger, err := observability.NewSessionLogger(&cfg.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +166,6 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	ch := s.channelManager.ForTask(task.ID)
 	defer ch.CloseInput()
 
-	ch.OutputCh <- agentv1.NewExecuteTaskResponseACK(task.ID)
-
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
@@ -258,15 +257,34 @@ func (s *HiveServer) forwardOutput(
 	}
 }
 
-// OpenSession implements [agentv1.AgentServiceServer].
-func (s *HiveServer) OpenSession(context.Context, *agentv1.OpenSessionRequest) (*agentv1.OpenSessionResponse, error) {
-	// TODO: 1. create new session with storage, and return sessionID to the client
-	panic("unimplemented")
-}
+// HiveSession implements [agentv1.AgentServiceServer].
+func (s *HiveServer) HiveSession(srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]) error {
+	ctx := srv.Context()
+	msg, err := srv.Recv()
+	switch payload := msg.Payload.(type) {
+	case *agentv1.HiveSessionRequest_CreateConversation:
+	default:
+		srv.Send(&agentv1.HiveSessionResponse{
+			Payload: &agentv1.HiveSessionResponse_Notification{
+				Notification: &agentv1.Notification{
+					Payload: &agentv1.Notification_Error{
+						Error: "The first message should be the createconversation",
+					},
+				},
+			},
+		})
+	}
 
-// SessionSendMessage implements [agentv1.AgentServiceServer].
-func (s *HiveServer) SessionSendMessage(grpc.BidiStreamingServer[agentv1.SessionSendMessageRequest, agentv1.SessionSendMessageResponse]) error {
-	// TODO: exepect the session to be open at this time (sessionID is valid, so server will load the session from storage)
-	// - for every incomming request, handle it like task currently, but we don't close the stream until the session is closed from client ( we might need to unified the handler logic to handle this and task)
-	panic("unimplemented")
+	var (
+		session *types.HiveSession
+		err     error
+	)
+	convMsg := msg.GetCreateConversation()
+	switch mode := convMsg.GetMode().(type) {
+	case *agentv1.CreateConversationRequest_CreateNew:
+		session, err = s.taskManager.CreateSession(ctx)
+	case *agentv1.CreateConversationRequest_ResumeId:
+		session, err = s.taskManager.LoadSession(ctx, mode.ResumeId)
+	}
+	s.taskManager
 }

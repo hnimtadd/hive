@@ -31,7 +31,7 @@ func setupTestManager(t *testing.T) (*manager.Manager, func()) {
 	q := queue.NewMemoryQueue()
 
 	// Create manager
-	mgr := manager.NewManager(store, q)
+	mgr := manager.NewManager(nil, store, q)
 
 	cleanup := func() {
 		q.Close()

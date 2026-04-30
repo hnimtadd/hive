@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/observability"
+	"github.com/hnimtadd/hive/internal/shared"
 	"github.com/hnimtadd/hive/internal/types"
+	coretypes "github.com/hnimtadd/hive/pkg/types"
 )
 
 type eventStreamMiddleware struct {
-	eventCh chan<- ExecutionEvent
+	eventCh chan<- *coretypes.HiveEvent
 }
 
 type EventType string
@@ -24,18 +27,19 @@ const (
 )
 
 type ExecutionEvent struct {
-	Type     EventType
+	Typ      EventType
 	Req      types.LLMRequest
 	Resp     types.LLMResponse
 	ToolReq  types.ToolCallRequest
 	ToolResp types.ToolCallResponse
+	At       time.Time
 }
 
 // OnRequest implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
 	event := ExecutionEvent{
-		Type: EventTypeLLMRequestStart,
-		Req:  req,
+		Typ: EventTypeLLMRequestStart,
+		Req: req,
 	}
 
 	if err := e.pushEvent(ctx, event); err != nil {
@@ -49,7 +53,7 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 // OnResponse implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
 	event := ExecutionEvent{
-		Type: EventTypeLLMRequestFinish,
+		Typ:  EventTypeLLMRequestFinish,
 		Resp: resp,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
@@ -63,7 +67,7 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 // OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
 	event := ExecutionEvent{
-		Type:    EventTypeToolCallStart,
+		Typ:     EventTypeToolCallStart,
 		ToolReq: toolEvent,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
@@ -78,7 +82,7 @@ func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, 
 // OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
 	event := ExecutionEvent{
-		Type:     EventTypeToolCallFinish,
+		Typ:      EventTypeToolCallFinish,
 		ToolResp: toolEvent,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
@@ -91,8 +95,12 @@ func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID 
 }
 
 func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEvent) error {
+	hiveEvent := &coretypes.HiveEvent{
+		Type:    shared.HiveEventTypeExecutionEvent,
+		Payload: event,
+	}
 	select {
-	case e.eventCh <- event:
+	case e.eventCh <- hiveEvent:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -103,9 +111,8 @@ func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEv
 
 var _ middleware.LLMMiddleware = &eventStreamMiddleware{}
 
-func EventStreamMiddleware() (middleware.LLMMiddleware, <-chan ExecutionEvent) {
-	eventCh := make(chan ExecutionEvent, 100)
+func EventStreamMiddleware(eventCh chan<- *coretypes.HiveEvent) middleware.LLMMiddleware {
 	return &eventStreamMiddleware{
 		eventCh: eventCh,
-	}, eventCh
+	}
 }

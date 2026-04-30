@@ -14,10 +14,10 @@ import (
 	"github.com/hnimtadd/hive/internal/bee"
 	"github.com/hnimtadd/hive/internal/bee/react"
 	"github.com/hnimtadd/hive/internal/bee/registry"
+	"github.com/hnimtadd/hive/internal/budget"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/tools/system"
-	context_pkg "github.com/hnimtadd/hive/pkg/context"
 	"github.com/hnimtadd/hive/pkg/errors"
 	"github.com/hnimtadd/hive/pkg/types"
 	hiveutils "github.com/hnimtadd/hive/pkg/utils"
@@ -109,7 +109,7 @@ func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput
 	)
 
 	// Check context budget and trigger summarization if needed
-	if budget, ok := context_pkg.BudgetFromContext(ctx); ok {
+	if budget, ok := budget.BudgetFromContext(ctx); ok {
 		if budget.ShouldTriggerSummary(task) {
 			logger.InfoContext(ctx, "context budget exceeded, triggering summarization",
 				slog.Int("message_count", len(task.Messages)),

@@ -12,15 +12,17 @@ import (
 // Manager handles task lifecycle: creation, persistence, and queuing.
 // It knows nothing about channels, events, or transport layers.
 type Manager struct {
-	storage storage.Storage
-	queue   queue.Queue
+	storage        storage.Storage
+	sessionStorage storage.SessionStorage
+	queue          queue.Queue
 }
 
 // NewManager creates a new task manager.
-func NewManager(storage storage.Storage, queue queue.Queue) *Manager {
+func NewManager(sessionStorage storage.SessionStorage, storage storage.Storage, queue queue.Queue) *Manager {
 	return &Manager{
-		storage: storage,
-		queue:   queue,
+		sessionStorage: sessionStorage,
+		storage:        storage,
+		queue:          queue,
 	}
 }
 
@@ -56,4 +58,22 @@ func (m *Manager) UpdateTask(task *types.HiveTask) error {
 		return fmt.Errorf("failed to update task: %w", err)
 	}
 	return nil
+}
+
+// CreateTask creates a new task, persists it, and enqueues it for execution.
+func (m *Manager) CreateSession(ctx context.Context) (*types.HiveSession, error) {
+	session := types.NewHiveSession()
+	if err := m.sessionStorage.Create(session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+	return session, nil
+}
+
+// CreateTask creates a new task, persists it, and enqueues it for execution.
+func (m *Manager) LoadSession(ctx context.Context, sessionID string) (*types.HiveSession, error) {
+	session, err := m.sessionStorage.Load(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load session: %w", err)
+	}
+	return session, nil
 }

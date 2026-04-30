@@ -46,8 +46,12 @@ func main() {
 		log.Fatalf("failed to init storage: %v", err)
 	}
 
+	sessionStorage, err := storage.NewSessionStorage(storage.Options{
+		Storage: cfg.Session.Dir,
+	})
+
 	// Start the Hive server
-	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, taskStorage)
+	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, sessionStorage, taskStorage)
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}
