@@ -13,10 +13,3 @@ func NewHiveSession() *HiveSession {
 		Messages: []Message{},
 	}
 }
-
-type EventType string
-
-type HiveEvent struct {
-	Type    EventType
-	Payload any
-}

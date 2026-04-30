@@ -24,7 +24,7 @@ message HiveSessionRequest {
   oneof payload {
     CreateConversationRequest create_conversation = 2;
     TurnRequest turn_request = 3;
-    SubmitInputRequest input = 4;
+    SubmitRequiredInput input = 4;
     Ping ping = 6;
   }
 }
@@ -37,7 +37,7 @@ message HiveSessionResponse {
   oneof payload {
     CreateConversationResponse create_conversation = 2;
     TurnResponse turn_response = 3;
-    InputRequiredEvent input_required = 4;
+    InputRequired input_required = 4;
     Notification notification = 5;
     Pong pong = 6;
   }
@@ -84,25 +84,23 @@ message TurnResponse {
 }
 
 message TurnUpdate {
-  string turn_id = 1;
+  string content = 2;
 }
 
-message InputRequiredEvent {
+message InputRequired {
   // Optional conversation scope for this interaction.
-  string conversation_id = 3;
+  string conversation_id = 1;
   // Optional turn scope for this interaction.
-  string turn_id = 4;
-  string correlation_id = 1;
-  string question = 2;
+  string turn_id = 2;
+  string question = 3;
 }
 
-message SubmitInputRequest {
+message SubmitRequiredInput {
   // Optional conversation scope for this interaction reply.
-  string conversation_id = 3;
+  string conversation_id = 1;
   // Optional turn scope for this interaction reply.
-  string turn_id = 4;
-  string correlation_id = 1;
-  string answer = 2;
+  string turn_id = 2;
+  string answer = 3;
 }
 
 message TurnCompleted {

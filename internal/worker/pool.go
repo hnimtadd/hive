@@ -17,6 +17,7 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/queue"
+	"github.com/hnimtadd/hive/internal/shared"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -132,7 +133,7 @@ func (p *Pool) processTask(task *types.HiveTask) {
 	log := slog.Default().With(slog.String("task_id", task.ID))
 	ch := p.channels.ForTask(task.ID)
 
-	eventMW, eventCh := system.EventStreamMiddleware()
+	eventMW := system.EventStreamMiddleware(nil)
 	traceMW := observability.NewTraceMiddleware(p.sessionLogger)
 	ctx := middleware.ContextWithMiddleware(task.Context, middleware.JointMiddleware(eventMW, traceMW))
 
@@ -149,8 +150,6 @@ func (p *Pool) processTask(task *types.HiveTask) {
 		ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Failed to create supervisor: %v", err))
 		return
 	}
-
-	go forwardEvent(ctx, ch, eventCh)
 
 	// Execute supervisor loop
 	for {
@@ -285,19 +284,19 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 	}
 }
 
-func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan system.ExecutionEvent) {
+func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan shared.ExecutionEvent) {
 	logger := slog.Default()
 	for {
 		select {
 		case <-ctx.Done():
 		case event := <-eventCh:
 			switch event.Typ {
-			case system.EventTypeToolCallStart:
+			case shared.EventTypeToolCallStart:
 				logger.DebugContext(ctx, "receive tool call event")
 				status := fmt.Sprintf("call_id: %s, agent_id: %s, tool_name: %s, input: %s", event.ToolReq.CallID, event.ToolReq.AgentID, event.ToolReq.ToolName, event.ToolReq.Arguments)
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_start", utils.SanitizeUTF8(status))
 
-			case system.EventTypeToolCallFinish:
+			case shared.EventTypeToolCallFinish:
 				logger.DebugContext(ctx, "receive tool finish event")
 				toolResp := event.ToolResp
 				var status string
@@ -308,13 +307,13 @@ func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan 
 				}
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_response", utils.SanitizeUTF8(status))
 
-			case system.EventTypeLLMRequestStart:
+			case shared.EventTypeLLMRequestStart:
 				logger.DebugContext(ctx, "receive llm start event")
 				llmReq := event.Req
 				status := fmt.Sprintf("agent_id: %s, input: %s", llmReq.AgentID, llmReq.Input)
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_start", utils.SanitizeUTF8(status))
 
-			case system.EventTypeLLMRequestFinish:
+			case shared.EventTypeLLMRequestFinish:
 				logger.DebugContext(ctx, "receive llm finish event")
 				llmResp := event.Resp
 				status := fmt.Sprintf("agent_id: %s, finish_reason: %s, token_used: %d", llmResp.AgentID, llmResp.FinishReason, llmResp.TokenUsed.TotalTokens)

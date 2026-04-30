@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"time"
 
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/observability"
@@ -15,24 +14,6 @@ import (
 
 type eventStreamMiddleware struct {
 	eventCh chan<- *coretypes.HiveEvent
-}
-
-type EventType string
-
-const (
-	EventTypeLLMRequestStart  EventType = "llm_request_start"
-	EventTypeLLMRequestFinish EventType = "llm_request_finish"
-	EventTypeToolCallStart    EventType = "tool_call_start"
-	EventTypeToolCallFinish   EventType = "tool_call_finish"
-)
-
-type ExecutionEvent struct {
-	Typ      EventType
-	Req      types.LLMRequest
-	Resp     types.LLMResponse
-	ToolReq  types.ToolCallRequest
-	ToolResp types.ToolCallResponse
-	At       time.Time
 }
 
 // OnRequest implements [middleware.LLMMiddleware].

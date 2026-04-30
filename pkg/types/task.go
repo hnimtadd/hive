@@ -28,6 +28,7 @@ type HiveTask struct {
 	// Core identifiers
 	ID               string            `json:"_id"                   jsonschema:"ID of the task"`
 	SessionID        string            `json:"session_id"`
+	ConversationID   string            `json:"conversation_id"`
 	Status           Status            `json:"status"                jsonschema:"Current task status"`
 	NextAction       *string           `json:"next_action,omitempty" jsonschema:"Previous agent suggested next action to complete"`
 	Plan             []TaskPlan        `json:"plan"                  jsonschema:"Our mastery plan"`

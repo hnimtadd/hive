@@ -2,6 +2,7 @@ package hive
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -43,7 +44,7 @@ func (r *Request) Success(result any) *Response {
 	}
 }
 
-// Error creates an error response
+// Error creates an error response.
 func (r *Request) Error(message string) *Response {
 	return &Response{
 		Success: false,
@@ -51,26 +52,26 @@ func (r *Request) Error(message string) *Response {
 	}
 }
 
-// ToJSON serializes the response
+// ToJSON serializes the response.
 func (r *Response) ToJSON() ([]byte, error) {
 	return json.Marshal(r)
 }
 
-// FromJSON deserializes a request
+// FromJSON deserializes a request.
 func (r *Request) FromJSON(data []byte) error {
 	return json.Unmarshal(data, r)
 }
 
-// ExtractPayload unmarshals payload into target
-func (r *Request) ExtractPayload(target interface{}) error {
+// ExtractPayload unmarshals payload into target.
+func (r *Request) ExtractPayload(target any) error {
 	if r.Payload == nil {
-		return fmt.Errorf("payload is empty")
+		return errors.New("payload is empty")
 	}
 	return json.Unmarshal(r.Payload, target)
 }
 
-// SetPayload marshals source into payload
-func (r *Request) SetPayload(source interface{}) error {
+// SetPayload marshals source into payload.
+func (r *Request) SetPayload(source any) error {
 	data, err := json.Marshal(source)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
@@ -79,7 +80,7 @@ func (r *Request) SetPayload(source interface{}) error {
 	return nil
 }
 
-// ToolMetadata contains tool information
+// ToolMetadata contains tool information.
 type ToolMetadata struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
