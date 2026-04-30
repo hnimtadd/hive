@@ -10,6 +10,7 @@ import (
 
 	"github.com/hnimtadd/hive/internal/bee/queen"
 	"github.com/hnimtadd/hive/internal/bee/registry"
+	context_pkg "github.com/hnimtadd/hive/internal/budget"
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/middleware/system"
@@ -18,7 +19,6 @@ import (
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
-	context_pkg "github.com/hnimtadd/hive/pkg/context"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/hnimtadd/hive/pkg/utils"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
@@ -253,6 +253,12 @@ func (p *Pool) createSupervisor(taskID string) (queen.QueenBee, error) {
 // executeWithRetry executes a task with retry support.
 // It runs the task and schedules retry via queue if task is not terminal.
 func (p *Pool) executeWithRetry(task *types.HiveTask) {
+	ch := p.channels.ForTask(task.ID)
+
+	if task.Retries == 0 {
+		// This is the first time this task is execute, response with ack message
+		ch.OutputCh <- agentv1.NewExecuteTaskResponseACK(task.ID)
+	}
 	// Run task with panic recovery
 	func() {
 		defer func() {
@@ -262,11 +268,8 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 					slog.Any("panic", r),
 				)
 				task.Status = types.TaskStatusFailed
-				task.Messages = append(task.Messages, types.NewMessage(types.RoleAssistant, fmt.Sprintf("Worker panic: %v", r)))
 				_ = p.storage.Update(task)
-				ch := p.channels.ForTask(task.ID)
 				ch.OutputCh <- agentv1.NewExecuteTaskResponseErr(fmt.Sprintf("Worker panic: %v", r))
-				p.channels.Cleanup(task.ID)
 			}
 		}()
 
@@ -277,6 +280,7 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 	if !task.Status.IsTerminal() {
 		_ = p.queue.ScheduleRetry(p.ctx, task)
 	} else {
+		ch.CloseOutput()
 		p.channels.Cleanup(task.ID)
 	}
 }
@@ -287,7 +291,7 @@ func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan 
 		select {
 		case <-ctx.Done():
 		case event := <-eventCh:
-			switch event.Type {
+			switch event.Typ {
 			case system.EventTypeToolCallStart:
 				logger.DebugContext(ctx, "receive tool call event")
 				status := fmt.Sprintf("call_id: %s, agent_id: %s, tool_name: %s, input: %s", event.ToolReq.CallID, event.ToolReq.AgentID, event.ToolReq.ToolName, event.ToolReq.Arguments)

@@ -13,12 +13,12 @@ import (
 
 // SessionLogger handles session/agent execution logging.
 type SessionLogger struct {
-	config  *config.SessionLogConfig
+	config  *config.SessionConfig
 	logFile *os.File
 }
 
 // NewSessionLogger creates a new session logger based on config.
-func NewSessionLogger(cfg *config.SessionLogConfig) (*SessionLogger, error) {
+func NewSessionLogger(cfg *config.SessionConfig) (*SessionLogger, error) {
 	if cfg == nil || !cfg.Enabled {
 		return &SessionLogger{config: cfg}, nil
 	}

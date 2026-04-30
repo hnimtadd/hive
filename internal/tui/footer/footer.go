@@ -1,6 +1,8 @@
 package footer
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/hnimtadd/hive/internal/tui"
@@ -16,7 +18,10 @@ type Model struct {
 	info          string
 	width, height int
 	mode          tui.Mode
+	dismissAt     *time.Time
 }
+
+type dismissTimeoutMsg struct{}
 
 func NewModel(opts ModelOptions) (*Model, error) {
 	model := &Model{
@@ -36,7 +41,11 @@ func (f *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tui.ErrorMsg:
 		f.err = msg
-		return nil
+		dismissTime := time.Now().Add(5 * time.Second)
+		f.dismissAt = &dismissTime
+		return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+			return dismissTimeoutMsg{}
+		})
 	case tui.InfoMsg:
 		f.info = string(msg)
 		return nil
@@ -45,11 +54,17 @@ func (f *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tui.ChangeModeMsg:
 		// Blindly set here at top model should take
-		// responsbility to check the global mode
+		// responsibility to check the global mode
 		f.mode = tui.Mode(msg)
 	case tea.WindowSizeMsg:
 		f.width = msg.Width
 		f.height = msg.Height
+	case dismissTimeoutMsg:
+		// Clear error if timeout has passed
+		if f.dismissAt != nil && time.Now().After(*f.dismissAt) {
+			f.err = nil
+			f.dismissAt = nil
+		}
 	}
 	return tea.Batch(cmds...)
 }
@@ -93,7 +108,7 @@ func (f *Model) renderStatus() string {
 			Render(f.info)
 	default:
 		footer += tui.Padded.
-			Background(tui.Foreground).
+			Background(tui.Background).
 			Foreground(tui.Foreground).
 			Width(f.availableFooterMsgWidth(modeWidget, helpWidget, versionWidget)).
 			Render("")

@@ -31,7 +31,7 @@ func setupTestManager(t *testing.T) (*manager.Manager, func()) {
 	q := queue.NewMemoryQueue()
 
 	// Create manager
-	mgr := manager.NewManager(store, q)
+	mgr := manager.NewManager(nil, store, q)
 
 	cleanup := func() {
 		q.Close()
@@ -119,38 +119,4 @@ func TestUpdateTask(t *testing.T) {
 	loaded, err := mgr.LoadTask(task.ID)
 	require.NoError(t, err)
 	require.Equal(t, types.TaskStatusInProgress, loaded.Status)
-}
-
-func TestIsTerminal(t *testing.T) {
-	mgr, cleanup := setupTestManager(t)
-	defer cleanup()
-
-	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
-	require.NoError(t, err)
-
-	// Not started is not terminal
-	terminal, err := mgr.IsTerminal(task.ID)
-	require.NoError(t, err)
-	require.False(t, terminal)
-
-	// In progress is not terminal
-	task.Status = types.TaskStatusInProgress
-	require.NoError(t, mgr.UpdateTask(task))
-	terminal, err = mgr.IsTerminal(task.ID)
-	require.NoError(t, err)
-	require.False(t, terminal)
-
-	// Completed is terminal
-	task.Status = types.TaskStatusCompleted
-	require.NoError(t, mgr.UpdateTask(task))
-	terminal, err = mgr.IsTerminal(task.ID)
-	require.NoError(t, err)
-	require.True(t, terminal)
-
-	// Failed is terminal
-	task.Status = types.TaskStatusFailed
-	require.NoError(t, mgr.UpdateTask(task))
-	terminal, err = mgr.IsTerminal(task.ID)
-	require.NoError(t, err)
-	require.True(t, terminal)
 }

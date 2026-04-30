@@ -1,119 +1,192 @@
 package chat
 
 import (
-	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/cursor"
-	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/hnimtadd/hive/pkg/types"
+	"github.com/hnimtadd/hive/internal/tui"
+	"github.com/hnimtadd/hive/internal/tui/inputbar"
 )
 
-type ModelOptions struct {
-}
+type ModelOptions struct{}
 
 type Model struct {
+	msgs      []tui.Model
+	streaming map[string]tui.Model
+
 	width, height int
+	inputBar      *inputbar.Model
+	viewport      viewport.Model
 
-	msgs []types.Message
-
-	textarea textarea.Model
-	viewport viewport.Model
+	currentFeedbackTaskID   string
+	currentFeedbackQuestion string // New field to store question text
 }
 
 func NewModel(_ ModelOptions) (*Model, error) {
-	ta := textarea.New()
-	ta.Placeholder = "Send a message..."
-	ta.SetVirtualCursor(false)
-	ta.Prompt = "┃ "
-	ta.CharLimit = 280
+	inputBar, err := inputbar.NewModel(inputbar.ModelOptions{
+		Width:  80,
+		Height: 9,
+	})
+	if err != nil {
+		return nil, err
+	}
 
-	s := ta.Styles()
-	s.Focused.CursorLine = lipgloss.NewStyle()
-	ta.SetStyles(s)
-
-	vp := viewport.New(viewport.WithWidth(30), viewport.WithHeight(5))
+	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	vp.KeyMap.Left.SetEnabled(false)
 	vp.KeyMap.Right.SetEnabled(false)
-	ta.KeyMap.InsertNewline.SetEnabled(false)
+	vp.Style = tui.DefaultContainer
 
 	model := &Model{
-		textarea: ta,
-		msgs:     []types.Message{},
-		viewport: vp,
+		msgs:      []tui.Model{},
+		viewport:  vp,
+		inputBar:  inputBar,
+		streaming: make(map[string]tui.Model),
 	}
 
 	return model, nil
 }
 
 func (m *Model) Init() tea.Cmd {
-	return textarea.Blink
+	return m.inputBar.Init()
 }
 
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
-	// Handle error signal related msg
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+
+		m.inputBar.Update(msg)
 		m.viewport.SetWidth(m.width)
-		m.textarea.SetWidth(m.width)
-		m.viewport.SetHeight(m.height - m.textarea.Height())
 
-		if len(m.msgs) > 0 {
-			m.viewport.SetContent(m.ContentString())
+		for _, model := range m.msgs {
+			model.Update(msg)
 		}
+
+		m.viewport.SetHeight(m.height - m.inputBar.Height())
+		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
-
-	case tea.FocusMsg:
-		m.textarea.Focus()
-
-	case tea.BlurMsg:
-		m.textarea.Blur()
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "enter":
-			m.msgs = append(m.msgs, types.NewMessage(types.RoleUser, m.textarea.Value()))
-			m.viewport.SetContent(m.ContentString())
-			m.textarea.Reset()
-			m.viewport.GotoBottom()
-			// submit user feedback/message
+		case "ctrl+enter":
+			if m.inputBar.Value() != "" {
+				content := m.inputBar.Value()
+				m.msgs = append(m.msgs, newChatRequestModel(content, m.width))
+				// Send as feedback if feedback task is pending, otherwise as regular message
+				if m.currentFeedbackTaskID != "" {
+					cmds = append(cmds, tui.MsgCmd(FeedbackResponseMsg{
+						TaskID:   m.currentFeedbackTaskID,
+						Response: content,
+					}))
+					m.currentFeedbackTaskID = ""
+					m.currentFeedbackQuestion = ""
+					m.inputBar.ClearFeedback()
+				} else {
+					cmds = append(cmds, tui.MsgCmd(SendMessageMsg{Content: content}))
+				}
+				m.viewport.SetContent(m.renderMessages())
+				m.inputBar.Reset()
+				m.viewport.GotoBottom()
+			}
 		default:
-			// Send all other keypresses to the textarea.
-			var cmd tea.Cmd
-			m.textarea, cmd = m.textarea.Update(msg)
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, m.inputBar.Update(msg))
 		}
-	case cursor.BlinkMsg:
-		// Textarea should also process cursor blinks.
-		var cmd tea.Cmd
-		m.textarea, cmd = m.textarea.Update(msg)
-		cmds = append(cmds, cmd)
+
+	case StreamStartMsg:
+		model := newChatResponseModel(msg.TaskID, m.width)
+		m.msgs = append(m.msgs, model)
+		m.streaming[msg.TaskID] = model
+		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusThinking)))
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+
+	case StreamChunkMsg:
+		model, isStreaming := m.streaming[msg.TaskID]
+		if isStreaming {
+			cmds = append(cmds, model.Update(msg))
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		}
+
+	case StreamCompleteMsg:
+		model, isStreaming := m.streaming[msg.TaskID]
+		if isStreaming {
+			cmds = append(cmds, model.Update(msg))
+			delete(m.streaming, msg.TaskID)
+
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		}
+
+		cmds = append(cmds, tui.MsgCmd(tui.ChangeStatusMsg(tui.StatusReady)))
+
+	case FeedbackRequestMsg:
+		// Store the task ID and question for feedback response
+		m.currentFeedbackTaskID = msg.TaskID
+		m.currentFeedbackQuestion = msg.Question
+		// Set feedback mode in input bar
+		m.inputBar.SetFeedback(msg.Question)
+		// Switch to insert mode to allow user input (but context is now feedback)
+		cmds = append(cmds, tui.MsgCmd(tui.ChangeModeMsg(tui.ModeInsert)))
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+
+	case tui.ClearChatMsg:
+		// Clear all messages if any exist
+		if len(m.msgs) > 0 {
+			m.msgs = []tui.Model{}
+			m.streaming = make(map[string]tui.Model)
+			m.currentFeedbackTaskID = ""
+			m.currentFeedbackQuestion = ""
+			m.inputBar.Reset()
+			m.inputBar.ClearFeedback()
+			m.viewport.SetContent(m.renderMessages())
+		}
+
+	case tui.ChangeModeMsg:
+		m.inputBar.SetMode(tui.Mode(msg))
+		cmds = append(cmds, m.inputBar.Update(msg))
+
+	case tea.BlurMsg:
+		m.inputBar.Blur()
+
+	case tea.FocusMsg:
+		m.inputBar.Focus()
+
+	default:
+		cmds = append(cmds, m.inputBar.Update(msg))
 	}
 
 	return tea.Batch(cmds...)
 }
 
-func (m *Model) View() tea.View {
-	viewportView := m.viewport.View()
-	v := tea.NewView(viewportView + "\n" + m.textarea.View())
-	c := m.textarea.Cursor()
-	if c != nil {
-		c.Y += lipgloss.Height(viewportView)
-	}
-	v.Cursor = c
-	v.AltScreen = true
-	return v
+func (m *Model) View() string {
+	return lipgloss.JoinVertical(lipgloss.Top,
+		m.viewport.View(),
+		m.inputBar.View(),
+	)
 }
 
-func (m *Model) ContentString() string {
-	value := make([]string, len(m.msgs))
-	for i, msg := range m.msgs {
-		value[i] = fmt.Sprintf("%s:%s", msg.Role, msg.Content)
+func (m *Model) renderMessages() string {
+	if len(m.msgs) == 0 {
+		welcome := lipgloss.NewStyle().
+			Width(m.viewport.Width()).
+			Background(tui.Background).
+			Foreground(tui.Muted).
+			Align(lipgloss.Center).
+			Render("Welcome to Hive Agentic Chat!\n\nPress 'i' to enter insert mode and start chatting.\nPress '?' for help.\n\n")
+		return welcome
 	}
-	return lipgloss.NewStyle().Width(m.viewport.Width()).Render(strings.Join(value, "\n"))
+
+	var cards []string
+	for _, msg := range m.msgs {
+		cards = append(cards, msg.View())
+	}
+	return lipgloss.NewStyle().
+		Width(m.viewport.Width()).
+		Background(tui.Background).
+		Render(strings.Join(cards, "\n"))
 }

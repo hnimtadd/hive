@@ -9,9 +9,9 @@ import (
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
-	"github.com/hnimtadd/hive/internal/server"
 	"github.com/hnimtadd/hive/internal/storage"
 	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
+	"github.com/hnimtadd/hive/internal/transport/server"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
@@ -46,8 +46,12 @@ func main() {
 		log.Fatalf("failed to init storage: %v", err)
 	}
 
+	sessionStorage, err := storage.NewSessionStorage(storage.Options{
+		Storage: cfg.Session.Dir,
+	})
+
 	// Start the Hive server
-	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, taskStorage)
+	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, sessionStorage, taskStorage)
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}

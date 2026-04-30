@@ -1,4 +1,4 @@
-package context
+package budget
 
 import (
 	"github.com/hnimtadd/hive/pkg/config"

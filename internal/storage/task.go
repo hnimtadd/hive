@@ -154,7 +154,7 @@ func (t *taskStorage) Load(id string) (*types.HiveTask, error) {
 
 func toTask(doc *document.Document) (*types.HiveTask, error) {
 	if doc == nil {
-		return nil, fmt.Errorf("document is nil")
+		return nil, errors.New("document is nil")
 	}
 	payload := doc.ToMap()
 	task, err := utils.JSONConvert[types.HiveTask](payload)
@@ -162,4 +162,9 @@ func toTask(doc *document.Document) (*types.HiveTask, error) {
 		return nil, fmt.Errorf("failed to convert payload to hive task: %w", err)
 	}
 	return &task, nil
+}
+
+// ListSession implements [Storage]
+func (t *taskStorage) ListSession() ([]*types.HiveSession, error) {
+	panic("Not implemented")
 }

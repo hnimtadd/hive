@@ -48,3 +48,14 @@ func NewExecuteTaskResponseSuccess(output string) *ExecuteTaskResponse {
 		At: timestamppb.Now(),
 	}
 }
+
+func NewExecuteTaskResponseACK(taskID string) *ExecuteTaskResponse {
+	return &ExecuteTaskResponse{
+		Payload: &ExecuteTaskResponse_Ack{
+			Ack: &RequestAck{
+				TaskId: taskID,
+			},
+		},
+		At: timestamppb.Now(),
+	}
+}

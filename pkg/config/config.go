@@ -14,14 +14,15 @@ import (
 
 // Config represents the complete Hive configuration.
 type Config struct {
-	AI           AIConfig     `mapstructure:"ai"`
-	Server       ServerConfig `mapstructure:"server"`
-	WorkspaceDir string       `mapstructure:"workspace"`
-	BeeHiveDir   string       `mapstructure:"beehive"`
-	Bees         BeeConfig    `mapstructure:"bee"`
-	Tools        ToolConfig   `mapstructure:"tool"`
-	Tasks        TaskConfig   `mapstructure:"task"`
-	Tracing      TraceConfig  `mapstructure:"tracing"`
+	AI           AIConfig      `mapstructure:"ai"`
+	Server       ServerConfig  `mapstructure:"server"`
+	WorkspaceDir string        `mapstructure:"workspace"`
+	BeeHiveDir   string        `mapstructure:"beehive"`
+	Bees         BeeConfig     `mapstructure:"bee"`
+	Tools        ToolConfig    `mapstructure:"tool"`
+	Tasks        TaskConfig    `mapstructure:"task"`
+	Session      SessionConfig `mapstructure:"session"`
+	Tracing      TraceConfig   `mapstructure:"tracing"`
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -113,12 +114,10 @@ type TraceConfig struct {
 	LogFormat string `mapstructure:"log_format"`
 	LogFile   string `mapstructure:"log_file"`
 	AddSource bool   `mapstructure:"add_source"`
-	// SessionLog configures session/agent execution logging
-	SessionLog SessionLogConfig `mapstructure:"session_log"`
 }
 
 // SessionLogConfig configures session logging for agent/LLM interactions.
-type SessionLogConfig struct {
+type SessionConfig struct {
 	// Enabled turns on session logging
 	Enabled bool `mapstructure:"enabled"`
 	// Dir is the output directory for session logs (default: ./hive/sessions)
@@ -260,8 +259,8 @@ func validateConfig(config *Config) error {
 	}
 
 	// Validate and create session log directory
-	if config.Tracing.SessionLog.Enabled {
-		sessionLogDir := config.Tracing.SessionLog.Dir
+	if config.Session.Enabled {
+		sessionLogDir := config.Session.Dir
 		if sessionLogDir == "" {
 			sessionLogDir = filepath.Join(config.BeeHiveDir, "sessions")
 		} else {
@@ -270,7 +269,7 @@ func validateConfig(config *Config) error {
 				return fmt.Errorf("failed to expand session_log.dir: %w", err)
 			}
 		}
-		config.Tracing.SessionLog.Dir = sessionLogDir
+		config.Session.Dir = sessionLogDir
 		if err = os.MkdirAll(sessionLogDir, 0750); err != nil {
 			return fmt.Errorf("failed to create session log directory %s: %w", sessionLogDir, err)
 		}

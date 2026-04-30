@@ -3,7 +3,6 @@ package types
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/google/uuid"
 )
@@ -28,6 +27,7 @@ type TaskPlan struct {
 type HiveTask struct {
 	// Core identifiers
 	ID               string            `json:"_id"                   jsonschema:"ID of the task"`
+	SessionID        string            `json:"session_id"`
 	Status           Status            `json:"status"                jsonschema:"Current task status"`
 	NextAction       *string           `json:"next_action,omitempty" jsonschema:"Previous agent suggested next action to complete"`
 	Plan             []TaskPlan        `json:"plan"                  jsonschema:"Our mastery plan"`
@@ -39,7 +39,6 @@ type HiveTask struct {
 
 	Context context.Context `json:"-"`
 	Retries uint            `json:"retries"`
-	once    sync.Once
 }
 
 // NewHiveTask creates a new task with default values.
@@ -83,10 +82,7 @@ func (t *HiveTask) CompactJSONString() (string, error) {
 	}
 
 	// Keep only the last 3 messages
-	recentCount := 3
-	if len(t.Messages) < recentCount {
-		recentCount = len(t.Messages)
-	}
+	recentCount := min(3, len(t.Messages))
 
 	compact := compactView{
 		ID:               t.ID,

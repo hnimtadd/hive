@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytedance/gopkg/util/logger"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/manager"
@@ -18,6 +19,7 @@ import (
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/pkg/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 )
@@ -36,7 +38,7 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, storage storage.Storage) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage, storage storage.Storage) (*HiveServer, error) {
 	// Create task queue
 	tq := queue.NewMemoryQueue()
 
@@ -44,14 +46,14 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	cm := channel.NewManager()
 
 	// Create task manager (storage + queue)
-	tm := manager.NewManager(storage, tq)
+	tm := manager.NewManager(sessionStorage, storage, tq)
 
 	// Create worker pool
 	poolSize := cfg.Bees.PoolSize
 	if poolSize <= 0 {
 		poolSize = 3 // Default: 3 concurrent workers
 	}
-	sessionLogger, err := observability.NewSessionLogger(&cfg.Tracing.SessionLog)
+	sessionLogger, err := observability.NewSessionLogger(&cfg.Session)
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +142,7 @@ func (s *HiveServer) Stop() {
 func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse]) error {
 	ctx := srv.Context()
 	ctx, cancel := context.WithCancelCause(ctx)
+	logger := observability.Logger(ctx)
 
 	msg, err := srv.Recv()
 	if err != nil {
@@ -155,37 +158,37 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	}
 	task, err := s.taskManager.CreateTask(ctx, req.GetGlobalGoal(), req.GetInitialArtifacts())
 	if err != nil {
+		logger.Error("server: failed to create task", slog.Any("error", err))
 		err = fmt.Errorf("server: failed to create task: %w", err)
 		cancel(err)
 		return err
 	}
 	ch := s.channelManager.ForTask(task.ID)
-	defer s.channelManager.Cleanup(task.ID)
+	defer ch.CloseInput()
 
 	var wg sync.WaitGroup
-	wg.Add(2)
 
-	go func() {
-		defer wg.Done()
-		if err = s.forwardInput(ctx, srv, ch.InputCh); err != nil {
-			if errors.Is(err, context.Canceled) {
-				cancel(nil)
-			} else {
-				cancel(err)
-			}
+	wg.Go(func() {
+		err = s.forwardInput(ctx, srv, ch.InputCh)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("server: failed to forward output", slog.Any("error", err))
+			cancel(err)
+			return
 		}
-	}()
+		logger.Error("forward input return")
+		cancel(nil)
+	})
 
-	go func() {
-		defer wg.Done()
-		if err = s.forwardOutput(ctx, srv, ch.OutputCh); err != nil {
-			if errors.Is(err, context.Canceled) {
-				cancel(nil)
-			} else {
-				cancel(err)
-			}
+	wg.Go(func() {
+		err = s.forwardOutput(ctx, srv, ch.OutputCh)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("server: failed to forward output", slog.Any("error", err))
+			cancel(err)
+			return
 		}
-	}()
+		logger.Error("forward output return")
+		cancel(nil)
+	})
 
 	wg.Wait()
 	if err = context.Cause(ctx); errors.Is(err, context.Canceled) {
@@ -198,14 +201,26 @@ func (s *HiveServer) forwardInput(
 	ctx context.Context,
 	srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse],
 	ch chan *agentv1.ExecuteTaskRequest) error {
+	inputCh := make(chan *agentv1.ExecuteTaskRequest, 10)
+	go func() {
+		defer close(inputCh)
+		for {
+			msg, err := srv.Recv()
+			if err != nil {
+				return
+			}
+			inputCh <- msg
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
-			msg, err := srv.Recv()
-			if err != nil {
-				return fmt.Errorf("server: failed to receive user message: %w", err)
+
+		case msg, ok := <-inputCh:
+			if !ok {
+				return nil
 			}
 
 			// Use select here to avoid blocking forever on a full channel if the context was
@@ -233,10 +248,43 @@ func (s *HiveServer) forwardOutput(
 			if !ok {
 				return nil
 			}
+			logger.Info("forward output", slog.Any("msg", msg.String()))
 
 			if err := srv.Send(msg); err != nil {
 				return fmt.Errorf("server: output stream error: %w", err)
 			}
 		}
 	}
+}
+
+// HiveSession implements [agentv1.AgentServiceServer].
+func (s *HiveServer) HiveSession(srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]) error {
+	ctx := srv.Context()
+	msg, err := srv.Recv()
+	switch payload := msg.Payload.(type) {
+	case *agentv1.HiveSessionRequest_CreateConversation:
+	default:
+		srv.Send(&agentv1.HiveSessionResponse{
+			Payload: &agentv1.HiveSessionResponse_Notification{
+				Notification: &agentv1.Notification{
+					Payload: &agentv1.Notification_Error{
+						Error: "The first message should be the createconversation",
+					},
+				},
+			},
+		})
+	}
+
+	var (
+		session *types.HiveSession
+		err     error
+	)
+	convMsg := msg.GetCreateConversation()
+	switch mode := convMsg.GetMode().(type) {
+	case *agentv1.CreateConversationRequest_CreateNew:
+		session, err = s.taskManager.CreateSession(ctx)
+	case *agentv1.CreateConversationRequest_ResumeId:
+		session, err = s.taskManager.LoadSession(ctx, mode.ResumeId)
+	}
+	s.taskManager
 }
