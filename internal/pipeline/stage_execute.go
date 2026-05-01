@@ -65,6 +65,10 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 				return StageNext, nil
 
 			case types.TaskStatusPaused:
+				// TODO: create a feedback coordinator here
+				// IDEA:
+				// - pipeline have a generic submit command
+				// feedback submit will be Submit(shared.TypeFeedbackInput, Feedback{correlation_id, answer})
 				publisher <- agentv1.NewSessionEventInputRequired(
 					state.RunID,
 					agentv1.NewInputRequired(state.Task.ConversationID, state.RunID, output.Content),
