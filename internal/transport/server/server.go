@@ -19,7 +19,6 @@ import (
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
-	"github.com/hnimtadd/hive/pkg/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 )
@@ -259,32 +258,34 @@ func (s *HiveServer) forwardOutput(
 
 // HiveSession implements [agentv1.AgentServiceServer].
 func (s *HiveServer) HiveSession(srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]) error {
-	ctx := srv.Context()
-	msg, err := srv.Recv()
-	switch payload := msg.Payload.(type) {
-	case *agentv1.HiveSessionRequest_CreateConversation:
-	default:
-		srv.Send(&agentv1.HiveSessionResponse{
-			Payload: &agentv1.HiveSessionResponse_Notification{
-				Notification: &agentv1.Notification{
-					Payload: &agentv1.Notification_Error{
-						Error: "The first message should be the createconversation",
-					},
-				},
-			},
-		})
-	}
-
-	var (
-		session *types.HiveSession
-		err     error
-	)
-	convMsg := msg.GetCreateConversation()
-	switch mode := convMsg.GetMode().(type) {
-	case *agentv1.CreateConversationRequest_CreateNew:
-		session, err = s.taskManager.CreateSession(ctx)
-	case *agentv1.CreateConversationRequest_ResumeId:
-		session, err = s.taskManager.LoadSession(ctx, mode.ResumeId)
-	}
-	s.taskManager
+	// TODO: implement this follow our diagram
+	// ctx := srv.Context()
+	// msg, err := srv.Recv()
+	// switch payload := msg.Payload.(type) {
+	// case *agentv1.HiveSessionRequest_CreateConversation:
+	// default:
+	// 	srv.Send(&agentv1.HiveSessionResponse{
+	// 		Payload: &agentv1.HiveSessionResponse_Notification{
+	// 			Notification: &agentv1.Notification{
+	// 				Payload: &agentv1.Notification_Error{
+	// 					Error: "The first message should be the createconversation",
+	// 				},
+	// 			},
+	// 		},
+	// 	})
+	// }
+	//
+	// var (
+	// 	session *types.HiveSession
+	// 	err     error
+	// )
+	// convMsg := msg.GetCreateConversation()
+	// switch mode := convMsg.GetMode().(type) {
+	// case *agentv1.CreateConversationRequest_CreateNew:
+	// 	session, err = s.taskManager.CreateSession(ctx)
+	// case *agentv1.CreateConversationRequest_ResumeId:
+	// 	session, err = s.taskManager.LoadSession(ctx, mode.ResumeId)
+	// }
+	// s.taskManager
+	panic("Not implemented")
 }

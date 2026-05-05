@@ -15,4 +15,6 @@ type PipelineDependencies struct {
 	Config        config.Config
 	Registry      registry.Registry
 	Provider      llm.Provider
+
+	Parent *Pipeline
 }

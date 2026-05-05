@@ -7,20 +7,20 @@ import (
 
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/observability"
-	"github.com/hnimtadd/hive/internal/shared"
 	"github.com/hnimtadd/hive/internal/types"
-	coretypes "github.com/hnimtadd/hive/pkg/types"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 type eventStreamMiddleware struct {
-	eventCh chan<- *coretypes.HiveEvent
+	eventCh chan<- *agentv1.SessionEvent
 }
 
 // OnRequest implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
-	event := ExecutionEvent{
-		Typ: EventTypeLLMRequestStart,
-		Req: req,
+	// TODO: continue on this
+	event := &agentv1.SessionEvent{
+		Type:    agentv1.SessionEventType("on-request"),
+		Payload: nil,
 	}
 
 	if err := e.pushEvent(ctx, event); err != nil {
@@ -33,9 +33,10 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 
 // OnResponse implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
-	event := ExecutionEvent{
-		Typ:  EventTypeLLMRequestFinish,
-		Resp: resp,
+	// TOOD: define event for this
+	event := &agentv1.SessionEvent{
+		Type:    agentv1.SessionEventType("on-request"),
+		Payload: nil,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
@@ -47,9 +48,10 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 
 // OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
-	event := ExecutionEvent{
-		Typ:     EventTypeToolCallStart,
-		ToolReq: toolEvent,
+	// define event for this
+	event := &agentv1.SessionEvent{
+		Type:    agentv1.SessionEventType("on-request"),
+		Payload: nil,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
@@ -62,9 +64,10 @@ func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, 
 
 // OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
-	event := ExecutionEvent{
-		Typ:      EventTypeToolCallFinish,
-		ToolResp: toolEvent,
+	// define event for this
+	event := &agentv1.SessionEvent{
+		Type:    agentv1.SessionEventType("on-request"),
+		Payload: nil,
 	}
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
@@ -75,13 +78,9 @@ func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID 
 	}
 }
 
-func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEvent) error {
-	hiveEvent := &coretypes.HiveEvent{
-		Type:    shared.HiveEventTypeExecutionEvent,
-		Payload: event,
-	}
+func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event *agentv1.SessionEvent) error {
 	select {
-	case e.eventCh <- hiveEvent:
+	case e.eventCh <- event:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -92,7 +91,7 @@ func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEv
 
 var _ middleware.LLMMiddleware = &eventStreamMiddleware{}
 
-func EventStreamMiddleware(eventCh chan<- *coretypes.HiveEvent) middleware.LLMMiddleware {
+func EventStreamMiddleware(eventCh chan<- *agentv1.SessionEvent) middleware.LLMMiddleware {
 	return &eventStreamMiddleware{
 		eventCh: eventCh,
 	}

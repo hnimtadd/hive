@@ -17,7 +17,6 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/queue"
-	"github.com/hnimtadd/hive/internal/shared"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/types"
@@ -284,41 +283,42 @@ func (p *Pool) executeWithRetry(task *types.HiveTask) {
 	}
 }
 
-func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan shared.ExecutionEvent) {
-	logger := slog.Default()
-	for {
-		select {
-		case <-ctx.Done():
-		case event := <-eventCh:
-			switch event.Typ {
-			case shared.EventTypeToolCallStart:
-				logger.DebugContext(ctx, "receive tool call event")
-				status := fmt.Sprintf("call_id: %s, agent_id: %s, tool_name: %s, input: %s", event.ToolReq.CallID, event.ToolReq.AgentID, event.ToolReq.ToolName, event.ToolReq.Arguments)
-				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_start", utils.SanitizeUTF8(status))
-
-			case shared.EventTypeToolCallFinish:
-				logger.DebugContext(ctx, "receive tool finish event")
-				toolResp := event.ToolResp
-				var status string
-				if toolResp.Succeed {
-					status = fmt.Sprintf("call_id: %s, output: %s", toolResp.CallID, toolResp.Output)
-				} else {
-					status = fmt.Sprintf("call_id: %s, error: %s", toolResp.CallID, toolResp.Error)
-				}
-				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_response", utils.SanitizeUTF8(status))
-
-			case shared.EventTypeLLMRequestStart:
-				logger.DebugContext(ctx, "receive llm start event")
-				llmReq := event.Req
-				status := fmt.Sprintf("agent_id: %s, input: %s", llmReq.AgentID, llmReq.Input)
-				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_start", utils.SanitizeUTF8(status))
-
-			case shared.EventTypeLLMRequestFinish:
-				logger.DebugContext(ctx, "receive llm finish event")
-				llmResp := event.Resp
-				status := fmt.Sprintf("agent_id: %s, finish_reason: %s, token_used: %d", llmResp.AgentID, llmResp.FinishReason, llmResp.TokenUsed.TotalTokens)
-				ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_response", utils.SanitizeUTF8(status))
-			}
-		}
-	}
-}
+// TODO: deprecate this in favor of pipeline
+// func forwardEvent(ctx context.Context, ch *channel.TaskChannels, eventCh <-chan agentv1.SessionEvent) {
+// logger := slog.Default()
+// for {
+// 	select {
+// 	case <-ctx.Done():
+// 	case event := <-eventCh:
+// 		switch event.Type {
+// 		case shared.EventTypeToolCallStart:
+// 			logger.DebugContext(ctx, "receive tool call event")
+// 			status := fmt.Sprintf("call_id: %s, agent_id: %s, tool_name: %s, input: %s", event.ToolReq.CallID, event.ToolReq.AgentID, event.ToolReq.ToolName, event.ToolReq.Arguments)
+// 			ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_start", utils.SanitizeUTF8(status))
+//
+// 		case shared.EventTypeToolCallFinish:
+// 			logger.DebugContext(ctx, "receive tool finish event")
+// 			toolResp := event.ToolResp
+// 			var status string
+// 			if toolResp.Succeed {
+// 				status = fmt.Sprintf("call_id: %s, output: %s", toolResp.CallID, toolResp.Output)
+// 			} else {
+// 				status = fmt.Sprintf("call_id: %s, error: %s", toolResp.CallID, toolResp.Error)
+// 			}
+// 			ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("tool_response", utils.SanitizeUTF8(status))
+//
+// 		case shared.EventTypeLLMRequestStart:
+// 			logger.DebugContext(ctx, "receive llm start event")
+// 			llmReq := event.Req
+// 			status := fmt.Sprintf("agent_id: %s, input: %s", llmReq.AgentID, llmReq.Input)
+// 			ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_start", utils.SanitizeUTF8(status))
+//
+// 		case shared.EventTypeLLMRequestFinish:
+// 			logger.DebugContext(ctx, "receive llm finish event")
+// 			llmResp := event.Resp
+// 			status := fmt.Sprintf("agent_id: %s, finish_reason: %s, token_used: %d", llmResp.AgentID, llmResp.FinishReason, llmResp.TokenUsed.TotalTokens)
+// 			ch.OutputCh <- agentv1.NewExecuteTaskResponseUpdate("llm_response", utils.SanitizeUTF8(status))
+// 		}
+// 	}
+// }
+// }

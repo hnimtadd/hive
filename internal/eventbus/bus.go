@@ -19,6 +19,7 @@ type topic[T any] struct {
 	subscribers map[uint64]chan T
 }
 
+// NewEventBus creates a new event bus.
 func NewEventBus[T any]() *EventBus[T] {
 	return &EventBus[T]{
 		topics: map[string]*topic[T]{},
@@ -26,15 +27,22 @@ func NewEventBus[T any]() *EventBus[T] {
 	}
 }
 
+// Subscribe subscribes to a topic.
+// It returns a channel that will receive events on the topic.
 func (e *EventBus[T]) Subscribe(topic string) <-chan T {
 	eventCh, _ := e.SubscribeWithCancel(topic)
 	return eventCh
 }
 
+// Publish publishes an event to a topic.
+// It returns a channel that will receive events on the topic.
 func (e *EventBus[T]) Publish(topic string) chan<- T {
 	return e.PublishWithContext(context.Background(), topic)
 }
 
+// PublishWithContext publishes an event to a topic with a context.
+// It returns a channel that will receive events on the topic.
+// Context cancellation will stop the publication of events.
 func (e *EventBus[T]) PublishWithContext(ctx context.Context, topic string) chan<- T {
 	eventCh := make(chan T, publisherBufferLength)
 

@@ -80,7 +80,7 @@ func setupTestServer(t *testing.T) (*HiveServer, func()) {
 	}
 
 	// Create server
-	srv, err := NewHiveServer(cfg, llmProvider, beeReg, store)
+	srv, err := NewHiveServer(cfg, llmProvider, beeReg, nil, store)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}

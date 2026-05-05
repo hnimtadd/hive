@@ -73,6 +73,12 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 					state.RunID,
 					agentv1.NewInputRequired(state.Task.ConversationID, state.RunID, output.Content),
 				)
+				feedback, err := e.deps.Parent.waitForFeedback(ctx, state.RunID)
+				if err != nil {
+					logger.Error("failed to wait for feedback", slog.Any("error", err))
+					return StageAbort, fmt.Errorf("failed to wait for feedback: %w", err)
+				}
+				state.Task.Messages = append(state.Task.Messages, types.NewMessage(types.RoleUser, feedback.Input))
 				// wait for the feedback response
 				// update state message with feedback response
 				continue

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,9 @@ type Pipeline struct {
 	iteration []Stage
 
 	deps PipelineDependencies
+
+	// inline registry for pending feedback
+	pendingFeedback sync.Map
 }
 
 func NewPipeline() *Pipeline {
@@ -71,3 +75,54 @@ func (p *Pipeline) Execute(ctx context.Context, state *PipelineState) (*Pipeline
 	result.Duration = time.Since(start)
 	return result, nil
 }
+
+func (p *Pipeline) Handle(ctx context.Context, cmd PipelineCommand) error {
+	switch cmd.Key {
+	case PipelineSubmitInputKey:
+		payload, ok := cmd.Payload.(PipelineSubmitInputPayload)
+		if !ok {
+			return fmt.Errorf("pipeline: payload must be PipelineSubmitInputPayload for PipelineSubmitInputCommand")
+		}
+		return p.handleSubmitInput(ctx, payload)
+	default:
+		return fmt.Errorf("pipeline: unknown command: %s", cmd)
+	}
+}
+
+// handleSubmitInput handle the input submit from the user, send it to the
+// waiting channel.
+// The waiting channel is created with correlation ID as the key before, by the excute stage, after the task is paused by the queen.
+func (p *Pipeline) handleSubmitInput(ctx context.Context, payload PipelineSubmitInputPayload) error {
+	chAny, ok := p.pendingFeedback.Load(payload.CorrelationID)
+	if !ok {
+		return fmt.Errorf("pipeline: no waiting channel found for correlation ID: %s", payload.CorrelationID)
+	}
+
+	ch := chAny.(chan<- PipelineSubmitInputPayload)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case ch <- payload:
+		return nil
+	default:
+		return fmt.Errorf("pipeline: waiting channel is full for correlation ID: %s", payload.CorrelationID)
+	}
+}
+
+// waitForFeedback waits for the feedback response for a given correlation ID.
+// It returns the feedback response or an error if the context is done or the waiting channel is full.
+func (p *Pipeline) waitForFeedback(ctx context.Context, correlationID string) (PipelineSubmitInputPayload, error) {
+	ch := make(chan PipelineSubmitInputPayload, 1)
+	p.pendingFeedback.Store(correlationID, ch)
+	defer p.pendingFeedback.Delete(correlationID)
+
+	select {
+	case <-ctx.Done():
+		return PipelineSubmitInputPayload{}, ctx.Err()
+	case payload := <-ch:
+		return payload, nil
+	default:
+		return PipelineSubmitInputPayload{}, fmt.Errorf("pipeline: waiting channel is full for correlation ID: %s", correlationID)
+	}
+}
+
