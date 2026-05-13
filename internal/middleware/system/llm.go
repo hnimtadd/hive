@@ -79,6 +79,10 @@ func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID 
 }
 
 func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event *agentv1.SessionEvent) error {
+	if event == nil || e.eventCh == nil {
+		return nil
+	}
+
 	select {
 	case e.eventCh <- event:
 		return nil

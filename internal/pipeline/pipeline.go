@@ -18,11 +18,16 @@ type Pipeline struct {
 	pendingFeedback sync.Map
 }
 
-func NewPipeline() *Pipeline {
-	return &Pipeline{
-		pre:       []Stage{NewContextStage()},
-		iteration: []Stage{NewExecuteStage()},
+func NewPipeline(deps PipelineDependencies) *Pipeline {
+	p := &Pipeline{
+		deps: deps,
 	}
+	p.deps.Parent = p
+
+	stageDeps := &p.deps
+	p.pre = []Stage{NewContextStage(stageDeps)}
+	p.iteration = []Stage{NewExecuteStage(stageDeps)}
+	return p
 }
 
 // Execute executes the full pipeline for a single agent run.

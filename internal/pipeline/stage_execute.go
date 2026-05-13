@@ -12,13 +12,13 @@ import (
 )
 
 type ExecuteStage struct {
-	deps PipelineDependencies
+	deps *PipelineDependencies
 }
 
 var _ Stage = &ExecuteStage{}
 
-func NewExecuteStage() *ExecuteStage {
-	return &ExecuteStage{}
+func NewExecuteStage(deps *PipelineDependencies) *ExecuteStage {
+	return &ExecuteStage{deps: deps}
 }
 
 // Execute implements [Stage].

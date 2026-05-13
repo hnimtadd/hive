@@ -61,8 +61,14 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	}
 
 	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, sessionLogger, cfg)
-	pipeline := pipeline.NewPipeline()
 	eventbus := eventbus.NewEventBus[*agentv1.SessionEvent]()
+	pipeline := pipeline.NewPipeline(pipeline.PipelineDependencies{
+		EventBus:      eventbus,
+		SessionLogger: sessionLogger,
+		Config:        *cfg,
+		Registry:      reg,
+		Provider:      provider,
+	})
 
 	return &HiveServer{
 		config:         cfg,
@@ -162,7 +168,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 		cancel(err)
 		return err
 	}
-	task, err := s.taskManager.CreateTask(ctx, req.GetGlobalGoal(), req.GetInitialArtifacts())
+	task, err := s.taskManager.CreateTaskNoEnqueue(req.GetGlobalGoal(), req.GetInitialArtifacts())
 	if err != nil {
 		logger.Error("server: failed to create task", slog.Any("error", err))
 		err = fmt.Errorf("server: failed to create task: %w", err)
