@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -28,7 +29,10 @@ func NewPipeline() *Pipeline {
 func (p *Pipeline) Execute(ctx context.Context, state *PipelineState) (*PipelineResult, error) {
 	start := time.Now()
 	for _, stage := range p.pre {
-		stage.Execute(ctx, state)
+		_, err := stage.Execute(ctx, state)
+		if err != nil {
+			return nil, fmt.Errorf("pre: %w", err)
+		}
 	}
 
 	// Propagate enriched context from pre stages
@@ -41,6 +45,7 @@ func (p *Pipeline) Execute(ctx context.Context, state *PipelineState) (*Pipeline
 	// StageNext: go to next stage
 	// StageAbort: Stop entire run
 	for state.Iteration = 0; state.Iteration < p.deps.Config.AI.MaxStep; state.Iteration++ {
+	loop:
 		for _, stage := range p.iteration {
 			result, err := stage.Execute(ctx, state)
 			if err != nil {
@@ -50,10 +55,10 @@ func (p *Pipeline) Execute(ctx context.Context, state *PipelineState) (*Pipeline
 			switch result {
 			case StageAbort:
 				state.ExitCode = StageAbort
-				break
+				break loop
 			case StageNext:
 				state.ExitCode = StageNext
-				break
+				break loop
 			case StageContinue:
 				continue
 			}
@@ -81,7 +86,7 @@ func (p *Pipeline) Handle(ctx context.Context, cmd PipelineCommand) error {
 	case PipelineSubmitInputKey:
 		payload, ok := cmd.Payload.(PipelineSubmitInputPayload)
 		if !ok {
-			return fmt.Errorf("pipeline: payload must be PipelineSubmitInputPayload for PipelineSubmitInputCommand")
+			return errors.New("pipeline: payload must be PipelineSubmitInputPayload for PipelineSubmitInputCommand")
 		}
 		return p.handleSubmitInput(ctx, payload)
 	default:
@@ -91,14 +96,15 @@ func (p *Pipeline) Handle(ctx context.Context, cmd PipelineCommand) error {
 
 // handleSubmitInput handle the input submit from the user, send it to the
 // waiting channel.
-// The waiting channel is created with correlation ID as the key before, by the excute stage, after the task is paused by the queen.
+// The waiting channel is created with correlation ID as the key before, by
+// the excute stage, after the task is paused by the queen.
 func (p *Pipeline) handleSubmitInput(ctx context.Context, payload PipelineSubmitInputPayload) error {
 	chAny, ok := p.pendingFeedback.Load(payload.CorrelationID)
 	if !ok {
 		return fmt.Errorf("pipeline: no waiting channel found for correlation ID: %s", payload.CorrelationID)
 	}
 
-	ch := chAny.(chan<- PipelineSubmitInputPayload)
+	ch := chAny.(chan<- PipelineSubmitInputPayload) //nolint: errcheck// this is always true
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -125,4 +131,3 @@ func (p *Pipeline) waitForFeedback(ctx context.Context, correlationID string) (P
 		return PipelineSubmitInputPayload{}, fmt.Errorf("pipeline: waiting channel is full for correlation ID: %s", correlationID)
 	}
 }
-

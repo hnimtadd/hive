@@ -25,15 +25,18 @@ func NewExecuteStage() *ExecuteStage {
 func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (StageResult, error) {
 	logger := observability.Logger(state.Ctx)
 	supervisor, err := queen.NewQueenBee(state.Task.ID, 10, e.deps.Registry, e.deps.Config.Server.MaxTimeout, e.deps.Provider)
-	publisher := e.deps.EventBus.Publish(state.Task.ID)
+	if err != nil {
+		return StageAbort, fmt.Errorf("failed to init queen bee: %w", err)
+	}
 
+	publisher := e.deps.EventBus.Publish(state.Task.ID)
 	// Execute supervisor loop
 	for {
 		select {
 		case <-state.Ctx.Done():
 			return StageAbort, state.Ctx.Err()
 		case <-ctx.Done():
-			logger.Info("context cancelled during execution")
+			logger.InfoContext(ctx, "context cancelled during execution")
 			return StageAbort, fmt.Errorf("context cancelled during execution: %w", ctx.Err())
 
 		default:
@@ -41,7 +44,7 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 			var output *queen.QueenOutput
 			output, err = supervisor.Execute(ctx, state.Task)
 			if err != nil {
-				logger.Error("supervisor execution failed", slog.Any("error", err))
+				logger.ErrorContext(ctx, "supervisor execution failed", slog.Any("error", err))
 				return StageAbort, fmt.Errorf("failed to execute supervisor: %w", err)
 			}
 
@@ -49,7 +52,7 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 			// Send update to client
 			switch output.Status {
 			case types.TaskStatusCompleted:
-				logger.Info("task completed")
+				logger.InfoContext(ctx, "task completed")
 				publisher <- agentv1.NewSessionEventTurnResponse(
 					state.RunID,
 					agentv1.NewTurnResponseSuccess(state.Task.ConversationID, state.RunID, state.RunID, output.Content),
@@ -57,7 +60,7 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 				return StageNext, nil
 
 			case types.TaskStatusFailed:
-				logger.Info("task failed")
+				logger.InfoContext(ctx, "task failed")
 				publisher <- agentv1.NewSessionEventTurnResponse(
 					state.RunID,
 					agentv1.NewTurnResponseFailed(state.Task.ConversationID, state.RunID, state.RunID, output.Content),
@@ -65,17 +68,16 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 				return StageNext, nil
 
 			case types.TaskStatusPaused:
-				// TODO: create a feedback coordinator here
-				// IDEA:
-				// - pipeline have a generic submit command
 				// feedback submit will be Submit(shared.TypeFeedbackInput, Feedback{correlation_id, answer})
 				publisher <- agentv1.NewSessionEventInputRequired(
 					state.RunID,
 					agentv1.NewInputRequired(state.Task.ConversationID, state.RunID, output.Content),
 				)
-				feedback, err := e.deps.Parent.waitForFeedback(ctx, state.RunID)
+
+				var feedback PipelineSubmitInputPayload
+				feedback, err = e.deps.Parent.waitForFeedback(ctx, state.RunID)
 				if err != nil {
-					logger.Error("failed to wait for feedback", slog.Any("error", err))
+					logger.ErrorContext(ctx, "failed to wait for feedback", slog.Any("error", err))
 					return StageAbort, fmt.Errorf("failed to wait for feedback: %w", err)
 				}
 				state.Task.Messages = append(state.Task.Messages, types.NewMessage(types.RoleUser, feedback.Input))
@@ -88,11 +90,9 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 					agentv1.NewTurnResponseUpdate(state.Task.ConversationID, state.RunID, state.RunID, output.Content),
 				)
 				continue
-				// Continue to next iteration
 			}
 		}
 	}
-
 }
 
 // Name implements [Stage].

@@ -9,12 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bytedance/gopkg/util/logger"
 	"github.com/hnimtadd/hive/internal/bee/registry"
 	"github.com/hnimtadd/hive/internal/channel"
+	"github.com/hnimtadd/hive/internal/eventbus"
 	"github.com/hnimtadd/hive/internal/manager"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
+	"github.com/hnimtadd/hive/internal/pipeline"
 	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/internal/worker"
@@ -33,6 +34,8 @@ type HiveServer struct {
 	workerPool     *worker.Pool
 	poolCtx        context.Context
 	poolCancel     context.CancelFunc
+	pipeline       *pipeline.Pipeline
+	eventbus       *eventbus.EventBus[*agentv1.SessionEvent]
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
@@ -58,12 +61,16 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	}
 
 	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, sessionLogger, cfg)
+	pipeline := pipeline.NewPipeline()
+	eventbus := eventbus.NewEventBus[*agentv1.SessionEvent]()
 
 	return &HiveServer{
 		config:         cfg,
 		taskManager:    tm,
 		channelManager: cm,
 		workerPool:     pool,
+		pipeline:       pipeline,
+		eventbus:       eventbus,
 	}, nil
 }
 
@@ -162,16 +169,24 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 		cancel(err)
 		return err
 	}
-	ch := s.channelManager.ForTask(task.ID)
-	defer ch.CloseInput()
 
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		err = s.forwardInput(ctx, srv, ch.InputCh)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("server: failed to forward output", slog.Any("error", err))
-			cancel(err)
+		_, runErr := s.pipeline.Execute(ctx, pipeline.NewPipelineState(ctx, task))
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			logger.Error("server: failed to execute pipeline", slog.Any("error", runErr))
+			cancel(fmt.Errorf("server: failed to execute pipeline: %w", runErr))
+			return
+		}
+		cancel(nil)
+	})
+
+	wg.Go(func() {
+		inputErr := s.forwardInput(ctx, srv, task.ID)
+		if inputErr != nil && !errors.Is(inputErr, context.Canceled) {
+			logger.Error("server: failed to forward input", slog.Any("error", inputErr))
+			cancel(inputErr)
 			return
 		}
 		logger.Error("forward input return")
@@ -179,10 +194,10 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 	})
 
 	wg.Go(func() {
-		err = s.forwardOutput(ctx, srv, ch.OutputCh)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("server: failed to forward output", slog.Any("error", err))
-			cancel(err)
+		outputErr := s.forwardOutput(ctx, srv, task.ID)
+		if outputErr != nil && !errors.Is(outputErr, context.Canceled) {
+			logger.Error("server: failed to forward output", slog.Any("error", outputErr))
+			cancel(outputErr)
 			return
 		}
 		logger.Error("forward output return")
@@ -199,7 +214,7 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 func (s *HiveServer) forwardInput(
 	ctx context.Context,
 	srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse],
-	ch chan *agentv1.ExecuteTaskRequest) error {
+	taskID string) error {
 	inputCh := make(chan *agentv1.ExecuteTaskRequest, 10)
 	go func() {
 		defer close(inputCh)
@@ -221,13 +236,11 @@ func (s *HiveServer) forwardInput(
 			if !ok {
 				return nil
 			}
-
-			// Use select here to avoid blocking forever on a full channel if the context was
-			// cancelled
-			select {
-			case ch <- msg:
-			case <-ctx.Done():
-				return nil
+			if err := s.handleSessionInputEvent(ctx, taskID, msg); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				return fmt.Errorf("server: failed to handle input event: %w", err)
 			}
 		}
 	}
@@ -236,8 +249,12 @@ func (s *HiveServer) forwardInput(
 func (s *HiveServer) forwardOutput(
 	ctx context.Context,
 	srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse],
-	ch chan *agentv1.ExecuteTaskResponse,
+	taskID string,
 ) error {
+	logger := observability.Logger(ctx)
+	ch, unsubscribe := s.eventbus.SubscribeWithCancel(taskID)
+	defer unsubscribe()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -247,12 +264,99 @@ func (s *HiveServer) forwardOutput(
 			if !ok {
 				return nil
 			}
-			logger.Info("forward output", slog.Any("msg", msg.String()))
+			resp, err := sessionEventToExecuteTaskResponse(msg)
+			if err != nil {
+				return fmt.Errorf("server: failed to convert session event to execute response: %w", err)
+			}
+			if resp == nil {
+				continue
+			}
 
-			if err := srv.Send(msg); err != nil {
+			logger.Info("forward output", slog.String("event_type", string(msg.Type)))
+
+			if err := srv.Send(resp); err != nil {
 				return fmt.Errorf("server: output stream error: %w", err)
 			}
 		}
+	}
+}
+
+func (s *HiveServer) handleSessionInputEvent(ctx context.Context, taskID string, msg *agentv1.ExecuteTaskRequest) error {
+	if msg == nil {
+		return fmt.Errorf("empty execute task input message")
+	}
+
+	switch payload := msg.Payload.(type) {
+	case *agentv1.ExecuteTaskRequest_Feedback:
+		return s.pipeline.Handle(ctx, pipeline.PipelineCommand{
+			Key: pipeline.PipelineSubmitInputKey,
+			Payload: pipeline.PipelineSubmitInputPayload{
+				CorrelationID: taskID,
+				Input:         payload.Feedback.GetFeedback(),
+			},
+		})
+	case *agentv1.ExecuteTaskRequest_Cancel:
+		return context.Canceled
+	case *agentv1.ExecuteTaskRequest_Request:
+		// The first request payload already bootstraps the task before this loop.
+		return nil
+	default:
+		return fmt.Errorf("unsupported execute task request payload type %T", payload)
+	}
+}
+
+func sessionEventToExecuteTaskResponse(event *agentv1.SessionEvent) (*agentv1.ExecuteTaskResponse, error) {
+	if event == nil || event.Payload == nil {
+		return nil, nil
+	}
+
+	switch payload := event.Payload.(type) {
+	case *agentv1.SessionEventTurnResponsePayload:
+		resp := payload.Response
+		if resp == nil || resp.Payload == nil {
+			return nil, nil
+		}
+
+		switch turnPayload := resp.Payload.(type) {
+		case *agentv1.TurnResponse_Update:
+			return agentv1.NewExecuteTaskResponseUpdate("in_progress", turnPayload.Update.GetContent()), nil
+		case *agentv1.TurnResponse_Completed:
+			if success := turnPayload.Completed.GetSuccess(); success != nil {
+				return agentv1.NewExecuteTaskResponseSuccess(success.GetContent()), nil
+			}
+			if failed := turnPayload.Completed.GetFailed(); failed != nil {
+				return agentv1.NewExecuteTaskResponseErr(failed.GetMessage()), nil
+			}
+			return nil, nil
+		case *agentv1.TurnResponse_Ack:
+			return nil, nil
+		default:
+			return nil, fmt.Errorf("unsupported turn response payload type %T", turnPayload)
+		}
+
+	case *agentv1.SessionEventInputRequiredPayload:
+		if payload.Input == nil {
+			return nil, nil
+		}
+		return agentv1.NewExecuteTaskResponseFeedback(payload.Input.GetQuestion()), nil
+
+	case *agentv1.SessionEventNotificationPayload:
+		if payload.Notification == nil {
+			return nil, nil
+		}
+		if errMsg := payload.Notification.GetError(); errMsg != "" {
+			return agentv1.NewExecuteTaskResponseErr(errMsg), nil
+		}
+		if info := payload.Notification.GetInfo(); info != "" {
+			return agentv1.NewExecuteTaskResponseUpdate("info", info), nil
+		}
+		return nil, nil
+
+	case *agentv1.SessionEventCreateConversationPayload, *agentv1.SessionEventPongPayload:
+		// ExecuteTask stream does not expose these HiveSession-specific payloads.
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unsupported session event payload type %T", payload)
 	}
 }
 
