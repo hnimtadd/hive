@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/types"
 )
@@ -14,7 +13,6 @@ import (
 type Manager struct {
 	storage        storage.Storage
 	sessionStorage storage.SessionStorage
-	queue          queue.Queue
 }
 
 // NewManager creates a new task manager.
