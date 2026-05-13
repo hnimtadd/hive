@@ -1155,530 +1155,6 @@ func (x *Pong) GetAt() *timestamppb.Timestamp {
 	return nil
 }
 
-type ExecuteTaskRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	At *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
-	// Types that are assignable to Payload:
-	//
-	//	*ExecuteTaskRequest_Request
-	//	*ExecuteTaskRequest_Feedback
-	//	*ExecuteTaskRequest_Cancel
-	Payload isExecuteTaskRequest_Payload `protobuf_oneof:"payload"`
-}
-
-func (x *ExecuteTaskRequest) Reset() {
-	*x = ExecuteTaskRequest{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[14]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *ExecuteTaskRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ExecuteTaskRequest) ProtoMessage() {}
-
-func (x *ExecuteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[14]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ExecuteTaskRequest.ProtoReflect.Descriptor instead.
-func (*ExecuteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *ExecuteTaskRequest) GetAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.At
-	}
-	return nil
-}
-
-func (m *ExecuteTaskRequest) GetPayload() isExecuteTaskRequest_Payload {
-	if m != nil {
-		return m.Payload
-	}
-	return nil
-}
-
-func (x *ExecuteTaskRequest) GetRequest() *TaskRequest {
-	if x, ok := x.GetPayload().(*ExecuteTaskRequest_Request); ok {
-		return x.Request
-	}
-	return nil
-}
-
-func (x *ExecuteTaskRequest) GetFeedback() *UserFeedback {
-	if x, ok := x.GetPayload().(*ExecuteTaskRequest_Feedback); ok {
-		return x.Feedback
-	}
-	return nil
-}
-
-func (x *ExecuteTaskRequest) GetCancel() *Cancel {
-	if x, ok := x.GetPayload().(*ExecuteTaskRequest_Cancel); ok {
-		return x.Cancel
-	}
-	return nil
-}
-
-type isExecuteTaskRequest_Payload interface {
-	isExecuteTaskRequest_Payload()
-}
-
-type ExecuteTaskRequest_Request struct {
-	Request *TaskRequest `protobuf:"bytes,2,opt,name=request,proto3,oneof"` // Sent first to begin the loop
-}
-
-type ExecuteTaskRequest_Feedback struct {
-	Feedback *UserFeedback `protobuf:"bytes,3,opt,name=feedback,proto3,oneof"` // Sent when the supervisor ask a question
-}
-
-type ExecuteTaskRequest_Cancel struct {
-	Cancel *Cancel `protobuf:"bytes,4,opt,name=cancel,proto3,oneof"` // Sent if the user cancel the CLI request
-}
-
-func (*ExecuteTaskRequest_Request) isExecuteTaskRequest_Payload() {}
-
-func (*ExecuteTaskRequest_Feedback) isExecuteTaskRequest_Payload() {}
-
-func (*ExecuteTaskRequest_Cancel) isExecuteTaskRequest_Payload() {}
-
-type TaskRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	GlobalGoal       string            `protobuf:"bytes,1,opt,name=global_goal,json=globalGoal,proto3" json:"global_goal,omitempty"`
-	InitialArtifacts map[string]string `protobuf:"bytes,2,rep,name=initial_artifacts,json=initialArtifacts,proto3" json:"initial_artifacts,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-}
-
-func (x *TaskRequest) Reset() {
-	*x = TaskRequest{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[15]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *TaskRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TaskRequest) ProtoMessage() {}
-
-func (x *TaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[15]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TaskRequest.ProtoReflect.Descriptor instead.
-func (*TaskRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *TaskRequest) GetGlobalGoal() string {
-	if x != nil {
-		return x.GlobalGoal
-	}
-	return ""
-}
-
-func (x *TaskRequest) GetInitialArtifacts() map[string]string {
-	if x != nil {
-		return x.InitialArtifacts
-	}
-	return nil
-}
-
-type UserFeedback struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Feedback string `protobuf:"bytes,1,opt,name=feedback,proto3" json:"feedback,omitempty"`
-}
-
-func (x *UserFeedback) Reset() {
-	*x = UserFeedback{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[16]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *UserFeedback) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UserFeedback) ProtoMessage() {}
-
-func (x *UserFeedback) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[16]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UserFeedback.ProtoReflect.Descriptor instead.
-func (*UserFeedback) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *UserFeedback) GetFeedback() string {
-	if x != nil {
-		return x.Feedback
-	}
-	return ""
-}
-
-type Cancel struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-}
-
-func (x *Cancel) Reset() {
-	*x = Cancel{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[17]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *Cancel) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Cancel) ProtoMessage() {}
-
-func (x *Cancel) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[17]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Cancel.ProtoReflect.Descriptor instead.
-func (*Cancel) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{17}
-}
-
-// TaskUpdate is a polymorphic message representing different events in the agent loop.
-type ExecuteTaskResponse struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	At *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
-	// Types that are assignable to Payload:
-	//
-	//	*ExecuteTaskResponse_Update
-	//	*ExecuteTaskResponse_Success
-	//	*ExecuteTaskResponse_Error
-	//	*ExecuteTaskResponse_Feedback
-	//	*ExecuteTaskResponse_Ack
-	Payload isExecuteTaskResponse_Payload `protobuf_oneof:"payload"`
-}
-
-func (x *ExecuteTaskResponse) Reset() {
-	*x = ExecuteTaskResponse{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[18]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *ExecuteTaskResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ExecuteTaskResponse) ProtoMessage() {}
-
-func (x *ExecuteTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[18]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ExecuteTaskResponse.ProtoReflect.Descriptor instead.
-func (*ExecuteTaskResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *ExecuteTaskResponse) GetAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.At
-	}
-	return nil
-}
-
-func (m *ExecuteTaskResponse) GetPayload() isExecuteTaskResponse_Payload {
-	if m != nil {
-		return m.Payload
-	}
-	return nil
-}
-
-func (x *ExecuteTaskResponse) GetUpdate() *InProgressUpdate {
-	if x, ok := x.GetPayload().(*ExecuteTaskResponse_Update); ok {
-		return x.Update
-	}
-	return nil
-}
-
-func (x *ExecuteTaskResponse) GetSuccess() *SuccessUpdate {
-	if x, ok := x.GetPayload().(*ExecuteTaskResponse_Success); ok {
-		return x.Success
-	}
-	return nil
-}
-
-func (x *ExecuteTaskResponse) GetError() *ErrorUpdate {
-	if x, ok := x.GetPayload().(*ExecuteTaskResponse_Error); ok {
-		return x.Error
-	}
-	return nil
-}
-
-func (x *ExecuteTaskResponse) GetFeedback() *FeedbackRequire {
-	if x, ok := x.GetPayload().(*ExecuteTaskResponse_Feedback); ok {
-		return x.Feedback
-	}
-	return nil
-}
-
-func (x *ExecuteTaskResponse) GetAck() *RequestAck {
-	if x, ok := x.GetPayload().(*ExecuteTaskResponse_Ack); ok {
-		return x.Ack
-	}
-	return nil
-}
-
-type isExecuteTaskResponse_Payload interface {
-	isExecuteTaskResponse_Payload()
-}
-
-type ExecuteTaskResponse_Update struct {
-	Update *InProgressUpdate `protobuf:"bytes,2,opt,name=update,proto3,oneof"` // The Supervisor's reasoning
-}
-
-type ExecuteTaskResponse_Success struct {
-	Success *SuccessUpdate `protobuf:"bytes,3,opt,name=success,proto3,oneof"` // The final output to the user
-}
-
-type ExecuteTaskResponse_Error struct {
-	Error *ErrorUpdate `protobuf:"bytes,4,opt,name=error,proto3,oneof"` // Non-fatal or fatal error details
-}
-
-type ExecuteTaskResponse_Feedback struct {
-	Feedback *FeedbackRequire `protobuf:"bytes,5,opt,name=feedback,proto3,oneof"` // in the middle feedback require
-}
-
-type ExecuteTaskResponse_Ack struct {
-	Ack *RequestAck `protobuf:"bytes,6,opt,name=ack,proto3,oneof"` // ack of the request including the initial information like request ID.
-}
-
-func (*ExecuteTaskResponse_Update) isExecuteTaskResponse_Payload() {}
-
-func (*ExecuteTaskResponse_Success) isExecuteTaskResponse_Payload() {}
-
-func (*ExecuteTaskResponse_Error) isExecuteTaskResponse_Payload() {}
-
-func (*ExecuteTaskResponse_Feedback) isExecuteTaskResponse_Payload() {}
-
-func (*ExecuteTaskResponse_Ack) isExecuteTaskResponse_Payload() {}
-
-type RequestAck struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-}
-
-func (x *RequestAck) Reset() {
-	*x = RequestAck{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[19]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *RequestAck) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RequestAck) ProtoMessage() {}
-
-func (x *RequestAck) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[19]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RequestAck.ProtoReflect.Descriptor instead.
-func (*RequestAck) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *RequestAck) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-type InProgressUpdate struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Content string `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
-	Status  string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"` // e.g., "PLANNING", "ANALYZING"
-}
-
-func (x *InProgressUpdate) Reset() {
-	*x = InProgressUpdate{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[20]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *InProgressUpdate) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InProgressUpdate) ProtoMessage() {}
-
-func (x *InProgressUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[20]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InProgressUpdate.ProtoReflect.Descriptor instead.
-func (*InProgressUpdate) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *InProgressUpdate) GetContent() string {
-	if x != nil {
-		return x.Content
-	}
-	return ""
-}
-
-func (x *InProgressUpdate) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-type FeedbackRequire struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Question string `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
-}
-
-func (x *FeedbackRequire) Reset() {
-	*x = FeedbackRequire{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[21]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *FeedbackRequire) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FeedbackRequire) ProtoMessage() {}
-
-func (x *FeedbackRequire) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[21]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FeedbackRequire.ProtoReflect.Descriptor instead.
-func (*FeedbackRequire) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *FeedbackRequire) GetQuestion() string {
-	if x != nil {
-		return x.Question
-	}
-	return ""
-}
-
 type SuccessUpdate struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1690,7 +1166,7 @@ type SuccessUpdate struct {
 func (x *SuccessUpdate) Reset() {
 	*x = SuccessUpdate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[22]
+		mi := &file_agent_v1_agent_proto_msgTypes[14]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1703,7 +1179,7 @@ func (x *SuccessUpdate) String() string {
 func (*SuccessUpdate) ProtoMessage() {}
 
 func (x *SuccessUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_agent_v1_agent_proto_msgTypes[14]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1716,7 +1192,7 @@ func (x *SuccessUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuccessUpdate.ProtoReflect.Descriptor instead.
 func (*SuccessUpdate) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SuccessUpdate) GetContent() string {
@@ -1737,7 +1213,7 @@ type ErrorUpdate struct {
 func (x *ErrorUpdate) Reset() {
 	*x = ErrorUpdate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_agent_v1_agent_proto_msgTypes[23]
+		mi := &file_agent_v1_agent_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1750,7 +1226,7 @@ func (x *ErrorUpdate) String() string {
 func (*ErrorUpdate) ProtoMessage() {}
 
 func (x *ErrorUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_agent_v1_agent_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1763,7 +1239,7 @@ func (x *ErrorUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorUpdate.ProtoReflect.Descriptor instead.
 func (*ErrorUpdate) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ErrorUpdate) GetMessage() string {
@@ -1926,94 +1402,28 @@ var file_agent_v1_agent_proto_rawDesc = []byte{
 	0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x02, 0x61, 0x74, 0x22, 0x32, 0x0a, 0x04, 0x50, 0x6f,
 	0x6e, 0x67, 0x12, 0x2a, 0x0a, 0x02, 0x61, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a,
 	0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66,
-	0x2e, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x02, 0x61, 0x74, 0x22, 0xe0,
-	0x01, 0x0a, 0x12, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65,
-	0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x2a, 0x0a, 0x02, 0x61, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x62, 0x75, 0x66, 0x2e, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x02, 0x61,
-	0x74, 0x12, 0x31, 0x0a, 0x07, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x18, 0x02, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x15, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x61,
-	0x73, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x48, 0x00, 0x52, 0x07, 0x72, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x12, 0x34, 0x0a, 0x08, 0x66, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b,
-	0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76,
-	0x31, 0x2e, 0x55, 0x73, 0x65, 0x72, 0x46, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x48, 0x00,
-	0x52, 0x08, 0x66, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x12, 0x2a, 0x0a, 0x06, 0x63, 0x61,
-	0x6e, 0x63, 0x65, 0x6c, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x61, 0x67, 0x65,
-	0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x6e, 0x63, 0x65, 0x6c, 0x48, 0x00, 0x52, 0x06,
-	0x63, 0x61, 0x6e, 0x63, 0x65, 0x6c, 0x42, 0x09, 0x0a, 0x07, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61,
-	0x64, 0x22, 0xcd, 0x01, 0x0a, 0x0b, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x67, 0x6c, 0x6f, 0x62, 0x61, 0x6c, 0x5f, 0x67, 0x6f, 0x61, 0x6c,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x67, 0x6c, 0x6f, 0x62, 0x61, 0x6c, 0x47, 0x6f,
-	0x61, 0x6c, 0x12, 0x58, 0x0a, 0x11, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x5f, 0x61, 0x72,
-	0x74, 0x69, 0x66, 0x61, 0x63, 0x74, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x2b, 0x2e,
-	0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x2e, 0x49, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x41, 0x72, 0x74, 0x69,
-	0x66, 0x61, 0x63, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x10, 0x69, 0x6e, 0x69, 0x74,
-	0x69, 0x61, 0x6c, 0x41, 0x72, 0x74, 0x69, 0x66, 0x61, 0x63, 0x74, 0x73, 0x1a, 0x43, 0x0a, 0x15,
-	0x49, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x41, 0x72, 0x74, 0x69, 0x66, 0x61, 0x63, 0x74, 0x73,
-	0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65,
-	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38,
-	0x01, 0x22, 0x2a, 0x0a, 0x0c, 0x55, 0x73, 0x65, 0x72, 0x46, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63,
-	0x6b, 0x12, 0x1a, 0x0a, 0x08, 0x66, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x08, 0x66, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x22, 0x08, 0x0a,
-	0x06, 0x43, 0x61, 0x6e, 0x63, 0x65, 0x6c, 0x22, 0xc9, 0x02, 0x0a, 0x13, 0x45, 0x78, 0x65, 0x63,
-	0x75, 0x74, 0x65, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
-	0x2a, 0x0a, 0x02, 0x61, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x6f,
-	0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x54, 0x69,
-	0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x02, 0x61, 0x74, 0x12, 0x34, 0x0a, 0x06, 0x75,
-	0x70, 0x64, 0x61, 0x74, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x61, 0x67,
-	0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x49, 0x6e, 0x50, 0x72, 0x6f, 0x67, 0x72, 0x65, 0x73,
-	0x73, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x48, 0x00, 0x52, 0x06, 0x75, 0x70, 0x64, 0x61, 0x74,
-	0x65, 0x12, 0x33, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x18, 0x03, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x17, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x75,
-	0x63, 0x63, 0x65, 0x73, 0x73, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x48, 0x00, 0x52, 0x07, 0x73,
-	0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x2d, 0x0a, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x18,
-	0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31,
-	0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x48, 0x00, 0x52, 0x05,
-	0x65, 0x72, 0x72, 0x6f, 0x72, 0x12, 0x37, 0x0a, 0x08, 0x66, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63,
-	0x6b, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e,
-	0x76, 0x31, 0x2e, 0x46, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x69,
-	0x72, 0x65, 0x48, 0x00, 0x52, 0x08, 0x66, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x12, 0x28,
-	0x0a, 0x03, 0x61, 0x63, 0x6b, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x61, 0x67,
-	0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x41, 0x63,
-	0x6b, 0x48, 0x00, 0x52, 0x03, 0x61, 0x63, 0x6b, 0x42, 0x09, 0x0a, 0x07, 0x70, 0x61, 0x79, 0x6c,
-	0x6f, 0x61, 0x64, 0x22, 0x25, 0x0a, 0x0a, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x41, 0x63,
-	0x6b, 0x12, 0x17, 0x0a, 0x07, 0x74, 0x61, 0x73, 0x6b, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x06, 0x74, 0x61, 0x73, 0x6b, 0x49, 0x64, 0x22, 0x44, 0x0a, 0x10, 0x49, 0x6e,
-	0x50, 0x72, 0x6f, 0x67, 0x72, 0x65, 0x73, 0x73, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x12, 0x18,
-	0x0a, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73,
-	0x22, 0x2d, 0x0a, 0x0f, 0x46, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x71, 0x75,
-	0x69, 0x72, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x71, 0x75, 0x65, 0x73, 0x74, 0x69, 0x6f, 0x6e, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x71, 0x75, 0x65, 0x73, 0x74, 0x69, 0x6f, 0x6e, 0x22,
-	0x29, 0x0a, 0x0d, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65,
-	0x12, 0x18, 0x0a, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x22, 0x27, 0x0a, 0x0b, 0x45, 0x72,
-	0x72, 0x6f, 0x72, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65, 0x73,
-	0x73, 0x61, 0x67, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73, 0x73,
-	0x61, 0x67, 0x65, 0x32, 0xae, 0x01, 0x0a, 0x0c, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x72,
-	0x76, 0x69, 0x63, 0x65, 0x12, 0x4e, 0x0a, 0x0b, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x54,
-	0x61, 0x73, 0x6b, 0x12, 0x1c, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x45,
-	0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x1a, 0x1d, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x45, 0x78, 0x65,
-	0x63, 0x75, 0x74, 0x65, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x28, 0x01, 0x30, 0x01, 0x12, 0x4e, 0x0a, 0x0b, 0x48, 0x69, 0x76, 0x65, 0x53, 0x65, 0x73, 0x73,
-	0x69, 0x6f, 0x6e, 0x12, 0x1c, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x48,
-	0x69, 0x76, 0x65, 0x53, 0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x1a, 0x1d, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x69, 0x76,
-	0x65, 0x53, 0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x28, 0x01, 0x30, 0x01, 0x42, 0x8a, 0x01, 0x0a, 0x0c, 0x63, 0x6f, 0x6d, 0x2e, 0x61, 0x67, 0x65,
-	0x6e, 0x74, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x50, 0x72, 0x6f, 0x74,
-	0x6f, 0x50, 0x01, 0x5a, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
-	0x68, 0x6e, 0x69, 0x6d, 0x74, 0x61, 0x64, 0x64, 0x2f, 0x68, 0x69, 0x76, 0x65, 0x2f, 0x67, 0x65,
-	0x6e, 0x2f, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2f, 0x76, 0x31, 0x3b, 0x61, 0x67, 0x65, 0x6e, 0x74,
-	0x76, 0x31, 0xa2, 0x02, 0x03, 0x41, 0x58, 0x58, 0xaa, 0x02, 0x08, 0x41, 0x67, 0x65, 0x6e, 0x74,
-	0x2e, 0x56, 0x31, 0xca, 0x02, 0x08, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x5c, 0x56, 0x31, 0xe2, 0x02,
-	0x14, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
-	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x3a, 0x3a, 0x56,
-	0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x2e, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x02, 0x61, 0x74, 0x22, 0x29,
+	0x0a, 0x0d, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x12,
+	0x18, 0x0a, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x07, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x22, 0x27, 0x0a, 0x0b, 0x45, 0x72, 0x72,
+	0x6f, 0x72, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x6d, 0x65, 0x73, 0x73,
+	0x61, 0x67, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6d, 0x65, 0x73, 0x73, 0x61,
+	0x67, 0x65, 0x32, 0x5e, 0x0a, 0x0c, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x53, 0x65, 0x72, 0x76, 0x69,
+	0x63, 0x65, 0x12, 0x4e, 0x0a, 0x0b, 0x48, 0x69, 0x76, 0x65, 0x53, 0x65, 0x73, 0x73, 0x69, 0x6f,
+	0x6e, 0x12, 0x1c, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x69, 0x76,
+	0x65, 0x53, 0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x1d, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x69, 0x76, 0x65, 0x53,
+	0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x28, 0x01,
+	0x30, 0x01, 0x42, 0x8a, 0x01, 0x0a, 0x0c, 0x63, 0x6f, 0x6d, 0x2e, 0x61, 0x67, 0x65, 0x6e, 0x74,
+	0x2e, 0x76, 0x31, 0x42, 0x0a, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50,
+	0x01, 0x5a, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x68, 0x6e,
+	0x69, 0x6d, 0x74, 0x61, 0x64, 0x64, 0x2f, 0x68, 0x69, 0x76, 0x65, 0x2f, 0x67, 0x65, 0x6e, 0x2f,
+	0x61, 0x67, 0x65, 0x6e, 0x74, 0x2f, 0x76, 0x31, 0x3b, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x76, 0x31,
+	0xa2, 0x02, 0x03, 0x41, 0x58, 0x58, 0xaa, 0x02, 0x08, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x2e, 0x56,
+	0x31, 0xca, 0x02, 0x08, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x14, 0x41,
+	0x67, 0x65, 0x6e, 0x74, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64,
+	0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x3a, 0x3a, 0x56, 0x31, 0x62,
+	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -2028,7 +1438,7 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_agent_v1_agent_proto_goTypes = []interface{}{
 	(*HiveSessionRequest)(nil),         // 0: agent.v1.HiveSessionRequest
 	(*HiveSessionResponse)(nil),        // 1: agent.v1.HiveSessionResponse
@@ -2044,64 +1454,42 @@ var file_agent_v1_agent_proto_goTypes = []interface{}{
 	(*CreateTurn)(nil),                 // 11: agent.v1.CreateTurn
 	(*Ping)(nil),                       // 12: agent.v1.Ping
 	(*Pong)(nil),                       // 13: agent.v1.Pong
-	(*ExecuteTaskRequest)(nil),         // 14: agent.v1.ExecuteTaskRequest
-	(*TaskRequest)(nil),                // 15: agent.v1.TaskRequest
-	(*UserFeedback)(nil),               // 16: agent.v1.UserFeedback
-	(*Cancel)(nil),                     // 17: agent.v1.Cancel
-	(*ExecuteTaskResponse)(nil),        // 18: agent.v1.ExecuteTaskResponse
-	(*RequestAck)(nil),                 // 19: agent.v1.RequestAck
-	(*InProgressUpdate)(nil),           // 20: agent.v1.InProgressUpdate
-	(*FeedbackRequire)(nil),            // 21: agent.v1.FeedbackRequire
-	(*SuccessUpdate)(nil),              // 22: agent.v1.SuccessUpdate
-	(*ErrorUpdate)(nil),                // 23: agent.v1.ErrorUpdate
-	nil,                                // 24: agent.v1.CreateTurn.InitialArtifactsEntry
-	nil,                                // 25: agent.v1.TaskRequest.InitialArtifactsEntry
-	(*timestamppb.Timestamp)(nil),      // 26: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),              // 27: google.protobuf.Empty
+	(*SuccessUpdate)(nil),              // 14: agent.v1.SuccessUpdate
+	(*ErrorUpdate)(nil),                // 15: agent.v1.ErrorUpdate
+	nil,                                // 16: agent.v1.CreateTurn.InitialArtifactsEntry
+	(*timestamppb.Timestamp)(nil),      // 17: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),              // 18: google.protobuf.Empty
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
-	26, // 0: agent.v1.HiveSessionRequest.at:type_name -> google.protobuf.Timestamp
+	17, // 0: agent.v1.HiveSessionRequest.at:type_name -> google.protobuf.Timestamp
 	2,  // 1: agent.v1.HiveSessionRequest.create_conversation:type_name -> agent.v1.CreateConversationRequest
 	4,  // 2: agent.v1.HiveSessionRequest.turn_request:type_name -> agent.v1.TurnRequest
 	8,  // 3: agent.v1.HiveSessionRequest.input:type_name -> agent.v1.SubmitRequiredInput
 	12, // 4: agent.v1.HiveSessionRequest.ping:type_name -> agent.v1.Ping
-	26, // 5: agent.v1.HiveSessionResponse.at:type_name -> google.protobuf.Timestamp
+	17, // 5: agent.v1.HiveSessionResponse.at:type_name -> google.protobuf.Timestamp
 	3,  // 6: agent.v1.HiveSessionResponse.create_conversation:type_name -> agent.v1.CreateConversationResponse
 	5,  // 7: agent.v1.HiveSessionResponse.turn_response:type_name -> agent.v1.TurnResponse
 	7,  // 8: agent.v1.HiveSessionResponse.input_required:type_name -> agent.v1.InputRequired
 	10, // 9: agent.v1.HiveSessionResponse.notification:type_name -> agent.v1.Notification
 	13, // 10: agent.v1.HiveSessionResponse.pong:type_name -> agent.v1.Pong
-	27, // 11: agent.v1.CreateConversationRequest.create_new:type_name -> google.protobuf.Empty
-	26, // 12: agent.v1.TurnRequest.at:type_name -> google.protobuf.Timestamp
+	18, // 11: agent.v1.CreateConversationRequest.create_new:type_name -> google.protobuf.Empty
+	17, // 12: agent.v1.TurnRequest.at:type_name -> google.protobuf.Timestamp
 	11, // 13: agent.v1.TurnRequest.create_turn:type_name -> agent.v1.CreateTurn
-	27, // 14: agent.v1.TurnResponse.ack:type_name -> google.protobuf.Empty
+	18, // 14: agent.v1.TurnResponse.ack:type_name -> google.protobuf.Empty
 	6,  // 15: agent.v1.TurnResponse.update:type_name -> agent.v1.TurnUpdate
 	9,  // 16: agent.v1.TurnResponse.completed:type_name -> agent.v1.TurnCompleted
-	22, // 17: agent.v1.TurnCompleted.success:type_name -> agent.v1.SuccessUpdate
-	23, // 18: agent.v1.TurnCompleted.failed:type_name -> agent.v1.ErrorUpdate
-	24, // 19: agent.v1.CreateTurn.initial_artifacts:type_name -> agent.v1.CreateTurn.InitialArtifactsEntry
-	26, // 20: agent.v1.Ping.at:type_name -> google.protobuf.Timestamp
-	26, // 21: agent.v1.Pong.at:type_name -> google.protobuf.Timestamp
-	26, // 22: agent.v1.ExecuteTaskRequest.at:type_name -> google.protobuf.Timestamp
-	15, // 23: agent.v1.ExecuteTaskRequest.request:type_name -> agent.v1.TaskRequest
-	16, // 24: agent.v1.ExecuteTaskRequest.feedback:type_name -> agent.v1.UserFeedback
-	17, // 25: agent.v1.ExecuteTaskRequest.cancel:type_name -> agent.v1.Cancel
-	25, // 26: agent.v1.TaskRequest.initial_artifacts:type_name -> agent.v1.TaskRequest.InitialArtifactsEntry
-	26, // 27: agent.v1.ExecuteTaskResponse.at:type_name -> google.protobuf.Timestamp
-	20, // 28: agent.v1.ExecuteTaskResponse.update:type_name -> agent.v1.InProgressUpdate
-	22, // 29: agent.v1.ExecuteTaskResponse.success:type_name -> agent.v1.SuccessUpdate
-	23, // 30: agent.v1.ExecuteTaskResponse.error:type_name -> agent.v1.ErrorUpdate
-	21, // 31: agent.v1.ExecuteTaskResponse.feedback:type_name -> agent.v1.FeedbackRequire
-	19, // 32: agent.v1.ExecuteTaskResponse.ack:type_name -> agent.v1.RequestAck
-	14, // 33: agent.v1.AgentService.ExecuteTask:input_type -> agent.v1.ExecuteTaskRequest
-	0,  // 34: agent.v1.AgentService.HiveSession:input_type -> agent.v1.HiveSessionRequest
-	18, // 35: agent.v1.AgentService.ExecuteTask:output_type -> agent.v1.ExecuteTaskResponse
-	1,  // 36: agent.v1.AgentService.HiveSession:output_type -> agent.v1.HiveSessionResponse
-	35, // [35:37] is the sub-list for method output_type
-	33, // [33:35] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	14, // 17: agent.v1.TurnCompleted.success:type_name -> agent.v1.SuccessUpdate
+	15, // 18: agent.v1.TurnCompleted.failed:type_name -> agent.v1.ErrorUpdate
+	16, // 19: agent.v1.CreateTurn.initial_artifacts:type_name -> agent.v1.CreateTurn.InitialArtifactsEntry
+	17, // 20: agent.v1.Ping.at:type_name -> google.protobuf.Timestamp
+	17, // 21: agent.v1.Pong.at:type_name -> google.protobuf.Timestamp
+	0,  // 22: agent.v1.AgentService.HiveSession:input_type -> agent.v1.HiveSessionRequest
+	1,  // 23: agent.v1.AgentService.HiveSession:output_type -> agent.v1.HiveSessionResponse
+	23, // [23:24] is the sub-list for method output_type
+	22, // [22:23] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -2279,102 +1667,6 @@ func file_agent_v1_agent_proto_init() {
 			}
 		}
 		file_agent_v1_agent_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ExecuteTaskRequest); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TaskRequest); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*UserFeedback); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Cancel); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ExecuteTaskResponse); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RequestAck); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*InProgressUpdate); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*FeedbackRequire); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_agent_v1_agent_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SuccessUpdate); i {
 			case 0:
 				return &v.state
@@ -2386,7 +1678,7 @@ func file_agent_v1_agent_proto_init() {
 				return nil
 			}
 		}
-		file_agent_v1_agent_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
+		file_agent_v1_agent_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*ErrorUpdate); i {
 			case 0:
 				return &v.state
@@ -2434,25 +1726,13 @@ func file_agent_v1_agent_proto_init() {
 		(*Notification_Error)(nil),
 		(*Notification_Info)(nil),
 	}
-	file_agent_v1_agent_proto_msgTypes[14].OneofWrappers = []interface{}{
-		(*ExecuteTaskRequest_Request)(nil),
-		(*ExecuteTaskRequest_Feedback)(nil),
-		(*ExecuteTaskRequest_Cancel)(nil),
-	}
-	file_agent_v1_agent_proto_msgTypes[18].OneofWrappers = []interface{}{
-		(*ExecuteTaskResponse_Update)(nil),
-		(*ExecuteTaskResponse_Success)(nil),
-		(*ExecuteTaskResponse_Error)(nil),
-		(*ExecuteTaskResponse_Feedback)(nil),
-		(*ExecuteTaskResponse_Ack)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_agent_v1_agent_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

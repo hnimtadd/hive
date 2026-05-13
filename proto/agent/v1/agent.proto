@@ -9,9 +9,6 @@ option go_package = "gen/agent/v1;agentv1";
 
 // The AgentService handles the lifecycle of a supervisor-led task.
 service AgentService {
-  // ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
-  rpc ExecuteTask(stream ExecuteTaskRequest) returns (stream ExecuteTaskResponse);
-
   // HiveSession opens new hive session.
   rpc HiveSession(stream HiveSessionRequest) returns (stream HiveSessionResponse);
 }
@@ -128,53 +125,6 @@ message Ping {
 
 message Pong {
   google.protobuf.Timestamp at = 1;
-}
-
-message ExecuteTaskRequest {
-  google.protobuf.Timestamp at = 1;
-
-  oneof payload {
-    TaskRequest request = 2; // Sent first to begin the loop
-    UserFeedback feedback = 3; // Sent when the supervisor ask a question
-    Cancel cancel = 4; // Sent if the user cancel the CLI request
-  }
-}
-
-message TaskRequest {
-  string global_goal = 1;
-  map<string, string> initial_artifacts = 2;
-}
-
-message UserFeedback {
-  string feedback = 1;
-}
-
-message Cancel {}
-
-// TaskUpdate is a polymorphic message representing different events in the agent loop.
-message ExecuteTaskResponse {
-  google.protobuf.Timestamp at = 1;
-
-  oneof payload {
-    InProgressUpdate update = 2; // The Supervisor's reasoning
-    SuccessUpdate success = 3; // The final output to the user
-    ErrorUpdate error = 4; // Non-fatal or fatal error details
-    FeedbackRequire feedback = 5; // in the middle feedback require
-    RequestAck ack = 6; // ack of the request including the initial information like request ID.
-  }
-}
-
-message RequestAck {
-  string task_id = 1;
-}
-
-message InProgressUpdate {
-  string content = 1;
-  string status = 2; // e.g., "PLANNING", "ANALYZING"
-}
-
-message FeedbackRequire {
-  string question = 1;
 }
 
 message SuccessUpdate {
