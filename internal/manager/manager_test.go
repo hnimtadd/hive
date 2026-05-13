@@ -1,12 +1,10 @@
 package manager_test
 
 import (
-	"context"
 	"os"
 	"testing"
 
 	"github.com/hnimtadd/hive/internal/manager"
-	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -27,14 +25,10 @@ func setupTestManager(t *testing.T) (*manager.Manager, func()) {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 
-	// Create queue
-	q := queue.NewMemoryQueue()
-
 	// Create manager
-	mgr := manager.NewManager(nil, store, q)
+	mgr := manager.NewManager(nil, store)
 
 	cleanup := func() {
-		q.Close()
 		os.RemoveAll(tmpDir)
 	}
 
@@ -45,7 +39,7 @@ func TestCreateTask(t *testing.T) {
 	mgr, cleanup := setupTestManager(t)
 	defer cleanup()
 
-	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
+	task, err := mgr.CreateTask("Test goal", nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, task.ID)
 	assert.Equal(t, "Test goal", task.Goal)
@@ -61,7 +55,7 @@ func TestCreateTask_WithArtifacts(t *testing.T) {
 		"key2": "value2",
 	}
 
-	task, err := mgr.CreateTask(context.Background(), "Test goal", artifacts)
+	task, err := mgr.CreateTask("Test goal", artifacts)
 	require.NoError(t, err)
 	require.Len(t, task.Artifacts, len(artifacts))
 	for k, v := range artifacts {
@@ -74,7 +68,7 @@ func TestCreateTask_PersistsToStorage(t *testing.T) {
 	mgr, cleanup := setupTestManager(t)
 	defer cleanup()
 
-	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
+	task, err := mgr.CreateTask("Test goal", nil)
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -108,7 +102,7 @@ func TestUpdateTask(t *testing.T) {
 	mgr, cleanup := setupTestManager(t)
 	defer cleanup()
 
-	task, err := mgr.CreateTask(context.Background(), "Test goal", nil)
+	task, err := mgr.CreateTask("Test goal", nil)
 	require.NoError(t, err)
 
 	// Update task status

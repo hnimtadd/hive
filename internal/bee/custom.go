@@ -92,7 +92,7 @@ func (a *customBee[I, O]) Capabilities() []string {
 func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 	logger := observability.Logger(ctx)
 	logger.InfoContext(ctx,
-		"worker execution started",
+		"custom bee execution started",
 		slog.String("agent_id", a.id),
 		slog.Any("task", input),
 	)
@@ -114,7 +114,7 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 	handler := errors.NewErrorHandler[*O]()
 	msgs := []*schema.Message{schema.UserMessage(string(taskDescription))}
 	output, err := handler.WithRetry(ctx, retryConfig, func(ctx context.Context) (*O, error) {
-		logger.DebugContext(ctx, "worker executing", slog.String("agent_id", a.id))
+		logger.DebugContext(ctx, "custom bee executing", slog.String("agent_id", a.id))
 
 		reactAgent, err := react.New(
 			react.Config{
@@ -131,7 +131,7 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 		// Execute the task using the ReACT agent
 		result, execErr := reactAgent.ExecuteWithMessages(ctx, msgs)
 		if execErr != nil {
-			logger.ErrorContext(ctx, "worker ReACT execution failed", slog.Any("error", execErr))
+			logger.ErrorContext(ctx, "custom ReACT execution failed", slog.Any("error", execErr))
 			return nil, execErr
 		}
 		content := func() string {
@@ -149,7 +149,7 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 			return result.Content
 		}()
 
-		observability.Logger(ctx).Debug("worker output received", slog.Int("content_length", len(content)))
+		observability.Logger(ctx).Debug("custom bee output received", slog.Int("content_length", len(content)))
 		msgs = append(msgs, result)
 
 		content, err = utils.HeuristicallyExtractJSONString(content)
@@ -246,13 +246,13 @@ func (a *customBee[I, O]) Execute(ctx context.Context, input *I) (*O, error) {
 	})
 
 	if err != nil {
-		logger.ErrorContext(ctx, "worker execution failed",
+		logger.ErrorContext(ctx, "custom bee execution failed",
 			slog.String("agent_id", a.id),
 			slog.Any("error", err),
 			slog.Any("msgs", msgs),
 		)
 	} else {
-		logger.InfoContext(ctx, "worker execution completed", slog.String("agent_id", a.id))
+		logger.InfoContext(ctx, "custom bee execution completed", slog.String("agent_id", a.id))
 	}
 
 	return output, err

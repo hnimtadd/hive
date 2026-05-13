@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"fmt"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/hnimtadd/hive/internal/tui"
@@ -45,7 +47,14 @@ func (c *chatResponseModel) Update(msg tea.Msg) tea.Cmd {
 		c.state = stateThinking
 	case StreamChunkMsg:
 		c.status = msg.Status
-		c.content += msg.Content
+		if c.content != "" {
+			c.content += "\n"
+		}
+		if msg.Status != "" {
+			c.content += fmt.Sprintf("[%s] %s", msg.Status, msg.Content)
+		} else {
+			c.content += msg.Content
+		}
 	case StreamCompleteMsg:
 		if msg.Success {
 			c.state = stateSucceed

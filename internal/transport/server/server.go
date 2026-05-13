@@ -16,9 +16,7 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/pipeline"
-	"github.com/hnimtadd/hive/internal/queue"
 	"github.com/hnimtadd/hive/internal/storage"
-	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
@@ -31,9 +29,6 @@ type HiveServer struct {
 	config         *config.Config
 	taskManager    *manager.Manager
 	channelManager *channel.Manager
-	workerPool     *worker.Pool
-	poolCtx        context.Context
-	poolCancel     context.CancelFunc
 	pipeline       *pipeline.Pipeline
 	eventbus       *eventbus.EventBus[*agentv1.SessionEvent]
 }
@@ -41,14 +36,11 @@ type HiveServer struct {
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
 func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage, storage storage.Storage) (*HiveServer, error) {
-	// Create task queue
-	tq := queue.NewMemoryQueue()
-
 	// Create channel manager for per-task communication
 	cm := channel.NewManager()
 
 	// Create task manager (storage + queue)
-	tm := manager.NewManager(sessionStorage, storage, tq)
+	tm := manager.NewManager(sessionStorage, storage)
 
 	// Create worker pool
 	poolSize := cfg.Bees.PoolSize
@@ -60,7 +52,6 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 		return nil, err
 	}
 
-	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, sessionLogger, cfg)
 	eventbus := eventbus.NewEventBus[*agentv1.SessionEvent]()
 	pipeline := pipeline.NewPipeline(pipeline.PipelineDependencies{
 		EventBus:      eventbus,
@@ -74,7 +65,6 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 		config:         cfg,
 		taskManager:    tm,
 		channelManager: cm,
-		workerPool:     pool,
 		pipeline:       pipeline,
 		eventbus:       eventbus,
 	}, nil
@@ -82,11 +72,6 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 
 func (s *HiveServer) Serve(addr string) error {
 	logger := slog.Default()
-	ctx, cancel := context.WithCancel(context.Background())
-	s.workerPool.Start(ctx)
-	s.poolCancel = cancel
-	s.poolCtx = ctx
-
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -141,14 +126,6 @@ func (s *HiveServer) Stop() {
 			s.grpcServer.Stop()
 		}
 	}
-
-	// 2. Stop worker pool (cancels context, waits for in-flight tasks)
-	if s.poolCancel != nil {
-		s.poolCancel()
-	}
-	if s.workerPool != nil {
-		s.workerPool.Stop()
-	}
 }
 
 func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse]) error {
@@ -168,10 +145,15 @@ func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTas
 		cancel(err)
 		return err
 	}
-	task, err := s.taskManager.CreateTaskNoEnqueue(req.GetGlobalGoal(), req.GetInitialArtifacts())
+	task, err := s.taskManager.CreateTask(req.GetGlobalGoal(), req.GetInitialArtifacts())
 	if err != nil {
 		logger.Error("server: failed to create task", slog.Any("error", err))
 		err = fmt.Errorf("server: failed to create task: %w", err)
+		cancel(err)
+		return err
+	}
+	if err = srv.Send(agentv1.NewExecuteTaskResponseACK(task.ID)); err != nil {
+		err = fmt.Errorf("server: failed to send task ack: %w", err)
 		cancel(err)
 		return err
 	}

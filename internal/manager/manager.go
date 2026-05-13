@@ -18,11 +18,10 @@ type Manager struct {
 }
 
 // NewManager creates a new task manager.
-func NewManager(sessionStorage storage.SessionStorage, storage storage.Storage, queue queue.Queue) *Manager {
+func NewManager(sessionStorage storage.SessionStorage, storage storage.Storage) *Manager {
 	return &Manager{
 		sessionStorage: sessionStorage,
 		storage:        storage,
-		queue:          queue,
 	}
 }
 
@@ -38,23 +37,7 @@ func (m *Manager) createTask(goal string, artifacts map[string]string) (*types.H
 }
 
 // CreateTask creates a new task, persists it, and enqueues it for execution.
-func (m *Manager) CreateTask(ctx context.Context, goal string, artifacts map[string]string) (*types.HiveTask, error) {
-	task, err := m.createTask(goal, artifacts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Enqueue for execution
-	if err := m.queue.Enqueue(ctx, task); err != nil {
-		return nil, fmt.Errorf("failed to enqueue task: %w", err)
-	}
-
-	return task, nil
-}
-
-// CreateTaskNoEnqueue creates and persists a task without enqueuing it.
-// This is used by synchronous execution paths such as ExecuteTask pipeline mode.
-func (m *Manager) CreateTaskNoEnqueue(goal string, artifacts map[string]string) (*types.HiveTask, error) {
+func (m *Manager) CreateTask(goal string, artifacts map[string]string) (*types.HiveTask, error) {
 	return m.createTask(goal, artifacts)
 }
 

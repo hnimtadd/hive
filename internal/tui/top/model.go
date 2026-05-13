@@ -234,6 +234,7 @@ func (m *model) listenToStream(content string) tea.Cmd {
 
 	go func() {
 		taskID := ""
+		streamStarted := false
 		for {
 			select {
 			case <-m.ctx.Done():
@@ -247,6 +248,7 @@ func (m *model) listenToStream(content string) tea.Cmd {
 				switch msg := update.GetPayload().(type) {
 				case *agentv1.ExecuteTaskResponse_Ack:
 					taskID = msg.Ack.GetTaskId()
+					streamStarted = true
 					select {
 					case m.msgCh <- chat.StreamStartMsg{
 						TaskID: taskID,
@@ -256,6 +258,16 @@ func (m *model) listenToStream(content string) tea.Cmd {
 					}
 
 				case *agentv1.ExecuteTaskResponse_Update:
+					if !streamStarted {
+						streamStarted = true
+						select {
+						case m.msgCh <- chat.StreamStartMsg{
+							TaskID: taskID,
+						}:
+						case <-m.ctx.Done():
+							return
+						}
+					}
 					select {
 					case m.msgCh <- chat.StreamChunkMsg{
 						Content: msg.Update.GetContent(),
@@ -267,6 +279,16 @@ func (m *model) listenToStream(content string) tea.Cmd {
 					}
 
 				case *agentv1.ExecuteTaskResponse_Success:
+					if !streamStarted {
+						streamStarted = true
+						select {
+						case m.msgCh <- chat.StreamStartMsg{
+							TaskID: taskID,
+						}:
+						case <-m.ctx.Done():
+							return
+						}
+					}
 					select {
 					case m.msgCh <- chat.StreamCompleteMsg{
 						Success: true,
@@ -279,6 +301,16 @@ func (m *model) listenToStream(content string) tea.Cmd {
 					}
 
 				case *agentv1.ExecuteTaskResponse_Error:
+					if !streamStarted {
+						streamStarted = true
+						select {
+						case m.msgCh <- chat.StreamStartMsg{
+							TaskID: taskID,
+						}:
+						case <-m.ctx.Done():
+							return
+						}
+					}
 					select {
 					case m.msgCh <- chat.StreamCompleteMsg{
 						Success: false,
