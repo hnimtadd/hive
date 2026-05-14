@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -244,7 +245,7 @@ func (h *Handler) handleTurnRequest(ctx context.Context, req *agentv1.HiveSessio
 		go func(turnRunID string) {
 			state := pipeline.NewPipelineState(runCtx, h.session)
 			state.RunID = turnRunID
-			if _, err := h.pipeline.Execute(runCtx, state); err != nil {
+			if _, err := h.pipeline.Execute(runCtx, state); err != nil && !errors.Is(err, context.Canceled) {
 				_ = h.sendError(runCtx, req.GetRequestId(), fmt.Sprintf("pipeline execution failed: %v", err))
 			}
 			_ = h.storage.Save(h.session)
@@ -288,6 +289,11 @@ func (h *Handler) handlePing(ctx context.Context, req *agentv1.HiveSessionReques
 }
 
 func (h *Handler) sendResponse(ctx context.Context, resp *agentv1.HiveSessionResponse) error {
+	defer func() {
+		// Avoid process crash when stream shuts down and output channel is already closed.
+		recover()
+	}()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
