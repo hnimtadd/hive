@@ -19,12 +19,11 @@ func setupTestServer(t *testing.T) (*server.HiveServer, func()) {
 	// Create temp directory for storage
 	tmpDir := t.TempDir()
 
-	// Create storage
-	store, err := storage.NewLocalStorage(storage.Options{
-		Storage: tmpDir,
+	sessionStore, err := storage.NewSessionStorage(storage.Options{
+		Storage: tmpDir + "/sessions",
 	})
 	if err != nil {
-		t.Fatalf("Failed to create storage: %v", err)
+		t.Fatalf("Failed to create session storage: %v", err)
 	}
 
 	// Create config
@@ -78,7 +77,7 @@ func setupTestServer(t *testing.T) (*server.HiveServer, func()) {
 	}
 
 	// Create server
-	srv, err := server.NewHiveServer(cfg, llmProvider, beeReg, nil, store)
+	srv, err := server.NewHiveServer(cfg, llmProvider, beeReg, sessionStore)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}

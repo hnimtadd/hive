@@ -24,7 +24,7 @@ func NewContextStage(deps *PipelineDependencies) *ContextStage {
 func (c *ContextStage) Execute(ctx context.Context, state *PipelineState) (StageResult, error) {
 	ctx = observability.ContextWithTraceContext(ctx, observability.NewRootTraceContext())
 
-	eventBusTopic := c.deps.EventBus.Publish(state.Task.ID)
+	eventBusTopic := c.deps.EventBus.Publish(state.Session.ID)
 	ctx = middleware.ContextWithMiddleware(ctx, middleware.JointMiddleware(
 		system.EventStreamMiddleware(eventBusTopic),
 		observability.NewTraceMiddleware(c.deps.SessionLogger),

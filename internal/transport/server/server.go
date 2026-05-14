@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/pipeline"
+	"github.com/hnimtadd/hive/internal/session"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
@@ -25,6 +28,7 @@ type HiveServer struct {
 	config     *config.Config
 	pipeline   *pipeline.Pipeline
 	eventbus   *eventbus.EventBus[*agentv1.SessionEvent]
+	sessions   storage.SessionStorage
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
@@ -49,6 +53,7 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 		config:   cfg,
 		pipeline: pipeline,
 		eventbus: eventbus,
+		sessions: sessionStorage,
 	}, nil
 }
 
@@ -112,7 +117,61 @@ func (s *HiveServer) Stop() {
 
 // HiveSession implements [agentv1.AgentServiceServer].
 func (s *HiveServer) HiveSession(
-	_ grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse],
+	srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse],
 ) error {
-	panic("Not implemented")
+	ctx := srv.Context()
+	inputCh := make(chan *agentv1.HiveSessionRequest, 16)
+	outputCh := make(chan *agentv1.HiveSessionResponse, 32)
+
+	handler := session.NewHandler(inputCh, outputCh, s.pipeline, s.eventbus, s.sessions)
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+
+	handlerDone := make(chan error, 1)
+	go func() {
+		defer close(outputCh)
+		handlerDone <- handler.Start(ctx)
+	}()
+
+	go func() {
+		defer close(inputCh)
+		for {
+			msg, err := srv.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					cancel(nil)
+					return
+				}
+				cancel(fmt.Errorf("server: failed to receive session stream message: %w", err))
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case inputCh <- msg:
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if err := context.Cause(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				return err
+			}
+			return nil
+		case resp, ok := <-outputCh:
+			if !ok {
+				err := <-handlerDone
+				if err != nil && !errors.Is(err, context.Canceled) {
+					return fmt.Errorf("server: session handler failed: %w", err)
+				}
+				return nil
+			}
+			if err := srv.Send(resp); err != nil {
+				return fmt.Errorf("server: failed to send session response: %w", err)
+			}
+		}
+	}
 }
