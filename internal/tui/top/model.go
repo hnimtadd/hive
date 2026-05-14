@@ -16,6 +16,7 @@ import (
 	"github.com/hnimtadd/hive/internal/tui/help"
 	"github.com/hnimtadd/hive/internal/tui/keys"
 	"github.com/hnimtadd/hive/pkg/config"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 type model struct {
@@ -34,6 +35,16 @@ type model struct {
 	msgCh      chan tea.Msg // Channel for streaming messages
 	ctx        context.Context
 	cancel     context.CancelFunc
+
+	conversationID        string
+	responseCh            <-chan *agentv1.HiveSessionResponse
+	streamListenerStarted bool
+	requestToTask         map[string]string
+	startedTasks          map[string]struct{}
+}
+
+type sessionUpdateMsg struct {
+	update *agentv1.HiveSessionResponse
 }
 
 func newModel(cfg *config.Config) (*model, error) {
@@ -64,16 +75,18 @@ func newModel(cfg *config.Config) (*model, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &model{
-		cfg:        cfg,
-		mode:       tui.DefaultMode,
-		header:     header,
-		footer:     footer,
-		chat:       chat,
-		help:       helpModel,
-		grpcClient: grpcClient,
-		msgCh:      make(chan tea.Msg, 100),
-		ctx:        ctx,
-		cancel:     cancel,
+		cfg:           cfg,
+		mode:          tui.DefaultMode,
+		header:        header,
+		footer:        footer,
+		chat:          chat,
+		help:          helpModel,
+		grpcClient:    grpcClient,
+		msgCh:         make(chan tea.Msg, 100),
+		ctx:           ctx,
+		cancel:        cancel,
+		requestToTask: map[string]string{},
+		startedTasks:  map[string]struct{}{},
 	}, nil
 }
 
@@ -82,7 +95,6 @@ func (m *model) cleanup() {
 	if m.cancel != nil {
 		m.cancel()
 	}
-	close(m.msgCh)
 }
 
 // Init implements [tea.Model].
@@ -170,6 +182,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = append(cmd, tui.MsgCmd(tui.ErrorMsg(err)))
 		}
 
+	case sessionUpdateMsg:
+		cmd = append(cmd, m.handleSessionUpdate(msg.update)...)
+		cmd = append(cmd, m.waitForChannelMessage())
+
 	case tea.KeyMsg:
 		// Pressing any key makes any info/error message in the footer disappear.
 		m.footer.ResetStatus()
@@ -221,153 +237,176 @@ func (m *model) View() tea.View {
 
 // executeTask sends a message to the gRPC server and handles the response stream.
 func (m *model) executeTask(content string) tea.Cmd {
-	return m.listenToStream(content)
-}
-
-// listenToStream creates a command that executes the task and listens to streaming responses
-func (m *model) listenToStream(content string) tea.Cmd {
-	responseCh, err := m.grpcClient.ExecuteTaskWithChannel(m.ctx, content)
-	if err != nil {
+	if err := m.ensureConversation(); err != nil {
 		return tui.MsgCmd(tui.ErrorMsg(err))
 	}
 
+	turnID, requestID, err := m.grpcClient.SendTurn(m.ctx, m.conversationID, content)
+	if err != nil {
+		return tui.MsgCmd(tui.ErrorMsg(err))
+	}
+	m.requestToTask[requestID] = turnID
+	m.startedTasks[turnID] = struct{}{}
+
+	select {
+	case m.msgCh <- chat.StreamStartMsg{TaskID: turnID}:
+	case <-m.ctx.Done():
+		return tui.MsgCmd(tui.ErrorMsg(m.ctx.Err()))
+	}
+
+	return tui.NoopCmd
+}
+
+func (m *model) ensureConversation() error {
+	if m.conversationID != "" && m.responseCh != nil {
+		return nil
+	}
+
+	conversationID, responseCh, err := m.grpcClient.StartConversation(m.ctx, "")
+	if err != nil {
+		return err
+	}
+
+	m.conversationID = conversationID
+	m.responseCh = responseCh
+	if !m.streamListenerStarted {
+		m.startStreamListener()
+		m.streamListenerStarted = true
+	}
+	return nil
+}
+
+func (m *model) startStreamListener() {
 	go func() {
-		taskID := ""
-		streamStarted := false
 		for {
 			select {
 			case <-m.ctx.Done():
 				return
 
-			case update, ok := <-responseCh:
+			case update, ok := <-m.responseCh:
 				if !ok {
 					return
 				}
-
-				if notification := update.GetNotification(); notification != nil {
-					if errMsg := notification.GetError(); errMsg != "" {
-						if !streamStarted {
-							streamStarted = true
-							select {
-							case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
-							case <-m.ctx.Done():
-								return
-							}
-						}
-						select {
-						case m.msgCh <- chat.StreamCompleteMsg{
-							Success: false,
-							Content: "",
-							Error:   errors.New(errMsg),
-							TaskID:  taskID,
-						}:
-						case <-m.ctx.Done():
-							return
-						}
-						continue
-					}
-					if info := notification.GetInfo(); info != "" {
-						if !streamStarted {
-							streamStarted = true
-							select {
-							case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
-							case <-m.ctx.Done():
-								return
-							}
-						}
-						select {
-						case m.msgCh <- chat.StreamChunkMsg{
-							Content: info,
-							Status:  "info",
-							TaskID:  taskID,
-						}:
-						case <-m.ctx.Done():
-							return
-						}
-					}
-					continue
-				}
-
-				if turn := update.GetTurnResponse(); turn != nil {
-					if turnID := turn.GetTurnId(); turnID != "" {
-						taskID = turnID
-					}
-					if !streamStarted {
-						streamStarted = true
-						select {
-						case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
-						case <-m.ctx.Done():
-							return
-						}
-					}
-
-					if progress := turn.GetUpdate(); progress != nil {
-						select {
-						case m.msgCh <- chat.StreamChunkMsg{
-							Content: progress.GetContent(),
-							Status:  "in_progress",
-							TaskID:  taskID,
-						}:
-						case <-m.ctx.Done():
-							return
-						}
-						continue
-					}
-
-					if completed := turn.GetCompleted(); completed != nil {
-						if success := completed.GetSuccess(); success != nil {
-							select {
-							case m.msgCh <- chat.StreamCompleteMsg{
-								Success: true,
-								Content: success.GetContent(),
-								Error:   nil,
-								TaskID:  taskID,
-							}:
-							case <-m.ctx.Done():
-								return
-							}
-							continue
-						}
-						if failed := completed.GetFailed(); failed != nil {
-							select {
-							case m.msgCh <- chat.StreamCompleteMsg{
-								Success: false,
-								Content: "",
-								Error:   errors.New(failed.GetMessage()),
-								TaskID:  taskID,
-							}:
-							case <-m.ctx.Done():
-								return
-							}
-							continue
-						}
-					}
-				}
-
-				if inputRequired := update.GetInputRequired(); inputRequired != nil {
-					if !streamStarted {
-						streamStarted = true
-						taskID = inputRequired.GetTurnId()
-						select {
-						case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
-						case <-m.ctx.Done():
-							return
-						}
-					}
-					select {
-					case m.msgCh <- chat.FeedbackRequestMsg{
-						ConversationID: inputRequired.GetConversationId(),
-						TurnID:         inputRequired.GetTurnId(),
-						Question:       inputRequired.GetQuestion(),
-					}:
-					case <-m.ctx.Done():
-						return
-					}
+				select {
+				case m.msgCh <- sessionUpdateMsg{update: update}:
+				case <-m.ctx.Done():
+					return
 				}
 			}
 		}
 	}()
+}
 
-	// The ticker in Init() will poll msgCh continuously
-	return tui.NoopCmd
+func (m *model) handleSessionUpdate(update *agentv1.HiveSessionResponse) []tea.Cmd {
+	cmds := []tea.Cmd{}
+	if update == nil {
+		return cmds
+	}
+
+	if createConv := update.GetCreateConversation(); createConv != nil {
+		if m.conversationID == "" {
+			m.conversationID = createConv.GetConversationId()
+		}
+		return cmds
+	}
+
+	if notification := update.GetNotification(); notification != nil {
+		taskID := m.requestToTask[update.GetInReplyTo()]
+		if errMsg := notification.GetError(); errMsg != "" {
+			if taskID != "" {
+				cmds = append(cmds, tui.MsgCmd(chat.StreamCompleteMsg{
+					Success: false,
+					Content: "",
+					Error:   errors.New(errMsg),
+					TaskID:  taskID,
+				}))
+				m.cleanupTaskTracking(taskID)
+			} else {
+				cmds = append(cmds, tui.MsgCmd(tui.ErrorMsg(errors.New(errMsg))))
+			}
+			return cmds
+		}
+		if info := notification.GetInfo(); info != "" {
+			if taskID != "" {
+				cmds = append(cmds, tui.MsgCmd(chat.StreamChunkMsg{
+					Content: info,
+					Status:  "info",
+					TaskID:  taskID,
+				}))
+			} else {
+				cmds = append(cmds, tui.MsgCmd(tui.InfoMsg(info)))
+			}
+			return cmds
+		}
+	}
+
+	if turn := update.GetTurnResponse(); turn != nil {
+		taskID := turn.GetTurnId()
+		if taskID == "" {
+			taskID = m.requestToTask[turn.GetRequestId()]
+		}
+		if taskID != "" {
+			if _, started := m.startedTasks[taskID]; !started {
+				m.startedTasks[taskID] = struct{}{}
+				cmds = append(cmds, tui.MsgCmd(chat.StreamStartMsg{TaskID: taskID}))
+			}
+		}
+
+		if progress := turn.GetUpdate(); progress != nil && taskID != "" {
+			cmds = append(cmds, tui.MsgCmd(chat.StreamChunkMsg{
+				Content: progress.GetContent(),
+				Status:  "in_progress",
+				TaskID:  taskID,
+			}))
+		}
+
+		if completed := turn.GetCompleted(); completed != nil && taskID != "" {
+			if success := completed.GetSuccess(); success != nil {
+				cmds = append(cmds, tui.MsgCmd(chat.StreamCompleteMsg{
+					Success: true,
+					Content: success.GetContent(),
+					Error:   nil,
+					TaskID:  taskID,
+				}))
+				m.cleanupTaskTracking(taskID)
+				return cmds
+			}
+			if failed := completed.GetFailed(); failed != nil {
+				cmds = append(cmds, tui.MsgCmd(chat.StreamCompleteMsg{
+					Success: false,
+					Content: "",
+					Error:   errors.New(failed.GetMessage()),
+					TaskID:  taskID,
+				}))
+				m.cleanupTaskTracking(taskID)
+				return cmds
+			}
+		}
+	}
+
+	if inputRequired := update.GetInputRequired(); inputRequired != nil {
+		taskID := inputRequired.GetTurnId()
+		if taskID != "" {
+			if _, started := m.startedTasks[taskID]; !started {
+				m.startedTasks[taskID] = struct{}{}
+				cmds = append(cmds, tui.MsgCmd(chat.StreamStartMsg{TaskID: taskID}))
+			}
+		}
+		cmds = append(cmds, tui.MsgCmd(chat.FeedbackRequestMsg{
+			ConversationID: inputRequired.GetConversationId(),
+			TurnID:         inputRequired.GetTurnId(),
+			Question:       inputRequired.GetQuestion(),
+		}))
+	}
+
+	return cmds
+}
+
+func (m *model) cleanupTaskTracking(taskID string) {
+	delete(m.startedTasks, taskID)
+	for reqID, currentTaskID := range m.requestToTask {
+		if currentTaskID == taskID {
+			delete(m.requestToTask, reqID)
+		}
+	}
 }

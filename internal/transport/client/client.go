@@ -85,6 +85,144 @@ func (c *Client) SendFeedback(ctx context.Context, conversationID, turnID, feedb
 	return nil
 }
 
+// StartConversation opens a persistent HiveSession stream and initializes a conversation.
+// The returned response channel carries all subsequent server updates for the stream.
+func (c *Client) StartConversation(ctx context.Context, resumeID string) (string, <-chan *agentv1.HiveSessionResponse, error) {
+	cc, err := grpc.NewClient(c.config.Server.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create connection to server: %w", err)
+	}
+
+	client := agentv1.NewAgentServiceClient(cc)
+	srv, err := client.HiveSession(ctx)
+	if err != nil {
+		_ = cc.Close()
+		return "", nil, fmt.Errorf("failed to open stream: %w", err)
+	}
+
+	createReq := &agentv1.HiveSessionRequest{
+		RequestId: uuid.NewString(),
+		At:        timestamppb.Now(),
+		Payload: &agentv1.HiveSessionRequest_CreateConversation{
+			CreateConversation: &agentv1.CreateConversationRequest{
+				Mode: &agentv1.CreateConversationRequest_CreateNew{
+					CreateNew: &emptypb.Empty{},
+				},
+			},
+		},
+	}
+	if resumeID != "" {
+		createReq.Payload = &agentv1.HiveSessionRequest_CreateConversation{
+			CreateConversation: &agentv1.CreateConversationRequest{
+				Mode: &agentv1.CreateConversationRequest_ResumeId{
+					ResumeId: resumeID,
+				},
+			},
+		}
+	}
+
+	if err = srv.Send(createReq); err != nil {
+		_ = srv.CloseSend()
+		_ = cc.Close()
+		return "", nil, fmt.Errorf("failed to create conversation: %w", err)
+	}
+
+	firstResp, err := srv.Recv()
+	if err != nil {
+		_ = srv.CloseSend()
+		_ = cc.Close()
+		return "", nil, fmt.Errorf("failed to receive create conversation response: %w", err)
+	}
+	if n := firstResp.GetNotification(); n != nil && n.GetError() != "" {
+		_ = srv.CloseSend()
+		_ = cc.Close()
+		return "", nil, errors.New(n.GetError())
+	}
+
+	conv := firstResp.GetCreateConversation()
+	if conv == nil || conv.GetConversationId() == "" {
+		_ = srv.CloseSend()
+		_ = cc.Close()
+		return "", nil, fmt.Errorf("expected create conversation response, got %T", firstResp.GetPayload())
+	}
+	conversationID := conv.GetConversationId()
+	c.setStream(conversationID, srv)
+
+	responseCh := make(chan *agentv1.HiveSessionResponse, 100)
+	responseCh <- firstResp
+
+	go func() {
+		defer close(responseCh)
+		defer c.dropStream(conversationID)
+		defer srv.CloseSend() //nolint: errcheck // best-effort stream close
+		defer cc.Close()      //nolint: errcheck // best-effort connection close
+
+		for {
+			update, recvErr := srv.Recv()
+			if recvErr != nil {
+				if !errors.Is(recvErr, io.EOF) && ctx.Err() == nil {
+					c.sendNotificationError(responseCh, recvErr.Error())
+				}
+				return
+			}
+
+			select {
+			case responseCh <- update:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return conversationID, responseCh, nil
+}
+
+// SendTurn sends a create_turn request over an existing conversation stream.
+func (c *Client) SendTurn(ctx context.Context, conversationID, command string) (turnID string, requestID string, err error) {
+	if conversationID == "" {
+		return "", "", fmt.Errorf("conversationID cannot be empty")
+	}
+	if command == "" {
+		return "", "", fmt.Errorf("command cannot be empty")
+	}
+
+	select {
+	case <-ctx.Done():
+		return "", "", fmt.Errorf("context cancelled: %w", ctx.Err())
+	default:
+	}
+
+	stream, exists := c.getStream(conversationID)
+	if !exists {
+		return "", "", fmt.Errorf("no active stream found for conversationID: %s", conversationID)
+	}
+
+	turnID = uuid.NewString()
+	requestID = uuid.NewString()
+	if err = stream.Send(&agentv1.HiveSessionRequest{
+		RequestId: requestID,
+		At:        timestamppb.Now(),
+		Payload: &agentv1.HiveSessionRequest_TurnRequest{
+			TurnRequest: &agentv1.TurnRequest{
+				ConversationId: conversationID,
+				TurnId:         turnID,
+				At:             timestamppb.Now(),
+				Payload: &agentv1.TurnRequest_CreateTurn{
+					CreateTurn: &agentv1.CreateTurn{
+						Message:          command,
+						InitialArtifacts: map[string]string{},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		c.dropStream(conversationID)
+		return "", "", fmt.Errorf("failed to create turn: %w", err)
+	}
+
+	return turnID, requestID, nil
+}
+
 // ExecuteTaskWithChannel sends a command and returns a channel for receiving responses.
 // This is a TUI-friendly version that doesn't use stdin for feedback.
 func (c *Client) ExecuteTaskWithChannel(ctx context.Context, command string) (<-chan *agentv1.HiveSessionResponse, error) {
