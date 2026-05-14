@@ -132,7 +132,5 @@ func (p *Pipeline) waitForFeedback(ctx context.Context, correlationID string) (P
 		return PipelineSubmitInputPayload{}, ctx.Err()
 	case payload := <-ch:
 		return payload, nil
-	default:
-		return PipelineSubmitInputPayload{}, fmt.Errorf("pipeline: waiting channel is full for correlation ID: %s", correlationID)
 	}
 }

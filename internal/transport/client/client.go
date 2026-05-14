@@ -23,6 +23,15 @@ type Client struct {
 	streams   map[string]grpc.BidiStreamingClient[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse] // Active streams keyed by conversation ID
 }
 
+type InlineRoundResult struct {
+	ConversationID string
+	TurnID         string
+	Status         string
+	Content        string
+	Question       string
+	Updates        []string
+}
+
 func NewClient(cfg *config.Config) (*Client, error) {
 	return &Client{
 		config:  cfg,
@@ -174,6 +183,85 @@ func (c *Client) ExecuteTaskWithChannel(ctx context.Context, command string) (<-
 		}
 	}()
 	return responseCh, nil
+}
+
+// ExecuteTaskInline runs one request/response round and returns the terminal outcome.
+// It consumes a single turn flow and returns when it reaches one of:
+// - turn completed (success/failed)
+// - input required
+// - notification error
+func (c *Client) ExecuteTaskInline(ctx context.Context, command string) (*InlineRoundResult, error) {
+	responseCh, err := c.ExecuteTaskWithChannel(ctx, command)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &InlineRoundResult{
+		Status:  "in_progress",
+		Updates: []string{},
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case resp, ok := <-responseCh:
+			if !ok {
+				if result.Content != "" || result.Question != "" || len(result.Updates) > 0 {
+					return result, nil
+				}
+				return nil, fmt.Errorf("inline round terminated without response")
+			}
+
+			if conv := resp.GetCreateConversation(); conv != nil {
+				result.ConversationID = conv.GetConversationId()
+				continue
+			}
+
+			if n := resp.GetNotification(); n != nil {
+				if errMsg := n.GetError(); errMsg != "" {
+					return nil, errors.New(errMsg)
+				}
+				if info := n.GetInfo(); info != "" {
+					result.Updates = append(result.Updates, info)
+				}
+				continue
+			}
+
+			if in := resp.GetInputRequired(); in != nil {
+				result.Status = "input_required"
+				result.ConversationID = in.GetConversationId()
+				result.TurnID = in.GetTurnId()
+				result.Question = in.GetQuestion()
+				return result, nil
+			}
+
+			if turn := resp.GetTurnResponse(); turn != nil {
+				if turn.GetConversationId() != "" {
+					result.ConversationID = turn.GetConversationId()
+				}
+				if turn.GetTurnId() != "" {
+					result.TurnID = turn.GetTurnId()
+				}
+				if update := turn.GetUpdate(); update != nil {
+					result.Updates = append(result.Updates, update.GetContent())
+					continue
+				}
+				if completed := turn.GetCompleted(); completed != nil {
+					if success := completed.GetSuccess(); success != nil {
+						result.Status = "completed"
+						result.Content = success.GetContent()
+						return result, nil
+					}
+					if failed := completed.GetFailed(); failed != nil {
+						result.Status = "failed"
+						result.Content = failed.GetMessage()
+						return result, nil
+					}
+				}
+			}
+		}
+	}
 }
 
 func (c *Client) getStream(conversationID string) (grpc.BidiStreamingClient[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse], bool) {

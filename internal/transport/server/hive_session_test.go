@@ -179,14 +179,12 @@ func newHiveSessionStream(
 		AI: config.AIConfig{
 			MaxStep: 1,
 			Context: config.ContextConfig{
-				MaxTokens:               4096,
 				SummaryTriggerThreshold: 3000,
 				SummaryTargetTokens:     500,
 			},
 		},
-		Session: config.SessionConfig{
-			Dir:     tmpDir,
-			Enabled: false,
+		Storage: config.StorageConfig{
+			Dir: tmpDir,
 		},
 	}
 

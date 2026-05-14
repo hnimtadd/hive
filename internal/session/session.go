@@ -159,9 +159,13 @@ func (h *Handler) forwardEvents(ctx context.Context, eventCh <-chan *agentv1.Ses
 			if !ok {
 				return
 			}
+			if event == nil || event.Payload == nil {
+				// Ignore internal/non-user-facing events that don't carry a streamable payload.
+				continue
+			}
 			resp, err := event.ToHiveSessionResponse()
 			if err != nil {
-				_ = h.sendError(ctx, "", fmt.Sprintf("failed to convert session event: %v", err))
+				// Keep stream alive on malformed/internal events.
 				continue
 			}
 			if err = h.sendResponse(ctx, resp); err != nil {

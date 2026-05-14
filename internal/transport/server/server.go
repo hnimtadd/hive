@@ -35,7 +35,7 @@ var _ agentv1.AgentServiceServer = &HiveServer{}
 
 func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage) (*HiveServer, error) {
 	// Create task manager (storage + queue)
-	sessionLogger, err := observability.NewSessionLogger(&cfg.Session)
+	sessionLogger, err := observability.NewSessionLogger(&cfg.Tracing.SessionLog)
 	if err != nil {
 		return nil, err
 	}

@@ -39,9 +39,7 @@ func main() {
 		log.Fatalf("failed to init registry: %s", err)
 	}
 
-	sessionStorage, err := storage.NewSessionStorage(storage.Options{
-		Storage: cfg.Session.Dir,
-	})
+	sessionStorage, err := storage.NewSessionStorage(storage.Options{Storage: cfg.Storage.Dir})
 	if err != nil {
 		log.Fatalf("failed to init session storage: %v", err)
 	}

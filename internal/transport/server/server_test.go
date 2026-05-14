@@ -54,10 +54,6 @@ func setupTestServer(t *testing.T) (*server.HiveServer, func()) {
 			Dir:            tmpDir + "/tools",
 			DefaultTimeout: 1 * time.Minute,
 		},
-		Tasks: config.TaskConfig{
-			Storage: tmpDir + "/tasks",
-			Timeout: 10 * time.Minute,
-		},
 	}
 
 	// Create dependencies

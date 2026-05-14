@@ -13,24 +13,24 @@ import (
 
 // SessionLogger handles session/agent execution logging.
 type SessionLogger struct {
-	config  *config.SessionConfig
+	config  *config.SessionLogConfig
 	logFile *os.File
 }
 
 // NewSessionLogger creates a new session logger based on config.
-func NewSessionLogger(cfg *config.SessionConfig) (*SessionLogger, error) {
+func NewSessionLogger(cfg *config.SessionLogConfig) (*SessionLogger, error) {
 	if cfg == nil || !cfg.Enabled {
 		return &SessionLogger{config: cfg}, nil
 	}
 
 	// Ensure log directory exists
-	if err := os.MkdirAll(cfg.Dir, 0700); err != nil {
+	if err := os.MkdirAll(cfg.AccessLogDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create session log directory: %w", err)
 	}
 
 	// Create log file with timestamp
 	timestamp := time.Now().Format("2006-01-02_15-04-05")
-	logPath := filepath.Join(cfg.Dir, fmt.Sprintf("session_%s.jsonl", timestamp))
+	logPath := filepath.Join(cfg.AccessLogDir, fmt.Sprintf("session_%s.jsonl", timestamp))
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session log file: %w", err)
