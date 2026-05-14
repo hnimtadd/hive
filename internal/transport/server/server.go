@@ -8,15 +8,12 @@ import (
 	"time"
 
 	"github.com/hnimtadd/hive/internal/bee/registry"
-	"github.com/hnimtadd/hive/internal/channel"
 	"github.com/hnimtadd/hive/internal/eventbus"
-	"github.com/hnimtadd/hive/internal/manager"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
 	"github.com/hnimtadd/hive/internal/pipeline"
 	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
-	"github.com/hnimtadd/hive/pkg/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 )
@@ -24,28 +21,16 @@ import (
 type HiveServer struct {
 	agentv1.AgentServiceServer
 
-	grpcServer     *grpc.Server
-	config         *config.Config
-	taskManager    *manager.Manager
-	channelManager *channel.Manager
-	pipeline       *pipeline.Pipeline
-	eventbus       *eventbus.EventBus[*agentv1.SessionEvent]
+	grpcServer *grpc.Server
+	config     *config.Config
+	pipeline   *pipeline.Pipeline
+	eventbus   *eventbus.EventBus[*agentv1.SessionEvent]
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage, storage storage.Storage) (*HiveServer, error) {
-	// Create channel manager for per-task communication
-	cm := channel.NewManager()
-
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage) (*HiveServer, error) {
 	// Create task manager (storage + queue)
-	tm := manager.NewManager(sessionStorage, storage)
-
-	// Create worker pool
-	poolSize := cfg.Bees.PoolSize
-	if poolSize <= 0 {
-		poolSize = 3 // Default: 3 concurrent workers
-	}
 	sessionLogger, err := observability.NewSessionLogger(&cfg.Session)
 	if err != nil {
 		return nil, err
@@ -61,11 +46,9 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	})
 
 	return &HiveServer{
-		config:         cfg,
-		taskManager:    tm,
-		channelManager: cm,
-		pipeline:       pipeline,
-		eventbus:       eventbus,
+		config:   cfg,
+		pipeline: pipeline,
+		eventbus: eventbus,
 	}, nil
 }
 
@@ -128,36 +111,8 @@ func (s *HiveServer) Stop() {
 }
 
 // HiveSession implements [agentv1.AgentServiceServer].
-func (s *HiveServer) HiveSession(srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]) error {
-	// TODO: implement this follow our diagram
-	ctx := srv.Context()
-	msg, err := srv.Recv()
-	if err != nil {
-	}
-	switch payload := msg.Payload.(type) {
-	case *agentv1.HiveSessionRequest_CreateConversation:
-	default:
-		srv.Send(&agentv1.HiveSessionResponse{
-			Payload: &agentv1.HiveSessionResponse_Notification{
-				Notification: &agentv1.Notification{
-					Payload: &agentv1.Notification_Error{
-						Error: "The first message should be the createconversation",
-					},
-				},
-			},
-		})
-	}
-
-	var (
-		session *types.HiveSession
-		err     error
-	)
-	convMsg := msg.GetCreateConversation()
-	switch mode := convMsg.GetMode().(type) {
-	case *agentv1.CreateConversationRequest_CreateNew:
-		session, err = s.taskManager.CreateSession(ctx)
-	case *agentv1.CreateConversationRequest_ResumeId:
-		session, err = s.taskManager.LoadSession(ctx, mode.ResumeId)
-	}
-	s.taskManager
+func (s *HiveServer) HiveSession(
+	_ grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse],
+) error {
+	panic("Not implemented")
 }

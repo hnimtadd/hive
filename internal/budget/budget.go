@@ -37,7 +37,7 @@ func (cb *ContextBudget) EstimateTokens(msgs []types.Message) int {
 // Returns true if:
 //   - Message count >= SummaryTriggerThreshold
 //   - Or estimated tokens exceed MaxTaskDescriptionTokens
-func (cb *ContextBudget) ShouldTriggerSummary(task *types.HiveTask) bool {
+func (cb *ContextBudget) ShouldTriggerSummary(task *types.Session) bool {
 	if len(task.Messages) >= cb.SummaryTriggerThreshold {
 		return true
 	}

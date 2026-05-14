@@ -34,7 +34,7 @@ type QueenBee interface {
 	// Returns an error if execution fails, nil if successful
 	// For success task, markCompleted will be automatically call with the
 	// summary by the agent, so the caller don't have to handle this manually.
-	Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput, error)
+	Execute(ctx context.Context, task *types.Session) (*QueenOutput, error)
 }
 
 type QueenOutput struct {
@@ -100,7 +100,7 @@ func NewQueenBee(
 }
 
 // Execute implements [QueenBee].
-func (s *queen) Execute(ctx context.Context, task *types.HiveTask) (*QueenOutput, error) {
+func (s *queen) Execute(ctx context.Context, task *types.Session) (*QueenOutput, error) {
 	logger := observability.Logger(ctx)
 	logger.InfoContext(ctx, "queen execution started",
 		slog.String("queen_id", s.id),
@@ -304,10 +304,10 @@ Ensure all values are properly quoted strings.`, content, err.Error())
 		}
 
 		switch agentOutput.Status {
-		case types.TaskStatusCompleted,
-			types.TaskStatusFailed,
-			types.TaskStatusInProgress,
-			types.TaskStatusPaused:
+		case types.SessionStatusCompleted,
+			types.SessionStatusFailed,
+			types.SessionStatusInProgress,
+			types.SessionStatusPaused:
 			task.Status = agentOutput.Status
 
 		default:

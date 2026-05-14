@@ -16,7 +16,7 @@ func TestSessionStorage_CreateAndLoad(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	session := &types.HiveSession{
+	session := &types.Session{
 		ID: "session-001",
 		Messages: []types.Message{
 			types.NewMessage(types.RoleUser, "hello"),
@@ -41,7 +41,7 @@ func TestSessionStorage_SaveAppendsAndLoadReturnsLastSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	session := &types.HiveSession{
+	session := &types.Session{
 		ID: "session-append",
 		Messages: []types.Message{
 			types.NewMessage(types.RoleUser, "first"),
@@ -67,8 +67,8 @@ func TestSessionStorage_List(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, store.Create(&types.HiveSession{ID: "s1"}))
-	require.NoError(t, store.Create(&types.HiveSession{ID: "s2"}))
+	require.NoError(t, store.Create(&types.Session{ID: "s1"}))
+	require.NoError(t, store.Create(&types.Session{ID: "s2"}))
 
 	sessions, err := store.List()
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestSessionStorage_RejectsInvalidSessionID(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = store.Save(&types.HiveSession{
+	err = store.Save(&types.Session{
 		ID: "../escape",
 	})
 	require.Error(t, err)

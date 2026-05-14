@@ -20,8 +20,9 @@ type Model struct {
 	inputBar      *inputbar.Model
 	viewport      viewport.Model
 
-	currentFeedbackTaskID   string
-	currentFeedbackQuestion string // New field to store question text
+	currentFeedbackConversationID string
+	currentFeedbackTurnID         string
+	currentFeedbackQuestion       string // New field to store question text
 }
 
 func NewModel(_ ModelOptions) (*Model, error) {
@@ -76,12 +77,14 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				content := m.inputBar.Value()
 				m.msgs = append(m.msgs, newChatRequestModel(content, m.width))
 				// Send as feedback if feedback task is pending, otherwise as regular message
-				if m.currentFeedbackTaskID != "" {
+				if m.currentFeedbackConversationID != "" && m.currentFeedbackTurnID != "" {
 					cmds = append(cmds, tui.MsgCmd(FeedbackResponseMsg{
-						TaskID:   m.currentFeedbackTaskID,
-						Response: content,
+						ConversationID: m.currentFeedbackConversationID,
+						TurnID:         m.currentFeedbackTurnID,
+						Response:       content,
 					}))
-					m.currentFeedbackTaskID = ""
+					m.currentFeedbackConversationID = ""
+					m.currentFeedbackTurnID = ""
 					m.currentFeedbackQuestion = ""
 					m.inputBar.ClearFeedback()
 				} else {
@@ -125,7 +128,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 
 	case FeedbackRequestMsg:
 		// Store the task ID and question for feedback response
-		m.currentFeedbackTaskID = msg.TaskID
+		m.currentFeedbackConversationID = msg.ConversationID
+		m.currentFeedbackTurnID = msg.TurnID
 		m.currentFeedbackQuestion = msg.Question
 		// Set feedback mode in input bar
 		m.inputBar.SetFeedback(msg.Question)
@@ -139,7 +143,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		if len(m.msgs) > 0 {
 			m.msgs = []tui.Model{}
 			m.streaming = make(map[string]tui.Model)
-			m.currentFeedbackTaskID = ""
+			m.currentFeedbackConversationID = ""
+			m.currentFeedbackTurnID = ""
 			m.currentFeedbackQuestion = ""
 			m.inputBar.Reset()
 			m.inputBar.ClearFeedback()

@@ -16,10 +16,10 @@ import (
 const sessionFileExt = ".jsonl"
 
 type SessionStorage interface {
-	Create(session *types.HiveSession) error
-	List() ([]*types.HiveSession, error)
-	Save(session *types.HiveSession) error
-	Load(sessionID string) (*types.HiveSession, error)
+	Create(session *types.Session) error
+	List() ([]*types.Session, error)
+	Save(session *types.Session) error
+	Load(sessionID string) (*types.Session, error)
 }
 
 type sessionStorage struct {
@@ -46,7 +46,7 @@ func NewSessionStorage(opts Options) (SessionStorage, error) {
 }
 
 // Create implements [SessionStorage].
-func (s *sessionStorage) Create(session *types.HiveSession) error {
+func (s *sessionStorage) Create(session *types.Session) error {
 	if session == nil {
 		return errors.New("session is nil")
 	}
@@ -72,7 +72,7 @@ func (s *sessionStorage) Create(session *types.HiveSession) error {
 }
 
 // Save implements [SessionStorage].
-func (s *sessionStorage) Save(session *types.HiveSession) error {
+func (s *sessionStorage) Save(session *types.Session) error {
 	if session == nil {
 		return errors.New("session is nil")
 	}
@@ -98,7 +98,7 @@ func (s *sessionStorage) Save(session *types.HiveSession) error {
 }
 
 // Load implements [SessionStorage].
-func (s *sessionStorage) Load(sessionID string) (*types.HiveSession, error) {
+func (s *sessionStorage) Load(sessionID string) (*types.Session, error) {
 	path, err := s.sessionFilePath(sessionID)
 	if err != nil {
 		return nil, err
@@ -122,13 +122,13 @@ func (s *sessionStorage) Load(sessionID string) (*types.HiveSession, error) {
 }
 
 // List implements [SessionStorage].
-func (s *sessionStorage) List() ([]*types.HiveSession, error) {
+func (s *sessionStorage) List() ([]*types.Session, error) {
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list session storage: %w", err)
 	}
 
-	sessions := make([]*types.HiveSession, 0, len(entries))
+	sessions := make([]*types.Session, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != sessionFileExt {
 			continue
@@ -155,7 +155,7 @@ func (s *sessionStorage) sessionFilePath(sessionID string) (string, error) {
 	return filepath.Join(s.root, sessionID+sessionFileExt), nil
 }
 
-func writeJSONL(file *os.File, session *types.HiveSession) error {
+func writeJSONL(file *os.File, session *types.Session) error {
 	payload, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session: %w", err)
@@ -166,7 +166,7 @@ func writeJSONL(file *os.File, session *types.HiveSession) error {
 	return nil
 }
 
-func readLastSessionRecord(file *os.File) (*types.HiveSession, error) {
+func readLastSessionRecord(file *os.File) (*types.Session, error) {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024*10)
 	var (
@@ -188,7 +188,7 @@ func readLastSessionRecord(file *os.File) (*types.HiveSession, error) {
 		return nil, errors.New("session file is empty")
 	}
 
-	var session types.HiveSession
+	var session types.Session
 	if err := json.Unmarshal([]byte(lastLine), &session); err != nil {
 		return nil, fmt.Errorf("failed to parse session snapshot at line %d: %w", lineNo, err)
 	}

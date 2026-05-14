@@ -16,7 +16,6 @@ import (
 	"github.com/hnimtadd/hive/internal/tui/help"
 	"github.com/hnimtadd/hive/internal/tui/keys"
 	"github.com/hnimtadd/hive/pkg/config"
-	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 type model struct {
@@ -167,7 +166,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chat.FeedbackResponseMsg:
 		// Handle feedback response (send to server)
-		if err := m.grpcClient.SendFeedback(m.ctx, msg.TaskID, msg.Response); err != nil {
+		if err := m.grpcClient.SendFeedback(m.ctx, msg.ConversationID, msg.TurnID, msg.Response); err != nil {
 			cmd = append(cmd, tui.MsgCmd(tui.ErrorMsg(err)))
 		}
 
@@ -245,88 +244,121 @@ func (m *model) listenToStream(content string) tea.Cmd {
 					return
 				}
 
-				switch msg := update.GetPayload().(type) {
-				case *agentv1.ExecuteTaskResponse_Ack:
-					taskID = msg.Ack.GetTaskId()
-					streamStarted = true
-					select {
-					case m.msgCh <- chat.StreamStartMsg{
-						TaskID: taskID,
-					}:
-					case <-m.ctx.Done():
-						return
-					}
-
-				case *agentv1.ExecuteTaskResponse_Update:
-					if !streamStarted {
-						streamStarted = true
+				if notification := update.GetNotification(); notification != nil {
+					if errMsg := notification.GetError(); errMsg != "" {
+						if !streamStarted {
+							streamStarted = true
+							select {
+							case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
+							case <-m.ctx.Done():
+								return
+							}
+						}
 						select {
-						case m.msgCh <- chat.StreamStartMsg{
-							TaskID: taskID,
+						case m.msgCh <- chat.StreamCompleteMsg{
+							Success: false,
+							Content: "",
+							Error:   errors.New(errMsg),
+							TaskID:  taskID,
+						}:
+						case <-m.ctx.Done():
+							return
+						}
+						continue
+					}
+					if info := notification.GetInfo(); info != "" {
+						if !streamStarted {
+							streamStarted = true
+							select {
+							case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
+							case <-m.ctx.Done():
+								return
+							}
+						}
+						select {
+						case m.msgCh <- chat.StreamChunkMsg{
+							Content: info,
+							Status:  "info",
+							TaskID:  taskID,
 						}:
 						case <-m.ctx.Done():
 							return
 						}
 					}
-					select {
-					case m.msgCh <- chat.StreamChunkMsg{
-						Content: msg.Update.GetContent(),
-						Status:  msg.Update.GetStatus(),
-						TaskID:  taskID,
-					}:
-					case <-m.ctx.Done():
-						return
-					}
+					continue
+				}
 
-				case *agentv1.ExecuteTaskResponse_Success:
+				if turn := update.GetTurnResponse(); turn != nil {
+					if turnID := turn.GetTurnId(); turnID != "" {
+						taskID = turnID
+					}
 					if !streamStarted {
 						streamStarted = true
 						select {
-						case m.msgCh <- chat.StreamStartMsg{
-							TaskID: taskID,
-						}:
+						case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
 						case <-m.ctx.Done():
 							return
 						}
 					}
-					select {
-					case m.msgCh <- chat.StreamCompleteMsg{
-						Success: true,
-						Content: msg.Success.GetContent(),
-						Error:   nil,
-						TaskID:  taskID,
-					}:
-					case <-m.ctx.Done():
-						return
-					}
 
-				case *agentv1.ExecuteTaskResponse_Error:
-					if !streamStarted {
-						streamStarted = true
+					if progress := turn.GetUpdate(); progress != nil {
 						select {
-						case m.msgCh <- chat.StreamStartMsg{
-							TaskID: taskID,
+						case m.msgCh <- chat.StreamChunkMsg{
+							Content: progress.GetContent(),
+							Status:  "in_progress",
+							TaskID:  taskID,
 						}:
 						case <-m.ctx.Done():
 							return
 						}
-					}
-					select {
-					case m.msgCh <- chat.StreamCompleteMsg{
-						Success: false,
-						Content: "",
-						Error:   errors.New(msg.Error.GetMessage()),
-						TaskID:  taskID,
-					}:
-					case <-m.ctx.Done():
-						return
+						continue
 					}
 
-				case *agentv1.ExecuteTaskResponse_Feedback:
+					if completed := turn.GetCompleted(); completed != nil {
+						if success := completed.GetSuccess(); success != nil {
+							select {
+							case m.msgCh <- chat.StreamCompleteMsg{
+								Success: true,
+								Content: success.GetContent(),
+								Error:   nil,
+								TaskID:  taskID,
+							}:
+							case <-m.ctx.Done():
+								return
+							}
+							continue
+						}
+						if failed := completed.GetFailed(); failed != nil {
+							select {
+							case m.msgCh <- chat.StreamCompleteMsg{
+								Success: false,
+								Content: "",
+								Error:   errors.New(failed.GetMessage()),
+								TaskID:  taskID,
+							}:
+							case <-m.ctx.Done():
+								return
+							}
+							continue
+						}
+					}
+				}
+
+				if inputRequired := update.GetInputRequired(); inputRequired != nil {
+					if !streamStarted {
+						streamStarted = true
+						taskID = inputRequired.GetTurnId()
+						select {
+						case m.msgCh <- chat.StreamStartMsg{TaskID: taskID}:
+						case <-m.ctx.Done():
+							return
+						}
+					}
 					select {
 					case m.msgCh <- chat.FeedbackRequestMsg{
-						Question: msg.Feedback.GetQuestion(),
-						TaskID:   taskID,
+						ConversationID: inputRequired.GetConversationId(),
+						TurnID:         inputRequired.GetTurnId(),
+						Question:       inputRequired.GetQuestion(),
 					}:
 					case <-m.ctx.Done():
 						return

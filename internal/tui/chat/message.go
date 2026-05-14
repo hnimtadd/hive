@@ -22,11 +22,13 @@ type StreamCompleteMsg struct {
 }
 
 type FeedbackRequestMsg struct {
-	TaskID   string
-	Question string
+	ConversationID string
+	TurnID         string
+	Question       string
 }
 
 type FeedbackResponseMsg struct {
-	TaskID   string
-	Response string
+	ConversationID string
+	TurnID         string
+	Response       string
 }
