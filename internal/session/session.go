@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -55,7 +56,7 @@ func (h *Handler) Start(ctx context.Context) error {
 	defer h.cleanup()
 
 	for req := range h.inputCh {
-		switch payload := req.Payload.(type) {
+		switch payload := req.GetPayload().(type) {
 		case *agentv1.HiveSessionRequest_CreateConversation:
 			if err := h.handleCreateConversation(ctx, req, payload); err != nil {
 				logger.ErrorContext(ctx, "failed while handling create conversation", slog.Any("error", err))
@@ -90,7 +91,7 @@ func (h *Handler) Start(ctx context.Context) error {
 
 func (h *Handler) handleCreateConversation(ctx context.Context, req *agentv1.HiveSessionRequest, payload *agentv1.HiveSessionRequest_CreateConversation) error {
 	if h.storage == nil {
-		return fmt.Errorf("session storage is required")
+		return errors.New("session storage is required")
 	}
 	if h.session != nil {
 		return h.sendError(ctx, req.GetRequestId(), "conversation already initialized for this stream")
@@ -99,27 +100,26 @@ func (h *Handler) handleCreateConversation(ctx context.Context, req *agentv1.Hiv
 	var resp *agentv1.HiveSessionResponse
 	switch mode := payload.CreateConversation.GetMode().(type) {
 	case *agentv1.CreateConversationRequest_CreateNew:
-		conversation := types.NewSession()
-		conversation.ConversationID = conversation.ID
-		createConvResp := &agentv1.HiveSessionResponse_CreateConversation{
-			CreateConversation: &agentv1.CreateConversationResponse{
-				ConversationId: conversation.ID,
-				// TODO: change this
-				Location: conversation.ID,
-			},
-		}
-		if err := h.storage.Create(conversation); err != nil {
+		session := types.NewSession()
+		session.ConversationID = session.ID
+		if err := h.storage.Create(session); err != nil {
 			return err
 		}
-		h.session = conversation
+		h.session = session
+
+		createConvResp := &agentv1.HiveSessionResponse_CreateConversation{
+			CreateConversation: &agentv1.CreateConversationResponse{
+				ConversationId: session.ID,
+				Location:       session.Location,
+			},
+		}
 		resp = &agentv1.HiveSessionResponse{
 			Payload:   createConvResp,
 			At:        timestamppb.New(time.Now()),
-			InReplyTo: req.RequestId,
+			InReplyTo: req.GetRequestId(),
 		}
 
 	case *agentv1.CreateConversationRequest_ResumeId:
-		fmt.Println(mode.ResumeId)
 		session, err := h.storage.Load(mode.ResumeId)
 		if err != nil {
 			return err
@@ -132,12 +132,11 @@ func (h *Handler) handleCreateConversation(ctx context.Context, req *agentv1.Hiv
 			Payload: &agentv1.HiveSessionResponse_CreateConversation{
 				CreateConversation: &agentv1.CreateConversationResponse{
 					ConversationId: session.ID,
-					// TODO: change this
-					Location: session.ID,
+					Location:       session.Location,
 				},
 			},
 			At:        timestamppb.New(time.Now()),
-			InReplyTo: req.RequestId,
+			InReplyTo: req.GetRequestId(),
 		}
 
 	default:
@@ -178,7 +177,7 @@ func (h *Handler) forwardEvents(ctx context.Context, eventCh <-chan *agentv1.Ses
 
 func (h *Handler) handleRequestInput(ctx context.Context, _ *agentv1.HiveSessionRequest, payload *agentv1.HiveSessionRequest_Input) error {
 	if h.session == nil {
-		return fmt.Errorf("conversation not initialized")
+		return errors.New("conversation not initialized")
 	}
 	if err := h.pipeline.Handle(ctx, pipeline.PipelineCommand{
 		Key: pipeline.PipelineSubmitInputKey,
@@ -194,19 +193,17 @@ func (h *Handler) handleRequestInput(ctx context.Context, _ *agentv1.HiveSession
 
 func (h *Handler) handleTurnRequest(ctx context.Context, req *agentv1.HiveSessionRequest, payload *agentv1.HiveSessionRequest_TurnRequest) error {
 	if h.session == nil {
-		return fmt.Errorf("conversation not initialized")
+		return errors.New("conversation not initialized")
 	}
 
-	switch turnRequest := payload.TurnRequest.Payload.(type) {
+	switch turnRequest := payload.TurnRequest.GetPayload().(type) {
 	case *agentv1.TurnRequest_CreateTurn:
 		if convID := payload.TurnRequest.GetConversationId(); convID != "" && convID != h.session.ID {
 			return fmt.Errorf("conversation mismatch: expected %s got %s", h.session.ID, convID)
 		}
 		h.stopActiveRun()
 		h.session.Messages = append(h.session.Messages, types.NewMessage(types.RoleUser, turnRequest.CreateTurn.GetMessage()))
-		for key, value := range turnRequest.CreateTurn.InitialArtifacts {
-			h.session.Artifacts[key] = value
-		}
+		maps.Copy(h.session.Artifacts, turnRequest.CreateTurn.GetInitialArtifacts())
 		if err := h.storage.Save(h.session); err != nil {
 			return err
 		}

@@ -37,8 +37,9 @@ type Session struct {
 	Summary          string            `json:"summary,omitempty"     jsonschema:"Compressed history of previous execution cycles"`
 	Messages         []Message         `json:"message"               jsonschema:"global conversation"`
 
-	Context context.Context `json:"-"`
-	Retries uint            `json:"retries"`
+	Location string          `json:"-"`
+	Context  context.Context `json:"-"`
+	Retries  uint            `json:"retries"`
 }
 
 // NewSession creates a new session with default values.

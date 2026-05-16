@@ -55,6 +55,9 @@ func (s *sessionStorage) Create(session *types.Session) error {
 	if err != nil {
 		return err
 	}
+	// Write the location to the session and create so that session is mutated and
+	// Location is ready in sub-sequence session use.
+	session.Location = path
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -117,6 +120,7 @@ func (s *sessionStorage) Load(sessionID string) (*types.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read session %s: %w", sessionID, err)
 	}
+	session.Location = path
 	session.ID = sessionID
 	return session, nil
 }
