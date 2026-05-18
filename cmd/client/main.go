@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/hnimtadd/hive/internal/tools/system"
-	transportClient "github.com/hnimtadd/hive/internal/transport/client"
-	"github.com/hnimtadd/hive/pkg/config"
 	"github.com/hnimtadd/hive/pkg/hive"
 	"github.com/spf13/cobra"
 )
@@ -211,46 +209,6 @@ var systemHelp = &cobra.Command{
 	RunE:    systemHelpTool,
 }
 
-var sessionCmd = &cobra.Command{
-	Use:   "session",
-	Short: "Session API client commands",
-}
-
-var sessionInlineCmd = &cobra.Command{
-	Use:   "inline [prompt]",
-	Short: "Run one inline session round",
-	Args:  cobra.ExactArgs(1),
-	RunE:  executeSessionInline,
-}
-
-func executeSessionInline(_ *cobra.Command, args []string) error {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	client, err := transportClient.NewClient(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create transport client: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	result, err := client.ExecuteTaskInline(ctx, args[0])
-	if err != nil {
-		return fmt.Errorf("inline session request failed: %w", err)
-	}
-
-	output, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal inline result: %w", err)
-	}
-
-	log.Println(string(output))
-	return nil
-}
-
 func systemHelpTool(cmd *cobra.Command, _ []string) error {
 	name, err := cmd.Flags().GetString("name")
 	if err != nil {
@@ -304,8 +262,6 @@ func main() {
 	systemCmd.AddCommand(systemHelp)
 	rootCmd.AddCommand(hiveCmd)
 	rootCmd.AddCommand(systemCmd)
-	sessionCmd.AddCommand(sessionInlineCmd)
-	rootCmd.AddCommand(sessionCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
