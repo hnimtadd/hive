@@ -11,6 +11,7 @@ import (
 	"github.com/hnimtadd/hive/internal/transport/client"
 	"github.com/hnimtadd/hive/internal/tui"
 	"github.com/hnimtadd/hive/internal/tui/chat"
+	"github.com/hnimtadd/hive/internal/tui/content"
 	"github.com/hnimtadd/hive/internal/tui/footer"
 	"github.com/hnimtadd/hive/internal/tui/header"
 	"github.com/hnimtadd/hive/internal/tui/help"
@@ -26,7 +27,7 @@ type model struct {
 	status tui.Status
 
 	header        *header.Model
-	chat          *chat.Model
+	content       *content.Model
 	footer        *footer.Model
 	help          *help.Model
 	height, width int
@@ -64,6 +65,10 @@ func newModel(cfg *config.Config) (*model, error) {
 	if err != nil {
 		return nil, err
 	}
+	mainContent, err := content.NewModel(&content.ModelOptions{Chat: chat})
+	if err != nil {
+		return nil, err
+	}
 
 	grpcClient, err := client.NewClient(cfg)
 	if err != nil {
@@ -79,7 +84,7 @@ func newModel(cfg *config.Config) (*model, error) {
 		mode:          tui.DefaultMode,
 		header:        header,
 		footer:        footer,
-		chat:          chat,
+		content:       mainContent,
 		help:          helpModel,
 		grpcClient:    grpcClient,
 		msgCh:         make(chan tea.Msg, 100),
@@ -123,6 +128,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.height, m.width = msg.Height, msg.Width
+		mainHeight := max(0, msg.Height-tui.FooterHeight-tui.HeaderHeight)
 		m.header.Update(tea.WindowSizeMsg{
 			Height: tui.HeaderHeight,
 			Width:  m.width,
@@ -132,14 +138,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Width:  m.width,
 		})
 
-		m.chat.Update(tea.WindowSizeMsg{
-			Height: msg.Height - tui.FooterHeight - tui.HeaderHeight - 2,
-			Width:  m.width - 2,
+		m.content.Update(tea.WindowSizeMsg{
+			Height: mainHeight,
+			Width:  m.width,
 		})
 
 		m.help.Update(tea.WindowSizeMsg{
-			Height: msg.Height - tui.FooterHeight - tui.HeaderHeight - 2,
-			Width:  m.width - 2,
+			Height: mainHeight,
+			Width:  m.width,
 		})
 
 	case tui.ErrorMsg, tui.InfoMsg:
@@ -150,13 +156,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = tui.Mode(msg)
 			switch m.mode {
 			case tui.ModeNormal:
-				m.chat.Update(tea.BlurMsg{})
+				m.content.Update(tea.BlurMsg{})
 			case tui.ModeInsert:
-				m.chat.Update(tea.FocusMsg{})
+				m.content.Update(tea.FocusMsg{})
 			}
 			m.footer.Update(msg)
 			// Forward the mode change to chat so inputbar can update
-			cmd = append(cmd, m.chat.Update(msg))
+			cmd = append(cmd, m.content.Update(msg))
 		}
 	case tui.ChangeStatusMsg:
 		if m.status != tui.Status(msg) {
@@ -172,7 +178,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chat.StreamStartMsg, chat.StreamChunkMsg, chat.StreamCompleteMsg, chat.FeedbackRequestMsg:
 		// Forward streaming messages to chat model
-		cmd = append(cmd, m.chat.Update(msg))
+		cmd = append(cmd, m.content.Update(msg))
 		// Chain the next channel read
 		cmd = append(cmd, m.waitForChannelMessage())
 
@@ -186,6 +192,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = append(cmd, m.handleSessionUpdate(msg.update)...)
 		cmd = append(cmd, m.waitForChannelMessage())
 
+	case content.OpenConversationMsg:
+		if msg.New {
+			m.resetConversation()
+			cmd = append(cmd, m.content.Update(tui.ClearChatMsg{}))
+		}
+		m.content.ShowChat()
+
 	case tea.KeyMsg:
 		// Pressing any key makes any info/error message in the footer disappear.
 		m.footer.ResetStatus()
@@ -195,23 +208,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.HiveKeys.Insert.Leave):
 				return m, tui.MsgCmd(tui.ChangeModeMsg(tui.DefaultMode))
 			default:
-				cmd = append(cmd, m.chat.Update(msg))
+				cmd = append(cmd, m.content.Update(msg))
 			}
 		case tui.ModeNormal:
 			switch {
-			case key.Matches(msg, keys.HiveKeys.Normal.Insert):
+			case key.Matches(msg, keys.HiveKeys.Normal.Insert) && m.content.IsChatView():
 				return m, tui.MsgCmd(tui.ChangeModeMsg(tui.ModeInsert))
 			case key.Matches(msg, keys.HiveKeys.Normal.Quit):
 				m.cleanup()
 				return m, tea.Quit
-			case key.Matches(msg, keys.HiveKeys.Normal.Clear):
+			case key.Matches(msg, keys.HiveKeys.Normal.Clear) && m.content.IsChatView():
 				return m, tui.MsgCmd(tui.ClearChatMsg{})
 			case key.Matches(msg, keys.HiveKeys.Normal.Help):
 				return m, tui.MsgCmd(tui.ToggleHelpMsg{})
+			case key.Matches(msg, keys.HiveKeys.Normal.Sessions):
+				m.content.ToggleView()
 			}
+			cmd = append(cmd, m.content.Update(msg))
 		}
 	default:
-		cmd = append(cmd, m.chat.Update(msg))
+		cmd = append(cmd, m.content.Update(msg))
 	}
 	return m, tea.Batch(cmd...)
 }
@@ -219,10 +235,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View implements [tea.Model].
 func (m *model) View() tea.View {
 	var main string
+	mainHeight := max(0, m.height-tui.FooterHeight-tui.HeaderHeight)
 	if m.help.IsActive() {
-		main = tui.DefaultContainer.Width(m.width).PaddingBottom(2).AlignHorizontal(lipgloss.Center).Render(m.help.View())
+		main = tui.DefaultContainer.
+			Width(m.width).
+			Height(mainHeight).
+			Render(m.help.View())
 	} else {
-		main = tui.DefaultContainer.Width(m.width).PaddingBottom(2).AlignHorizontal(lipgloss.Center).Render(m.chat.View())
+		main = tui.DefaultContainer.
+			Width(m.width).
+			Height(mainHeight).
+			Render(m.content.View())
 	}
 	content := lipgloss.JoinVertical(lipgloss.Top,
 		m.header.View().Content,
@@ -268,6 +291,7 @@ func (m *model) ensureConversation() error {
 	}
 
 	m.conversationID = conversationID
+	m.content.RegisterConversation(conversationID)
 	m.responseCh = responseCh
 	if !m.streamListenerStarted {
 		m.startStreamListener()
@@ -307,6 +331,7 @@ func (m *model) handleSessionUpdate(update *agentv1.HiveSessionResponse) []tea.C
 		if m.conversationID == "" {
 			m.conversationID = createConv.GetConversationId()
 		}
+		m.content.RegisterConversation(createConv.GetConversationId())
 		return cmds
 	}
 
@@ -409,4 +434,12 @@ func (m *model) cleanupTaskTracking(taskID string) {
 			delete(m.requestToTask, reqID)
 		}
 	}
+}
+
+func (m *model) resetConversation() {
+	m.conversationID = ""
+	m.responseCh = nil
+	m.streamListenerStarted = false
+	m.requestToTask = map[string]string{}
+	m.startedTasks = map[string]struct{}{}
 }

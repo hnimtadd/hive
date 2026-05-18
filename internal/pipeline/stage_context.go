@@ -20,7 +20,7 @@ func NewContextStage(deps *PipelineDependencies) *ContextStage {
 }
 
 // Execute implements [Stage].
-// ContextStage populates context into the pipeline state
+// ContextStage populates context into the pipeline state.
 func (c *ContextStage) Execute(ctx context.Context, state *PipelineState) (StageResult, error) {
 	ctx = observability.ContextWithTraceContext(ctx, observability.NewRootTraceContext())
 

@@ -5,8 +5,9 @@ import (
 )
 
 type Norm struct {
-	Quit   key.Binding
-	Insert key.Binding
-	Clear  key.Binding
-	Help   key.Binding
+	Quit     key.Binding
+	Insert   key.Binding
+	Clear    key.Binding
+	Help     key.Binding
+	Sessions key.Binding
 }
