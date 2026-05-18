@@ -3,44 +3,26 @@ package system
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/observability"
-	"github.com/hnimtadd/hive/internal/shared"
 	"github.com/hnimtadd/hive/internal/types"
-	coretypes "github.com/hnimtadd/hive/pkg/types"
+	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
 type eventStreamMiddleware struct {
-	eventCh chan<- *coretypes.HiveEvent
-}
-
-type EventType string
-
-const (
-	EventTypeLLMRequestStart  EventType = "llm_request_start"
-	EventTypeLLMRequestFinish EventType = "llm_request_finish"
-	EventTypeToolCallStart    EventType = "tool_call_start"
-	EventTypeToolCallFinish   EventType = "tool_call_finish"
-)
-
-type ExecutionEvent struct {
-	Typ      EventType
-	Req      types.LLMRequest
-	Resp     types.LLMResponse
-	ToolReq  types.ToolCallRequest
-	ToolResp types.ToolCallResponse
-	At       time.Time
+	eventCh chan<- *agentv1.SessionEvent
 }
 
 // OnRequest implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
-	event := ExecutionEvent{
-		Typ: EventTypeLLMRequestStart,
-		Req: req,
-	}
+	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
+		Payload: &agentv1.Notification_Info{
+			Info: fmt.Sprintf("llm request: agent=%s input_len=%d", agentID, len(req.Input)),
+		},
+	})
 
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
@@ -52,10 +34,11 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 
 // OnResponse implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
-	event := ExecutionEvent{
-		Typ:  EventTypeLLMRequestFinish,
-		Resp: resp,
-	}
+	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
+		Payload: &agentv1.Notification_Info{
+			Info: fmt.Sprintf("llm response: agent=%s finish_reason=%s", agentID, resp.FinishReason),
+		},
+	})
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
@@ -66,10 +49,11 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 
 // OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
-	event := ExecutionEvent{
-		Typ:     EventTypeToolCallStart,
-		ToolReq: toolEvent,
-	}
+	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
+		Payload: &agentv1.Notification_Info{
+			Info: fmt.Sprintf("tool call: agent=%s tool=%s call_id=%s", agentID, toolEvent.ToolName, toolEvent.CallID),
+		},
+	})
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
@@ -81,10 +65,15 @@ func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, 
 
 // OnToolCall implements [middleware.LLMMiddleware].
 func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
-	event := ExecutionEvent{
-		Typ:      EventTypeToolCallFinish,
-		ToolResp: toolEvent,
+	status := "failed"
+	if toolEvent.Succeed {
+		status = "succeeded"
 	}
+	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
+		Payload: &agentv1.Notification_Info{
+			Info: fmt.Sprintf("tool response: agent=%s call_id=%s status=%s", agentID, toolEvent.CallID, status),
+		},
+	})
 	if err := e.pushEvent(ctx, event); err != nil {
 		observability.Logger(ctx).WarnContext(ctx, "failed to push event",
 			slog.String("agent_id", agentID),
@@ -94,13 +83,13 @@ func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID 
 	}
 }
 
-func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEvent) error {
-	hiveEvent := &coretypes.HiveEvent{
-		Type:    shared.HiveEventTypeExecutionEvent,
-		Payload: event,
+func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event *agentv1.SessionEvent) error {
+	if event == nil || e.eventCh == nil {
+		return nil
 	}
+
 	select {
-	case e.eventCh <- hiveEvent:
+	case e.eventCh <- event:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -111,7 +100,7 @@ func (e *eventStreamMiddleware) pushEvent(ctx context.Context, event ExecutionEv
 
 var _ middleware.LLMMiddleware = &eventStreamMiddleware{}
 
-func EventStreamMiddleware(eventCh chan<- *coretypes.HiveEvent) middleware.LLMMiddleware {
+func EventStreamMiddleware(eventCh chan<- *agentv1.SessionEvent) middleware.LLMMiddleware {
 	return &eventStreamMiddleware{
 		eventCh: eventCh,
 	}

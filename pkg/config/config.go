@@ -20,9 +20,8 @@ type Config struct {
 	BeeHiveDir   string        `mapstructure:"beehive"`
 	Bees         BeeConfig     `mapstructure:"bee"`
 	Tools        ToolConfig    `mapstructure:"tool"`
-	Tasks        TaskConfig    `mapstructure:"task"`
-	Session      SessionConfig `mapstructure:"session"`
 	Tracing      TraceConfig   `mapstructure:"tracing"`
+	Storage      StorageConfig `mapstructure:"storage"`
 }
 
 // AIConfig holds AI/LLM configuration.
@@ -109,19 +108,20 @@ type ServerConfig struct {
 }
 
 type TraceConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`
-	LogLevel  string `mapstructure:"log_level"`
-	LogFormat string `mapstructure:"log_format"`
-	LogFile   string `mapstructure:"log_file"`
-	AddSource bool   `mapstructure:"add_source"`
+	Enabled    bool             `mapstructure:"enabled"`
+	LogLevel   string           `mapstructure:"log_level"`
+	LogFormat  string           `mapstructure:"log_format"`
+	LogFile    string           `mapstructure:"log_file"`
+	AddSource  bool             `mapstructure:"add_source"`
+	SessionLog SessionLogConfig `mapstructure:"session_log"`
 }
 
 // SessionLogConfig configures session logging for agent/LLM interactions.
-type SessionConfig struct {
+type SessionLogConfig struct {
 	// Enabled turns on session logging
 	Enabled bool `mapstructure:"enabled"`
-	// Dir is the output directory for session logs (default: ./hive/sessions)
-	Dir string `mapstructure:"dir"`
+	// AccessLogDir is the output directory for session logs (default: ./hive/sessions)
+	AccessLogDir string `mapstructure:"dir"`
 	// LogRequests logs incoming LLM requests
 	LogRequests bool `mapstructure:"log_requests"`
 	// LogResponses logs outgoing LLM responses
@@ -130,6 +130,11 @@ type SessionConfig struct {
 	LogTools bool `mapstructure:"log_tools"`
 	// MaxContentLength limits logged content size (0 = no limit)
 	MaxContentLength int `mapstructure:"max_content_length"`
+}
+
+// StorageConfig configures storage related configuration.
+type StorageConfig struct {
+	Dir string `mapstructure:"dir"`
 }
 
 // LoadConfig loads configuration from file and environment variables.
@@ -198,7 +203,6 @@ func setDefaults() {
 	hiveSpace := getDefaultHiveSpace()
 	// Tasks defaults
 	viper.SetDefault("task.timeout", 10*time.Minute)
-	viper.SetDefault("task.storage", hiveSpace+"/storage")
 	viper.SetDefault("bee.default_timeout", 2*time.Minute)
 	viper.SetDefault("bee.pool_size", 3)
 	viper.SetDefault("tool.default_timeout", 1*time.Minute)
@@ -217,6 +221,7 @@ func setDefaults() {
 	viper.SetDefault("tracing.session_log.log_responses", true)
 	viper.SetDefault("tracing.session_log.log_tools", true)
 	viper.SetDefault("tracing.session_log.max_content_length", 2000)
+	viper.SetDefault("storage.dir", hiveSpace+"/storage")
 }
 
 // validateConfig validates the configuration values.
@@ -253,14 +258,9 @@ func validateConfig(config *Config) error {
 	}
 	config.Tools.Dir = toolsDir
 
-	// Validate execution configuration
-	if config.Tasks.Timeout <= 0 {
-		return errors.New("task.timeout must be positive")
-	}
-
 	// Validate and create session log directory
-	if config.Session.Enabled {
-		sessionLogDir := config.Session.Dir
+	if config.Tracing.SessionLog.Enabled {
+		sessionLogDir := config.Tracing.SessionLog.AccessLogDir
 		if sessionLogDir == "" {
 			sessionLogDir = filepath.Join(config.BeeHiveDir, "sessions")
 		} else {
@@ -269,7 +269,7 @@ func validateConfig(config *Config) error {
 				return fmt.Errorf("failed to expand session_log.dir: %w", err)
 			}
 		}
-		config.Session.Dir = sessionLogDir
+		config.Tracing.SessionLog.AccessLogDir = sessionLogDir
 		if err = os.MkdirAll(sessionLogDir, 0750); err != nil {
 			return fmt.Errorf("failed to create session log directory %s: %w", sessionLogDir, err)
 		}

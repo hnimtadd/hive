@@ -1,160 +1,75 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log"
-	"os"
+	"time"
 
+	"github.com/hnimtadd/hive/internal/transport/client"
+	"github.com/hnimtadd/hive/internal/tui/top"
 	"github.com/hnimtadd/hive/pkg/config"
-	"github.com/hnimtadd/hive/pkg/types"
-	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var (
-	cfgFile   string
-	jiraID    string
-	verbose   bool
-	artifacts map[string]string
-)
+func rootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tui",
+		Short: "client for Hive",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			inlineQuery, err := cmd.Flags().GetString("prompt")
+			if err != nil {
+				return err
+			}
 
-// rootCmd represents the base command when called without any subcommands.
-var rootCmd = &cobra.Command{
-	Use:     "hive [command]",
-	Short:   "The Hive - Distributed AI Agent Platform for Developer Productivity",
-	Long:    "The Hive is a distributed AI agent platform designed to reduce developer cognitive load and automate project management through natural language CLI commands.",
-	Args:    cobra.ExactArgs(1),
-	Example: `hive "Update the traffic shift script to deal with 0:100 page" --jira "PROJ-123"`,
-	RunE: func(_ *cobra.Command, args []string) error {
-		return executeCommand(args[0])
-	},
+			if inlineQuery != "" {
+				return runCli(inlineQuery)
+			}
+			return runTUI(cmd, args)
+		},
+	}
+	cmd.Flags().StringP("prompt", "p", "", "inline string query")
+	return cmd
 }
 
-// executeCommand processes the natural language command.
-func executeCommand(command string) error {
+func runCli(question string) error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
+		return fmt.Errorf("cli: failed to load configuration: %w", err)
 	}
-	ctx := context.Background()
-
-	if verbose {
-		log.Printf("Processing command: %s\n", command)
-		if jiraID != "" {
-			log.Printf("Jira ID: %s\n", jiraID)
-		}
-		if len(artifacts) > 0 {
-			log.Printf("Artifacts: %v\n", artifacts)
-		}
-	}
-
-	// Create a new Hive task
-	cc, err := grpc.NewClient(cfg.Server.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	c, err := client.NewClient(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create connecction to server: %w", err)
+		return fmt.Errorf("cli: failed to init new client: %w", err)
 	}
-	client := agentv1.NewAgentServiceClient(cc)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 
-	srv, err := client.ExecuteTask(ctx)
+	result, err := c.ExecuteTaskInline(ctx, question)
 	if err != nil {
-		return fmt.Errorf("failed to execute task: %w", err)
-	}
-	task := types.NewHiveTask(command, artifacts)
-	if jiraID != "" {
-		task.Artifacts["Jira_Ticket_ID"] = jiraID
+		return fmt.Errorf("inline session request failed: %w", err)
 	}
 
-	// Start monitoring task progress
-	if taskErr := handleTask(srv, task); taskErr != nil {
-		log.Printf("task handling failed: %s\n", taskErr)
-		_ = srv.CloseSend()
-		return taskErr
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal inline result: %w", err)
 	}
+
+	log.Println(string(output))
+
 	return nil
 }
 
-// monitorTask watches task progress and provides real-time updates.
-func handleTask(srv grpc.BidiStreamingClient[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse], task *types.HiveTask) error {
-	log.Printf("Monitoring task progress for\n")
-
-	reader := bufio.NewReader(os.Stdin)
-
-	req := &agentv1.ExecuteTaskRequest{
-		Payload: &agentv1.ExecuteTaskRequest_Request{
-			Request: &agentv1.TaskRequest{
-				GlobalGoal:       task.Goal,
-				InitialArtifacts: task.Artifacts,
-			},
-		},
-		At: timestamppb.Now(),
+func runTUI(_ *cobra.Command, _ []string) error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("tui: failed to load configuration: %w", err)
 	}
-	if err := srv.Send(req); err != nil {
-		return fmt.Errorf("failed to send message to server: %w", err)
-	}
-
-	// Subscribe to task updates
-	for {
-		update, err := srv.Recv()
-		if err != nil {
-			return err
-		}
-		switch msg := update.GetPayload().(type) {
-		case *agentv1.ExecuteTaskResponse_Success:
-			log.Println("Task success", msg.Success.GetContent())
-			return nil
-
-		case *agentv1.ExecuteTaskResponse_Error:
-			log.Printf("Task failed: %v\n", msg.Error.GetMessage())
-			return errors.New("task execution failed")
-
-		case *agentv1.ExecuteTaskResponse_Update:
-			log.Printf("Server update: %v\n", msg.Update.String())
-			continue
-
-		case *agentv1.ExecuteTaskResponse_Feedback:
-			log.Printf("Server feedback: %v\n", msg.Feedback.String())
-			log.Print("Enter your answer: ")
-
-			var response string
-			response, err = reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("error reading input: %w", err)
-			}
-			resp := &agentv1.ExecuteTaskRequest{
-				At: timestamppb.Now(),
-				Payload: &agentv1.ExecuteTaskRequest_Feedback{
-					Feedback: &agentv1.UserFeedback{
-						Feedback: response,
-					},
-				},
-			}
-			if err = srv.Send(resp); err != nil {
-				log.Printf("Failed to resposne to server: %s", err)
-				return fmt.Errorf("failed to resposne to server: %w", err)
-			}
-
-		default:
-			log.Println("unexpected")
-			return errors.New("unexpected response")
-		}
-	}
+	return top.Start(cfg)
 }
 
 func main() {
-	// Global flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.hive.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
-
-	// Command-specific flags
-	rootCmd.Flags().StringVar(&jiraID, "jira", "", "Jira ticket ID to associate with the task")
-	rootCmd.Flags().StringToStringVarP(&artifacts, "artifact", "a", nil, "Custom artifacts as key=value pairs")
-
+	rootCmd := rootCmd()
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}

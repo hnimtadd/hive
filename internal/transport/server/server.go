@@ -4,22 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
-	"sync"
 	"time"
 
-	"github.com/bytedance/gopkg/util/logger"
 	"github.com/hnimtadd/hive/internal/bee/registry"
-	"github.com/hnimtadd/hive/internal/channel"
-	"github.com/hnimtadd/hive/internal/manager"
+	"github.com/hnimtadd/hive/internal/eventbus"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
-	"github.com/hnimtadd/hive/internal/queue"
+	"github.com/hnimtadd/hive/internal/pipeline"
+	"github.com/hnimtadd/hive/internal/session"
 	"github.com/hnimtadd/hive/internal/storage"
-	"github.com/hnimtadd/hive/internal/worker"
 	"github.com/hnimtadd/hive/pkg/config"
-	"github.com/hnimtadd/hive/pkg/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 )
@@ -27,54 +24,41 @@ import (
 type HiveServer struct {
 	agentv1.AgentServiceServer
 
-	grpcServer     *grpc.Server
-	config         *config.Config
-	taskManager    *manager.Manager
-	channelManager *channel.Manager
-	workerPool     *worker.Pool
-	poolCtx        context.Context
-	poolCancel     context.CancelFunc
+	grpcServer *grpc.Server
+	config     *config.Config
+	pipeline   *pipeline.Pipeline
+	eventbus   *eventbus.EventBus[*agentv1.SessionEvent]
+	sessions   storage.SessionStorage
 }
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage, storage storage.Storage) (*HiveServer, error) {
-	// Create task queue
-	tq := queue.NewMemoryQueue()
-
-	// Create channel manager for per-task communication
-	cm := channel.NewManager()
-
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage) (*HiveServer, error) {
 	// Create task manager (storage + queue)
-	tm := manager.NewManager(sessionStorage, storage, tq)
-
-	// Create worker pool
-	poolSize := cfg.Bees.PoolSize
-	if poolSize <= 0 {
-		poolSize = 3 // Default: 3 concurrent workers
-	}
-	sessionLogger, err := observability.NewSessionLogger(&cfg.Session)
+	sessionLogger, err := observability.NewSessionLogger(&cfg.Tracing.SessionLog)
 	if err != nil {
 		return nil, err
 	}
 
-	pool := worker.NewPool(poolSize, tq, storage, cm, reg, provider, sessionLogger, cfg)
+	eventbus := eventbus.NewEventBus[*agentv1.SessionEvent]()
+	pipeline := pipeline.NewPipeline(pipeline.PipelineDependencies{
+		EventBus:      eventbus,
+		SessionLogger: sessionLogger,
+		Config:        *cfg,
+		Registry:      reg,
+		Provider:      provider,
+	})
 
 	return &HiveServer{
-		config:         cfg,
-		taskManager:    tm,
-		channelManager: cm,
-		workerPool:     pool,
+		config:   cfg,
+		pipeline: pipeline,
+		eventbus: eventbus,
+		sessions: sessionStorage,
 	}, nil
 }
 
 func (s *HiveServer) Serve(addr string) error {
 	logger := slog.Default()
-	ctx, cancel := context.WithCancel(context.Background())
-	s.workerPool.Start(ctx)
-	s.poolCancel = cancel
-	s.poolCtx = ctx
-
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -129,162 +113,65 @@ func (s *HiveServer) Stop() {
 			s.grpcServer.Stop()
 		}
 	}
-
-	// 2. Stop worker pool (cancels context, waits for in-flight tasks)
-	if s.poolCancel != nil {
-		s.poolCancel()
-	}
-	if s.workerPool != nil {
-		s.workerPool.Stop()
-	}
 }
 
-func (s *HiveServer) ExecuteTask(srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse]) error {
+// HiveSession implements [agentv1.AgentServiceServer].
+func (s *HiveServer) HiveSession(
+	srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse],
+) error {
 	ctx := srv.Context()
+	inputCh := make(chan *agentv1.HiveSessionRequest, 16)
+	outputCh := make(chan *agentv1.HiveSessionResponse, 32)
+
+	handler := session.NewHandler(inputCh, outputCh, s.pipeline, s.eventbus, s.sessions)
+
 	ctx, cancel := context.WithCancelCause(ctx)
-	logger := observability.Logger(ctx)
+	defer cancel(nil)
 
-	msg, err := srv.Recv()
-	if err != nil {
-		err = fmt.Errorf("server: failed to receive user request: %w", err)
-		cancel(err)
-		return err
-	}
-	req := msg.GetRequest()
-	if req == nil {
-		err = fmt.Errorf("server: first request is not a user request: %s", msg.String())
-		cancel(err)
-		return err
-	}
-	task, err := s.taskManager.CreateTask(ctx, req.GetGlobalGoal(), req.GetInitialArtifacts())
-	if err != nil {
-		logger.Error("server: failed to create task", slog.Any("error", err))
-		err = fmt.Errorf("server: failed to create task: %w", err)
-		cancel(err)
-		return err
-	}
-	ch := s.channelManager.ForTask(task.ID)
-	defer ch.CloseInput()
+	handlerDone := make(chan error, 1)
+	go func() {
+		defer close(outputCh)
+		handlerDone <- handler.Start(ctx)
+	}()
 
-	var wg sync.WaitGroup
-
-	wg.Go(func() {
-		err = s.forwardInput(ctx, srv, ch.InputCh)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("server: failed to forward output", slog.Any("error", err))
-			cancel(err)
-			return
-		}
-		logger.Error("forward input return")
-		cancel(nil)
-	})
-
-	wg.Go(func() {
-		err = s.forwardOutput(ctx, srv, ch.OutputCh)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("server: failed to forward output", slog.Any("error", err))
-			cancel(err)
-			return
-		}
-		logger.Error("forward output return")
-		cancel(nil)
-	})
-
-	wg.Wait()
-	if err = context.Cause(ctx); errors.Is(err, context.Canceled) {
-		return nil
-	}
-	return err
-}
-
-func (s *HiveServer) forwardInput(
-	ctx context.Context,
-	srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse],
-	ch chan *agentv1.ExecuteTaskRequest) error {
-	inputCh := make(chan *agentv1.ExecuteTaskRequest, 10)
 	go func() {
 		defer close(inputCh)
 		for {
 			msg, err := srv.Recv()
 			if err != nil {
+				if errors.Is(err, io.EOF) {
+					cancel(nil)
+					return
+				}
+				cancel(fmt.Errorf("server: failed to receive session stream message: %w", err))
 				return
 			}
-			inputCh <- msg
+			select {
+			case <-ctx.Done():
+				return
+			case inputCh <- msg:
+			}
 		}
 	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-
-		case msg, ok := <-inputCh:
+			if err := context.Cause(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				return err
+			}
+			return nil
+		case resp, ok := <-outputCh:
 			if !ok {
+				err := <-handlerDone
+				if err != nil && !errors.Is(err, context.Canceled) {
+					return fmt.Errorf("server: session handler failed: %w", err)
+				}
 				return nil
 			}
-
-			// Use select here to avoid blocking forever on a full channel if the context was
-			// cancelled
-			select {
-			case ch <- msg:
-			case <-ctx.Done():
-				return nil
+			if err := srv.Send(resp); err != nil {
+				return fmt.Errorf("server: failed to send session response: %w", err)
 			}
 		}
 	}
-}
-
-func (s *HiveServer) forwardOutput(
-	ctx context.Context,
-	srv grpc.BidiStreamingServer[agentv1.ExecuteTaskRequest, agentv1.ExecuteTaskResponse],
-	ch chan *agentv1.ExecuteTaskResponse,
-) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-
-		case msg, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			logger.Info("forward output", slog.Any("msg", msg.String()))
-
-			if err := srv.Send(msg); err != nil {
-				return fmt.Errorf("server: output stream error: %w", err)
-			}
-		}
-	}
-}
-
-// HiveSession implements [agentv1.AgentServiceServer].
-func (s *HiveServer) HiveSession(srv grpc.BidiStreamingServer[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]) error {
-	ctx := srv.Context()
-	msg, err := srv.Recv()
-	switch payload := msg.Payload.(type) {
-	case *agentv1.HiveSessionRequest_CreateConversation:
-	default:
-		srv.Send(&agentv1.HiveSessionResponse{
-			Payload: &agentv1.HiveSessionResponse_Notification{
-				Notification: &agentv1.Notification{
-					Payload: &agentv1.Notification_Error{
-						Error: "The first message should be the createconversation",
-					},
-				},
-			},
-		})
-	}
-
-	var (
-		session *types.HiveSession
-		err     error
-	)
-	convMsg := msg.GetCreateConversation()
-	switch mode := convMsg.GetMode().(type) {
-	case *agentv1.CreateConversationRequest_CreateNew:
-		session, err = s.taskManager.CreateSession(ctx)
-	case *agentv1.CreateConversationRequest_ResumeId:
-		session, err = s.taskManager.LoadSession(ctx, mode.ResumeId)
-	}
-	s.taskManager
 }

@@ -94,13 +94,13 @@ func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Mess
 	start := time.Now()
 
 	result, err := a.agent.Generate(ctx, messages)
-
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		observability.Logger(ctx).ErrorContext(ctx, "ReACT generation failed",
 			slog.String("agent_id", a.id),
 			slog.Any("error", err),
 		)
-	} else {
+	}
+	if err == nil {
 		observability.Logger(ctx).DebugContext(ctx, "ReACT generation completed",
 			slog.String("agent_id", a.id),
 			slog.Int("response_length", len(result.Content)),

@@ -10,16 +10,16 @@ type contextKey string
 
 var taskContextKey contextKey = "task"
 
-func ContextWithTask(ctx context.Context, task *HiveTask) context.Context {
+func ContextWithTask(ctx context.Context, task *Session) context.Context {
 	return context.WithValue(ctx, taskContextKey, task)
 }
 
-func TaskFromContext(ctx context.Context) (*HiveTask, bool) {
+func TaskFromContext(ctx context.Context) (*Session, bool) {
 	taskAny := ctx.Value(taskContextKey)
 	if taskAny == nil {
 		return nil, false
 	}
-	task, isTask := taskAny.(*HiveTask)
+	task, isTask := taskAny.(*Session)
 	if !isTask {
 		return nil, false
 	}

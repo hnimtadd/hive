@@ -7,57 +7,52 @@ import (
 	"github.com/google/uuid"
 )
 
-// Status represents the current state of a task.
+// Status represents the current state of a session.
 type Status string
 
 const (
-	TaskStatusNotStarted Status = "not_started"
-	TaskStatusInProgress Status = "in_progress"
-	TaskStatusCompleted  Status = "completed"
-	TaskStatusFailed     Status = "failed"
-	TaskStatusPaused     Status = "paused"
+	SessionStatusNotStarted Status = "not_started"
+	SessionStatusInProgress Status = "in_progress"
+	SessionStatusCompleted  Status = "completed"
+	SessionStatusFailed     Status = "failed"
+	SessionStatusPaused     Status = "paused"
 )
 
-type TaskPlan struct {
+type sessionPlan struct {
 	Target string `json:"target" db:"target"`
 	Status Status `json:"status" db:"status"`
 }
 
-// HiveTask represents a single task in the distributed system.
-type HiveTask struct {
+// Session represents a single session in the distributed system.
+type Session struct {
 	// Core identifiers
-	ID               string            `json:"_id"                   jsonschema:"ID of the task"`
+	ID               string            `json:"_id"                   jsonschema:"ID of the session"`
 	SessionID        string            `json:"session_id"`
-	Status           Status            `json:"status"                jsonschema:"Current task status"`
+	ConversationID   string            `json:"conversation_id"`
+	Status           Status            `json:"status"                jsonschema:"Current session status"`
 	NextAction       *string           `json:"next_action,omitempty" jsonschema:"Previous agent suggested next action to complete"`
-	Plan             []TaskPlan        `json:"plan"                  jsonschema:"Our mastery plan"`
-	Artifacts        map[string]string `json:"artifacts"             jsonschema:"Shared artifacts extracted by other agents that uses for this task life-cycle"`
+	Plan             []sessionPlan     `json:"plan"                  jsonschema:"Our mastery plan"`
+	Artifacts        map[string]string `json:"artifacts"             jsonschema:"Shared artifacts extracted by other agents that uses for this session life-cycle"`
 	InternalThoughts string            `json:"internal_thoughts"     jsonschema:"Thoughts of previous agent"`
 	Summary          string            `json:"summary,omitempty"     jsonschema:"Compressed history of previous execution cycles"`
 	Messages         []Message         `json:"message"               jsonschema:"global conversation"`
-	Goal             string            `json:"context"               jsonschema:"Task core context and description"`
 
-	Context context.Context `json:"-"`
-	Retries uint            `json:"retries"`
+	Location string          `json:"-"`
+	Context  context.Context `json:"-"`
+	Retries  uint            `json:"retries"`
 }
 
-// NewHiveTask creates a new task with default values.
-func NewHiveTask(goal string, artifacts map[string]string) *HiveTask {
-	return &HiveTask{
+// NewSession creates a new session with default values.
+func NewSession() *Session {
+	return &Session{
 		ID:        uuid.New().String(),
-		Status:    TaskStatusNotStarted,
-		Goal:      goal,
-		Artifacts: artifacts,
-		Messages: []Message{
-			{
-				Role:    "user",
-				Content: goal,
-			},
-		},
+		Status:    SessionStatusNotStarted,
+		Artifacts: map[string]string{},
+		Messages:  []Message{},
 	}
 }
 
-func (t *HiveTask) JSONString() (string, error) {
+func (t *Session) JSONString() (string, error) {
 	jsonBytes, err := json.Marshal(t)
 	if err != nil {
 		return "", err
@@ -65,15 +60,15 @@ func (t *HiveTask) JSONString() (string, error) {
 	return string(jsonBytes), nil
 }
 
-// CompactJSONString returns a JSON representation of the task with reduced message history.
+// CompactJSONString returns a JSON representation of the session with reduced message history.
 // Only includes the most recent messages instead of the full conversation history.
-// This helps prevent context window overflow by keeping task descriptions compact.
-func (t *HiveTask) CompactJSONString() (string, error) {
+// This helps prevent context window overflow by keeping session descriptions compact.
+func (t *Session) CompactJSONString() (string, error) {
 	type compactView struct {
 		ID               string            `json:"_id"`
 		Status           Status            `json:"status"`
 		NextAction       *string           `json:"next_action,omitempty"`
-		Plan             []TaskPlan        `json:"plan"`
+		Plan             []sessionPlan     `json:"plan"`
 		Artifacts        map[string]string `json:"artifacts"`
 		InternalThoughts string            `json:"internal_thoughts"`
 		Summary          string            `json:"summary,omitempty"`
@@ -93,7 +88,6 @@ func (t *HiveTask) CompactJSONString() (string, error) {
 		InternalThoughts: t.InternalThoughts,
 		Summary:          t.Summary,
 		RecentMessages:   t.Messages[len(t.Messages)-recentCount:],
-		Goal:             t.Goal,
 	}
 
 	jsonBytes, err := json.Marshal(compact)
@@ -103,11 +97,11 @@ func (t *HiveTask) CompactJSONString() (string, error) {
 	return string(jsonBytes), nil
 }
 
-// IsTerminal returns true if the task has reached a terminal state.
+// IsTerminal returns true if the session has reached a terminal state.
 // Terminal states are: completed, failed.
 // Non-terminal states are: not_started, in_progress, paused.
 func (s Status) IsTerminal() bool {
-	return s == TaskStatusCompleted || s == TaskStatusFailed
+	return s == SessionStatusCompleted || s == SessionStatusFailed
 }
 
 type Role string

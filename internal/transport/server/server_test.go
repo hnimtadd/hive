@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"os"
@@ -9,24 +9,21 @@ import (
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/storage"
 	toolRegistry "github.com/hnimtadd/hive/internal/tools/registry"
+	"github.com/hnimtadd/hive/internal/transport/server"
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
-func setupTestServer(t *testing.T) (*HiveServer, func()) {
+func setupTestServer(t *testing.T) (*server.HiveServer, func()) {
 	t.Helper()
 
 	// Create temp directory for storage
-	tmpDir, err := os.MkdirTemp("", "hive-server-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
+	tmpDir := t.TempDir()
 
-	// Create storage
-	store, err := storage.NewLocalStorage(storage.Options{
-		Storage: tmpDir,
+	sessionStore, err := storage.NewSessionStorage(storage.Options{
+		Storage: tmpDir + "/sessions",
 	})
 	if err != nil {
-		t.Fatalf("Failed to create storage: %v", err)
+		t.Fatalf("Failed to create session storage: %v", err)
 	}
 
 	// Create config
@@ -57,10 +54,6 @@ func setupTestServer(t *testing.T) (*HiveServer, func()) {
 			Dir:            tmpDir + "/tools",
 			DefaultTimeout: 1 * time.Minute,
 		},
-		Tasks: config.TaskConfig{
-			Storage: tmpDir + "/tasks",
-			Timeout: 10 * time.Minute,
-		},
 	}
 
 	// Create dependencies
@@ -80,7 +73,7 @@ func setupTestServer(t *testing.T) (*HiveServer, func()) {
 	}
 
 	// Create server
-	srv, err := NewHiveServer(cfg, llmProvider, beeReg, store)
+	srv, err := server.NewHiveServer(cfg, llmProvider, beeReg, sessionStore)
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
@@ -91,31 +84,6 @@ func setupTestServer(t *testing.T) (*HiveServer, func()) {
 	}
 
 	return srv, cleanup
-}
-
-func TestNewHiveServer(t *testing.T) {
-	srv, cleanup := setupTestServer(t)
-	defer cleanup()
-
-	if srv == nil {
-		t.Fatal("NewHiveServer returned nil")
-	}
-
-	if srv.taskManager == nil {
-		t.Fatal("taskManager is nil")
-	}
-
-	if srv.channelManager == nil {
-		t.Fatal("channelManager is nil")
-	}
-
-	if srv.workerPool == nil {
-		t.Fatal("workerPool is nil")
-	}
-
-	if srv.config == nil {
-		t.Fatal("config is nil")
-	}
 }
 
 func TestServerStartStop(t *testing.T) {
@@ -174,13 +142,5 @@ func TestServerGracefulShutdown(t *testing.T) {
 		// OK
 	case <-time.After(10 * time.Second):
 		t.Fatal("Graceful shutdown took too long")
-	}
-
-	// Worker pool should be stopped
-	select {
-	case <-srv.workerPool.Done():
-		// OK - worker pool is stopped
-	case <-time.After(2 * time.Second):
-		t.Fatal("Worker pool did not stop")
 	}
 }

@@ -19,7 +19,6 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_ExecuteTask_FullMethodName = "/agent.v1.AgentService/ExecuteTask"
 	AgentService_HiveSession_FullMethodName = "/agent.v1.AgentService/HiveSession"
 )
 
@@ -29,8 +28,6 @@ const (
 //
 // The AgentService handles the lifecycle of a supervisor-led task.
 type AgentServiceClient interface {
-	// ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
-	ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse], error)
 	// HiveSession opens new hive session.
 	HiveSession(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HiveSessionRequest, HiveSessionResponse], error)
 }
@@ -43,22 +40,9 @@ func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
 	return &agentServiceClient{cc}
 }
 
-func (c *agentServiceClient) ExecuteTask(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_ExecuteTask_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[ExecuteTaskRequest, ExecuteTaskResponse]{ClientStream: stream}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_ExecuteTaskClient = grpc.BidiStreamingClient[ExecuteTaskRequest, ExecuteTaskResponse]
-
 func (c *agentServiceClient) HiveSession(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HiveSessionRequest, HiveSessionResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[1], AgentService_HiveSession_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_HiveSession_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +59,6 @@ type AgentService_HiveSessionClient = grpc.BidiStreamingClient[HiveSessionReques
 //
 // The AgentService handles the lifecycle of a supervisor-led task.
 type AgentServiceServer interface {
-	// ExecuteTask starts the supervisor loop and streams real-time updates back to the CLI.
-	ExecuteTask(grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]) error
 	// HiveSession opens new hive session.
 	HiveSession(grpc.BidiStreamingServer[HiveSessionRequest, HiveSessionResponse]) error
 	mustEmbedUnimplementedAgentServiceServer()
@@ -89,9 +71,6 @@ type AgentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentServiceServer struct{}
 
-func (UnimplementedAgentServiceServer) ExecuteTask(grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]) error {
-	return status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
-}
 func (UnimplementedAgentServiceServer) HiveSession(grpc.BidiStreamingServer[HiveSessionRequest, HiveSessionResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method HiveSession not implemented")
 }
@@ -116,13 +95,6 @@ func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer)
 	s.RegisterService(&AgentService_ServiceDesc, srv)
 }
 
-func _AgentService_ExecuteTask_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(AgentServiceServer).ExecuteTask(&grpc.GenericServerStream[ExecuteTaskRequest, ExecuteTaskResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_ExecuteTaskServer = grpc.BidiStreamingServer[ExecuteTaskRequest, ExecuteTaskResponse]
-
 func _AgentService_HiveSession_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(AgentServiceServer).HiveSession(&grpc.GenericServerStream[HiveSessionRequest, HiveSessionResponse]{ServerStream: stream})
 }
@@ -138,12 +110,6 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AgentServiceServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "ExecuteTask",
-			Handler:       _AgentService_ExecuteTask_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
-		},
 		{
 			StreamName:    "HiveSession",
 			Handler:       _AgentService_HiveSession_Handler,

@@ -39,19 +39,13 @@ func main() {
 		log.Fatalf("failed to init registry: %s", err)
 	}
 
-	taskStorage, err := storage.NewLocalStorage(storage.Options{
-		Storage: cfg.Tasks.Storage,
-	})
+	sessionStorage, err := storage.NewSessionStorage(storage.Options{Storage: cfg.Storage.Dir})
 	if err != nil {
-		log.Fatalf("failed to init storage: %v", err)
+		log.Fatalf("failed to init session storage: %v", err)
 	}
 
-	sessionStorage, err := storage.NewSessionStorage(storage.Options{
-		Storage: cfg.Session.Dir,
-	})
-
 	// Start the Hive server
-	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, sessionStorage, taskStorage)
+	hiveServer, err := server.NewHiveServer(cfg, llm, agentRegistry, sessionStorage)
 	if err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}

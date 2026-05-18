@@ -16,7 +16,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "client [hive|system] input",
+	Use:     "client [hive|system|session] input",
 	Short:   "CLI tool for interacting with Hive tools",
 	Example: `client hive --method invoke --input '{"name":"World"}' ./examples/tools/hive/tool.go`,
 }
