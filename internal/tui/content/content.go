@@ -1,29 +1,92 @@
 package content
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/hnimtadd/hive/internal/transport/client"
 	"github.com/hnimtadd/hive/internal/tui"
 	"github.com/hnimtadd/hive/internal/tui/chat"
+	"github.com/hnimtadd/hive/pkg/types"
 )
 
 type ModelOptions struct {
-	Chat *chat.Model
+	Chat   *chat.Model
+	Client *client.Client
 }
 
 type Model struct {
 	width, height int
 
-	chat *chat.Model
+	chat   *chat.Model
+	client *client.Client
 
 	view          sessionsView
-	conversations []conversationItem
+	conversations []*types.Session
 	cursor        int
 	activeChatID  string
-	opts          *ModelOptions
+}
+
+func NewModel(opts *ModelOptions) (*Model, error) {
+	if opts == nil {
+		return nil, errors.New("model options cannot be nil")
+	}
+	if opts.Chat == nil {
+		return nil, errors.New("chat model is required")
+	}
+
+	model := &Model{
+		chat:   opts.Chat,
+		client: opts.Client,
+		view:   viewConversationList,
+		cursor: 0,
+	}
+	return model, nil
+}
+
+func (m *Model) Init() tea.Cmd {
+	sessions, err := m.client.ListSessions()
+	if err != nil {
+		return tui.MsgCmd(tui.ErrorMsg(err))
+	}
+	m.conversations = sessions
+	return m.chat.Init()
+}
+
+func (m *Model) Update(msg tea.Msg) tea.Cmd {
+	switch keyMsg := msg.(type) {
+	case tea.KeyMsg:
+		if m.view != viewConversationList {
+			return m.chat.Update(msg)
+		}
+		switch keyMsg.String() {
+		case "up", "k":
+			m.moveCursor(-1)
+			return nil
+		case "down", "j":
+			m.moveCursor(1)
+			return nil
+		case "enter":
+			return m.openSelectedConversation()
+		default:
+			return nil
+		}
+	case tea.WindowSizeMsg:
+		m.width = keyMsg.Width
+		m.height = keyMsg.Height
+		return m.chat.Update(msg)
+	default:
+		return m.chat.Update(msg)
+	}
+}
+
+func (m *Model) View() string {
+	if m.view == viewChat {
+		return m.chat.View()
+	}
+	return m.renderConversationList()
 }
 
 type sessionsView string
@@ -32,11 +95,6 @@ const (
 	viewConversationList sessionsView = "conversation_list"
 	viewChat             sessionsView = "chat"
 )
-
-type conversationItem struct {
-	ID    string
-	Title string
-}
 
 type OpenConversationMsg struct {
 	ConversationID string
@@ -69,31 +127,6 @@ func (m *Model) ToggleView() {
 	m.ShowChat()
 }
 
-func (m *Model) RegisterConversation(id string) {
-	if id == "" {
-		return
-	}
-	for _, conversation := range m.conversations {
-		if conversation.ID == id {
-			m.activeChatID = id
-			return
-		}
-	}
-	m.conversations = append([]conversationItem{{
-		ID:    id,
-		Title: fmt.Sprintf("Conversation %s", truncateID(id)),
-	}}, m.conversations...)
-	m.activeChatID = id
-}
-
-func truncateID(id string) string {
-	const size = 8
-	if len(id) <= size {
-		return id
-	}
-	return id[:size]
-}
-
 func (m *Model) listItems() []conversationListItem {
 	items := []conversationListItem{{
 		Title: "Start a new conversation",
@@ -101,8 +134,9 @@ func (m *Model) listItems() []conversationListItem {
 	}}
 	for _, conversation := range m.conversations {
 		items = append(items, conversationListItem{
-			ID:    conversation.ID,
-			Title: conversation.Title,
+			ID: conversation.ID,
+			// TODO: support title update
+			Title: conversation.Location,
 		})
 	}
 	return items
@@ -178,57 +212,21 @@ func (m *Model) renderConversationList() string {
 	)
 }
 
-func NewModel(opts *ModelOptions) (*Model, error) {
-	if opts == nil {
-		return nil, fmt.Errorf("model options cannot be nil")
+func (m *Model) RegisterConversation(id string) error {
+	if id == "" {
+		return errors.New("id must be not nil")
 	}
-	if opts.Chat == nil {
-		return nil, fmt.Errorf("chat model is required")
-	}
-
-	model := &Model{
-		opts:   opts,
-		chat:   opts.Chat,
-		view:   viewConversationList,
-		cursor: 0,
-	}
-	return model, nil
-}
-
-func (f *Model) Init() tea.Cmd {
-	return f.chat.Init()
-}
-
-func (f *Model) Update(msg tea.Msg) tea.Cmd {
-	switch keyMsg := msg.(type) {
-	case tea.KeyMsg:
-		if f.view != viewConversationList {
-			return f.chat.Update(msg)
-		}
-		switch keyMsg.String() {
-		case "up", "k":
-			f.moveCursor(-1)
-			return nil
-		case "down", "j":
-			f.moveCursor(1)
-			return nil
-		case "enter":
-			return f.openSelectedConversation()
-		default:
+	for _, conversation := range m.conversations {
+		if conversation.ID == id {
+			m.activeChatID = id
 			return nil
 		}
-	case tea.WindowSizeMsg:
-		f.width = keyMsg.Width
-		f.height = keyMsg.Height
-		return f.chat.Update(msg)
-	default:
-		return f.chat.Update(msg)
 	}
-}
-
-func (f *Model) View() string {
-	if f.view == viewChat {
-		return f.chat.View()
+	conversation, err := m.client.GetSession(id)
+	if err != nil {
+		return err
 	}
-	return f.renderConversationList()
+	m.conversations = append([]*types.Session{conversation}, m.conversations...)
+	m.activeChatID = id
+	return nil
 }

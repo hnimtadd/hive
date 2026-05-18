@@ -8,7 +8,9 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
+	"github.com/hnimtadd/hive/pkg/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,6 +23,7 @@ type Client struct {
 
 	streamsMu sync.RWMutex
 	streams   map[string]grpc.BidiStreamingClient[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse] // Active streams keyed by conversation ID
+	storage   storage.SessionStorage
 }
 
 type InlineRoundResult struct {
@@ -33,8 +36,15 @@ type InlineRoundResult struct {
 }
 
 func NewClient(cfg *config.Config) (*Client, error) {
+	storage, err := storage.NewSessionStorage(storage.Options{
+		Storage: cfg.Storage.Dir,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
 		config:  cfg,
+		storage: storage,
 		streams: make(map[string]grpc.BidiStreamingClient[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]),
 	}, nil
 }
@@ -446,4 +456,12 @@ func (c *Client) sendNotificationError(ch chan<- *agentv1.HiveSessionResponse, e
 			},
 		},
 	}
+}
+
+func (c *Client) ListSessions() ([]*types.Session, error) {
+	return c.storage.List()
+}
+
+func (c *Client) GetSession(sessionID string) (*types.Session, error) {
+	return c.storage.Load(sessionID)
 }

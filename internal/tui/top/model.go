@@ -32,10 +32,10 @@ type model struct {
 	help          *help.Model
 	height, width int
 
-	grpcClient *client.Client
-	msgCh      chan tea.Msg // Channel for streaming messages
-	ctx        context.Context
-	cancel     context.CancelFunc
+	client *client.Client
+	msgCh  chan tea.Msg // Channel for streaming messages
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	conversationID        string
 	responseCh            <-chan *agentv1.HiveSessionResponse
@@ -86,7 +86,7 @@ func newModel(cfg *config.Config) (*model, error) {
 		footer:        footer,
 		content:       mainContent,
 		help:          helpModel,
-		grpcClient:    grpcClient,
+		client:        grpcClient,
 		msgCh:         make(chan tea.Msg, 100),
 		ctx:           ctx,
 		cancel:        cancel,
@@ -184,7 +184,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chat.FeedbackResponseMsg:
 		// Handle feedback response (send to server)
-		if err := m.grpcClient.SendFeedback(m.ctx, msg.ConversationID, msg.TurnID, msg.Response); err != nil {
+		if err := m.client.SendFeedback(m.ctx, msg.ConversationID, msg.TurnID, msg.Response); err != nil {
 			cmd = append(cmd, tui.MsgCmd(tui.ErrorMsg(err)))
 		}
 
@@ -264,7 +264,7 @@ func (m *model) executeTask(content string) tea.Cmd {
 		return tui.MsgCmd(tui.ErrorMsg(err))
 	}
 
-	turnID, requestID, err := m.grpcClient.SendTurn(m.ctx, m.conversationID, content)
+	turnID, requestID, err := m.client.SendTurn(m.ctx, m.conversationID, content)
 	if err != nil {
 		return tui.MsgCmd(tui.ErrorMsg(err))
 	}
@@ -285,7 +285,7 @@ func (m *model) ensureConversation() error {
 		return nil
 	}
 
-	conversationID, responseCh, err := m.grpcClient.StartConversation(m.ctx, "")
+	conversationID, responseCh, err := m.client.StartConversation(m.ctx, "")
 	if err != nil {
 		return err
 	}
