@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hnimtadd/hive/pkg/types"
 )
 
 // Minimal OpenAI-compatible mock server.
@@ -34,8 +37,8 @@ type chatCompletionsResponse struct {
 	Created int64  `json:"created"`
 	Model   string `json:"model"`
 	Choices []struct {
-		Index        int `json:"index"`
-		Message      any `json:"message"`
+		Index        int    `json:"index"`
+		Message      any    `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage map[string]int `json:"usage,omitempty"`
@@ -60,7 +63,7 @@ type mockDirective struct {
 	Echo bool `json:"echo"`
 }
 
-var mockDirectiveRe = regexp.MustCompile(`(?s)#mock\s*(\{.*\})`)
+var mockDirectiveRegex = regexp.MustCompile(`(?:#mock\s*)([^"\\]|\\(?:["\\\/bfnrt]|u[0-9a-fA-F]{4}))*`)
 
 func main() {
 	var (
@@ -83,7 +86,7 @@ func main() {
 
 	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"object":"list","data":[{"id":%q,"object":"model"}]}`+"\n", *defaultModel)))
+		_, _ = fmt.Fprintf(w, `{"object":"list","data":[{"id":%q,"object":"model"}]}`+"\n", *defaultModel)
 	})
 
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +97,6 @@ func main() {
 
 		var req chatCompletionsRequest
 		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return
@@ -114,6 +116,9 @@ func main() {
 		if strings.EqualFold(*mode, "echo") {
 			assistantText = echoFromMessages(req.Messages)
 		}
+
+		// Keep request parsing permissive so the mock can accept
+		// OpenAI-compatible fields (e.g. tools) sent by real clients.
 		if d, ok := parseDirectiveFromMessages(req.Messages); ok {
 			if d.DelayMs > 0 {
 				time.Sleep(time.Duration(d.DelayMs) * time.Millisecond)
@@ -122,7 +127,6 @@ func main() {
 				writeJSONError(w, d.HTTPStatus, "mock_error", "simulated error")
 				return
 			}
-
 			switch {
 			case d.Echo:
 				assistantText = echoFromMessages(req.Messages)
@@ -138,8 +142,8 @@ func main() {
 			case d.Status != "":
 				// Queen output schema: {status, content, next_action?}
 				payload := map[string]any{
-					"status": d.Status,
-					"content": assistantText,
+					"status":  d.Status,
+					"content": d.Content,
 				}
 				if d.NextAction != "" {
 					payload["next_action"] = d.NextAction
@@ -161,15 +165,15 @@ func main() {
 			},
 		}
 		resp.Choices = make([]struct {
-			Index        int `json:"index"`
-			Message      any `json:"message"`
+			Index        int    `json:"index"`
+			Message      any    `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		}, 1)
 		resp.Choices[0].Index = 0
 		resp.Choices[0].FinishReason = "stop"
 		resp.Choices[0].Message = map[string]any{
 			"role":    "assistant",
-			"content": assistantText,
+			"content": maybeUnescapeJSONLikeString(assistantText),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -190,10 +194,16 @@ func echoFromMessages(msgs []struct {
 }) string {
 	// Prefer the last user message as the echo base.
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if strings.EqualFold(msgs[i].Role, "user") {
-			s := stripDirective(contentToString(msgs[i].Content))
-			if s != "" {
-				return s
+		if strings.EqualFold(msgs[i].Role, string(types.RoleUser)) {
+			raw := contentToString(msgs[i].Content)
+
+			// Unquote the raw string first
+			if quoted, err := strconv.Unquote(raw); err == nil {
+				raw = quoted
+			}
+
+			if raw != "" {
+				return raw
 			}
 		}
 	}
@@ -205,58 +215,86 @@ func parseDirectiveFromMessages(msgs []struct {
 	Content any    `json:"content"`
 }) (mockDirective, bool) {
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if !strings.EqualFold(msgs[i].Role, "user") {
+		if !strings.EqualFold(msgs[i].Role, string(types.RoleUser)) {
 			continue
 		}
 		raw := contentToString(msgs[i].Content)
-		m := mockDirectiveRe.FindStringSubmatch(raw)
-		if len(m) != 2 {
+
+		// Unquote the raw string first
+		if quoted, err := strconv.Unquote(raw); err == nil {
+			raw = quoted
+		}
+
+		jsonStr, ok := findMockDirective(raw)
+		if !ok {
 			return mockDirective{}, false
 		}
+
+		jsonStr = strings.TrimSpace(strings.TrimPrefix(jsonStr, "#mock"))
+		// Unescape the extracted JSON string (handle escaped quotes like \" )
+		if unescaped, err := strconv.Unquote("\"" + jsonStr + "\""); err == nil {
+			jsonStr = unescaped
+		}
+
 		var d mockDirective
-		dec := json.NewDecoder(strings.NewReader(m[1]))
+		dec := json.NewDecoder(strings.NewReader(jsonStr))
 		dec.UseNumber()
 		if err := dec.Decode(&d); err != nil {
 			return mockDirective{}, false
 		}
+		fmt.Println(d)
 		return d, true
 	}
 	return mockDirective{}, false
 }
 
-func stripDirective(s string) string {
-	loc := mockDirectiveRe.FindStringIndex(s)
-	if loc == nil {
-		return strings.TrimSpace(s)
+// findMockDirective extracts a "#mock { ...json... }" directive using regex.
+func findMockDirective(s string) (string, bool) {
+	matches := mockDirectiveRegex.FindStringSubmatch(s)
+	if len(matches) < 2 {
+		return "", false
 	}
-	// Remove directive portion to get a clean echo.
-	return strings.TrimSpace(s[:loc[0]])
+
+	return matches[0], true
 }
 
 func contentToString(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t
-	case []any:
-		// OpenAI can send multi-part content; join any text parts.
-		var b strings.Builder
-		for _, part := range t {
-			m, ok := part.(map[string]any)
-			if !ok {
-				continue
-			}
-			if m["type"] == "text" {
-				if txt, ok := m["text"].(string); ok {
-					b.WriteString(txt)
-				}
-			}
-		}
-		return b.String()
 	default:
-		// Best-effort: serialize other shapes.
 		bs, _ := json.Marshal(v)
 		return string(bs)
 	}
+}
+
+func maybeUnescapeJSONLikeString(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	if strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") {
+		return s
+	}
+	// Quoted JSON string: "{...}".
+	if (strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) || (strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")) {
+		if unq, err := strconv.Unquote(s); err == nil {
+			unq = strings.TrimSpace(unq)
+			if strings.HasPrefix(unq, "{") || strings.HasPrefix(unq, "[") {
+				return unq
+			}
+		}
+	}
+	// Escaped JSON blob: {\"k\":\"v\"}.
+	if strings.Contains(s, `\"`) || strings.Contains(s, `\\`) {
+		if unq, err := strconv.Unquote("\"" + s + "\""); err == nil {
+			unq = strings.TrimSpace(unq)
+			if strings.HasPrefix(unq, "{") || strings.HasPrefix(unq, "[") {
+				return unq
+			}
+		}
+	}
+	return s
 }
 
 func writeJSONError(w http.ResponseWriter, status int, errType, msg string) {
