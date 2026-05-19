@@ -78,6 +78,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		m.width = keyMsg.Width
 		m.height = keyMsg.Height
 		return m.chat.Update(msg)
+	case tui.OpenConversationMsg:
+		m.ShowChat()
+		return m.chat.Update(msg)
 	default:
 		return m.chat.Update(msg)
 	}
@@ -96,11 +99,6 @@ const (
 	viewConversationList sessionsView = "conversation_list"
 	viewChat             sessionsView = "chat"
 )
-
-type OpenConversationMsg struct {
-	ConversationID string
-	New            bool
-}
 
 type conversationListItem struct {
 	ID    string
@@ -161,10 +159,10 @@ func (m *Model) openSelectedConversation() tea.Cmd {
 	m.ShowChat()
 	if item.New {
 		m.activeChatID = ""
-		return tui.MsgCmd(OpenConversationMsg{New: true})
+		return tui.MsgCmd(tui.OpenConversationMsg{New: true})
 	}
 	m.activeChatID = item.ID
-	return tui.MsgCmd(OpenConversationMsg{
+	return tui.MsgCmd(tui.OpenConversationMsg{
 		ConversationID: item.ID,
 	})
 }

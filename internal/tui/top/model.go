@@ -61,13 +61,16 @@ func newModel(cfg *config.Config) (*model, error) {
 	if err != nil {
 		return nil, err
 	}
-	chat, err := chat.NewModel(chat.ModelOptions{})
-	if err != nil {
-		return nil, err
-	}
 	client, err := client.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc client: %w", err)
+	}
+
+	chat, err := chat.NewModel(chat.ModelOptions{
+		Client: client,
+	})
+	if err != nil {
+		return nil, err
 	}
 	mainContent, err := content.NewModel(&content.ModelOptions{
 		Chat:   chat,
@@ -198,12 +201,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = append(cmd, m.handleSessionUpdate(msg.update)...)
 		cmd = append(cmd, m.waitForChannelMessage())
 
-	case content.OpenConversationMsg:
+	case tui.OpenConversationMsg:
 		if msg.New {
 			m.resetConversation()
 			cmd = append(cmd, m.content.Update(tui.ClearChatMsg{}))
 		}
-		m.content.ShowChat()
+		cmd = append(cmd, m.content.Update(msg))
 
 	case tea.KeyMsg:
 		// Pressing any key makes any info/error message in the footer disappear.

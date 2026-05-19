@@ -17,5 +17,8 @@ type MessageReceivedMsg struct {
 }
 
 type ClearChatMsg struct{}
-
 type ToggleHelpMsg struct{}
+type OpenConversationMsg struct {
+	ConversationID string
+	New            bool
+}

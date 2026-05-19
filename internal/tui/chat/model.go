@@ -6,16 +6,18 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/hnimtadd/hive/internal/transport/client"
 	"github.com/hnimtadd/hive/internal/tui"
 	"github.com/hnimtadd/hive/internal/tui/inputbar"
 )
 
-type ModelOptions struct{}
+type ModelOptions struct {
+	Client *client.Client
+}
 
 type Model struct {
-	msgs      []tui.Model
-	streaming map[string]tui.Model
-
+	msgs          []tui.Model
+	streaming     map[string]tui.Model
 	width, height int
 	inputBar      *inputbar.Model
 	viewport      viewport.Model
@@ -23,9 +25,11 @@ type Model struct {
 	currentFeedbackConversationID string
 	currentFeedbackTurnID         string
 	currentFeedbackQuestion       string // New field to store question text
+
+	client *client.Client
 }
 
-func NewModel(_ ModelOptions) (*Model, error) {
+func NewModel(opts ModelOptions) (*Model, error) {
 	inputBar, err := inputbar.NewModel(inputbar.ModelOptions{
 		Width:  80,
 		Height: 9,
@@ -44,6 +48,7 @@ func NewModel(_ ModelOptions) (*Model, error) {
 		viewport:  vp,
 		inputBar:  inputBar,
 		streaming: make(map[string]tui.Model),
+		client:    opts.Client,
 	}
 
 	return model, nil
@@ -141,14 +146,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case tui.ClearChatMsg:
 		// Clear all messages if any exist
 		if len(m.msgs) > 0 {
-			m.msgs = []tui.Model{}
-			m.streaming = make(map[string]tui.Model)
-			m.currentFeedbackConversationID = ""
-			m.currentFeedbackTurnID = ""
-			m.currentFeedbackQuestion = ""
-			m.inputBar.Reset()
-			m.inputBar.ClearFeedback()
-			m.viewport.SetContent(m.renderMessages())
+			m.reset()
 		}
 
 	case tui.ChangeModeMsg:
@@ -160,6 +158,24 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 
 	case tea.FocusMsg:
 		m.inputBar.Focus()
+
+	case tui.OpenConversationMsg:
+		if msg.New {
+			cmds = append(cmds, tui.MsgCmd(tui.ClearChatMsg{}))
+		} else {
+			conversation, err := m.client.GetSession(msg.ConversationID)
+			if err != nil {
+				cmds = append(cmds, tui.MsgCmd(tui.ErrorMsg(err)))
+			}
+
+			m.reset()
+			for _, msg := range conversation.Messages {
+				m.msgs = append(m.msgs, newChatRequestModel(msg.Content, m.width))
+			}
+			m.viewport.SetContent(m.renderMessages())
+			m.inputBar.Reset()
+			m.viewport.GotoBottom()
+		}
 
 	default:
 		cmds = append(cmds, m.inputBar.Update(msg))
@@ -173,6 +189,18 @@ func (m *Model) View() string {
 		m.viewport.View(),
 		m.inputBar.View(),
 	)
+}
+
+func (m *Model) reset() {
+	m.msgs = []tui.Model{}
+	m.streaming = make(map[string]tui.Model)
+	m.currentFeedbackConversationID = ""
+	m.currentFeedbackTurnID = ""
+	m.currentFeedbackQuestion = ""
+	m.inputBar.Reset()
+	m.inputBar.ClearFeedback()
+	m.viewport.SetContent(m.renderMessages())
+
 }
 
 func (m *Model) renderMessages() string {

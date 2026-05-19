@@ -3,10 +3,10 @@ package inputbar
 import (
 	"strings"
 
-	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/hnimtadd/hive/internal/tui"
+	"github.com/hnimtadd/hive/internal/tui/textarea"
 )
 
 type ModelOptions struct {
@@ -24,13 +24,13 @@ type Model struct {
 
 func NewModel(opts ModelOptions) (*Model, error) {
 	ti := textarea.New()
-	ti.Prompt = ""
-	ti.CharLimit = 5000
-	ti.ShowLineNumbers = false
+	ti.SetPrompt("")
+	ti.SetCharLimit(5000)
+	ti.SetShowLineNumbers(false)
 
 	// Set fixed height to prevent jumping
 	ti.SetHeight(3)
-	ti.MaxHeight = 6
+	ti.SetMaxHeight(6)
 
 	// Define a consistent background style for ALL textarea elements
 	// This ensures placeholder, text, cursor line, and empty lines all match
@@ -101,7 +101,6 @@ func (m *Model) View() string {
 		borderColor = tui.Accent
 	}
 
-	// Always use textarea view for proper cursor and editing
 	textareaContent := m.textarea.View()
 
 	// Container style - use Background for consistency with textarea
@@ -166,7 +165,7 @@ func (m *Model) setPlaceholder() {
 	case m.mode == tui.ModeInsert:
 		p = "Type your message and press ctrl+enter to send..."
 	}
-	m.textarea.Placeholder = p
+	m.textarea.SetPlaceholder(p)
 }
 
 func (m *Model) renderFeedbackPrompt() string {
