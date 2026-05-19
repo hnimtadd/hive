@@ -65,16 +65,17 @@ func newModel(cfg *config.Config) (*model, error) {
 	if err != nil {
 		return nil, err
 	}
-	mainContent, err := content.NewModel(&content.ModelOptions{Chat: chat})
-	if err != nil {
-		return nil, err
-	}
-
-	grpcClient, err := client.NewClient(cfg)
+	client, err := client.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc client: %w", err)
 	}
-
+	mainContent, err := content.NewModel(&content.ModelOptions{
+		Chat:   chat,
+		Client: client,
+	})
+	if err != nil {
+		return nil, err
+	}
 	helpModel := help.NewModel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -86,7 +87,7 @@ func newModel(cfg *config.Config) (*model, error) {
 		footer:        footer,
 		content:       mainContent,
 		help:          helpModel,
-		client:        grpcClient,
+		client:        client,
 		msgCh:         make(chan tea.Msg, 100),
 		ctx:           ctx,
 		cancel:        cancel,
@@ -104,7 +105,12 @@ func (m *model) cleanup() {
 
 // Init implements [tea.Model].
 func (m *model) Init() tea.Cmd {
-	return m.waitForChannelMessage()
+	return tea.Batch(
+		m.waitForChannelMessage(),
+		m.footer.Init(),
+		m.content.Init(),
+		m.header.Init(),
+	)
 }
 
 // waitForChannelMessage creates a command that waits for messages from msgCh.
@@ -291,7 +297,7 @@ func (m *model) ensureConversation() error {
 	}
 
 	m.conversationID = conversationID
-	m.content.RegisterConversation(conversationID)
+	_ = m.content.RegisterConversation(conversationID)
 	m.responseCh = responseCh
 	if !m.streamListenerStarted {
 		m.startStreamListener()
@@ -331,7 +337,7 @@ func (m *model) handleSessionUpdate(update *agentv1.HiveSessionResponse) []tea.C
 		if m.conversationID == "" {
 			m.conversationID = createConv.GetConversationId()
 		}
-		m.content.RegisterConversation(createConv.GetConversationId())
+		_ = m.content.RegisterConversation(createConv.GetConversationId())
 		return cmds
 	}
 

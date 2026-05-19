@@ -2,6 +2,7 @@ package content
 
 import (
 	"errors"
+	"path"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -136,7 +137,7 @@ func (m *Model) listItems() []conversationListItem {
 		items = append(items, conversationListItem{
 			ID: conversation.ID,
 			// TODO: support title update
-			Title: conversation.Location,
+			Title: path.Base(conversation.Location),
 		})
 	}
 	return items
@@ -176,12 +177,28 @@ func (m *Model) renderConversationList() string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(tui.Accent).Render("Sessions")
 	subtitle := lipgloss.NewStyle().Foreground(tui.Muted).
 		Render("Select a conversation to open chat view.")
+	contentWidth := max(0, m.width-4)
+	header = lipgloss.NewStyle().
+		Foreground(tui.Accent).
+		Bold(true).
+		Background(tui.Background).
+		Width(contentWidth).
+		Render("Sessions")
+
+	subtitle = lipgloss.NewStyle().
+		Foreground(tui.Muted).
+		Background(tui.Background).
+		Width(contentWidth).
+		Render("Select a conversation to open chat view.")
 
 	items := m.listItems()
 	lines := make([]string, 0, len(items))
 	for idx, item := range items {
 		prefix := "  "
-		lineStyle := lipgloss.NewStyle().Foreground(tui.Foreground)
+		lineStyle := lipgloss.NewStyle().
+			Foreground(tui.Foreground).
+			Background(tui.Background).
+			Width(contentWidth)
 		if idx == m.cursor {
 			prefix = "> "
 			lineStyle = lineStyle.Foreground(tui.Accent).Bold(true)
@@ -194,12 +211,14 @@ func (m *Model) renderConversationList() string {
 		lines = append(lines, lineStyle.Render(prefix+title))
 	}
 
-	body := lipgloss.NewStyle().Padding(1, 2).Render(lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		subtitle,
-		"",
-		strings.Join(lines, "\n"),
-	))
+	body := tui.DefaultContainer.
+		Padding(1, 2).
+		Render(lipgloss.JoinVertical(lipgloss.Left,
+			header,
+			subtitle,
+			"",
+			strings.Join(lines, "\n"),
+		))
 
 	// Force-fill the full sessions page area with themed background.
 	return lipgloss.Place(
