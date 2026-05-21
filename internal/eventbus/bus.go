@@ -5,13 +5,16 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+
+	"github.com/hnimtadd/hive/internal/observability"
 )
 
 type EventBus[T any] struct {
 	mu     sync.RWMutex
 	topics map[string]*topic[T]
-	logger *slog.Logger
 	nextID atomic.Uint64
+
+	logger *slog.Logger
 }
 
 type topic[T any] struct {
@@ -52,7 +55,9 @@ func (e *EventBus[T]) PublishWithContext(ctx context.Context, topic string) chan
 			case <-ctx.Done():
 				return
 			case event, ok := <-eventCh:
+				e.logger.Debug("receive new event", observability.DebugArgs("event", event))
 				if !ok {
+					e.logger.Debug("channel is closed, exiting")
 					return
 				}
 				e.dispatch(topic, event)

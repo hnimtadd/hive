@@ -9,7 +9,8 @@ import (
 	"github.com/hnimtadd/hive/pkg/config"
 )
 
-var defaultLogger *slog.Logger
+var logger *slog.Logger
+var loggerLevel slog.Level
 
 var defaultConfig = &config.TraceConfig{
 	Enabled:   true,
@@ -34,9 +35,10 @@ func Initialize(cfg *config.TraceConfig) {
 		defer f.Close()
 		logOutput = f
 	}
+	lvl := ParseLogLevel(cfg.LogLevel)
 
 	opts := &slog.HandlerOptions{
-		Level:     ParseLogLevel(cfg.LogLevel),
+		Level:     lvl,
 		AddSource: cfg.AddSource,
 	}
 
@@ -46,16 +48,17 @@ func Initialize(cfg *config.TraceConfig) {
 	} else {
 		handler = slog.NewTextHandler(logOutput, opts)
 	}
-	defaultLogger = slog.New(handler)
-	slog.SetDefault(defaultLogger)
+	logger = slog.New(handler)
+	loggerLevel = lvl
+	slog.SetDefault(logger)
 }
 
 func Logger(ctx context.Context) *slog.Logger {
-	if defaultLogger == nil {
+	if logger == nil {
 		Initialize(nil)
 	}
 
-	logger := defaultLogger
+	logger := logger
 	tc, ok := TraceContextFromContext(ctx)
 	if ok {
 		logger = logger.With(slog.String("trace_id", tc.TraceID))
