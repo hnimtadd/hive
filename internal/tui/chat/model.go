@@ -9,6 +9,7 @@ import (
 	"github.com/hnimtadd/hive/internal/transport/client"
 	"github.com/hnimtadd/hive/internal/tui"
 	"github.com/hnimtadd/hive/internal/tui/inputbar"
+	"github.com/hnimtadd/hive/pkg/types"
 )
 
 type ModelOptions struct {
@@ -167,7 +168,18 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 
 		m.reset()
 		for _, msg := range conversation.Messages {
-			m.msgs = append(m.msgs, newChatRequestModel(msg.Content, m.width))
+			switch msg.Role {
+			case types.RoleAssistant:
+				// TODO: make this clean, make the chatResponseModel initialization
+				// accepts both newly response or loaded response from the storage
+				// on start up
+				m.msgs = append(m.msgs, &chatResponseModel{
+					content: msg.Content,
+					width:   m.width, state: stateSucceed,
+				})
+			case types.RoleUser:
+				m.msgs = append(m.msgs, newChatRequestModel(msg.Content, m.width))
+			}
 		}
 		m.viewport.SetContent(m.renderMessages())
 		m.inputBar.Reset()
@@ -196,7 +208,6 @@ func (m *Model) reset() {
 	m.inputBar.Reset()
 	m.inputBar.ClearFeedback()
 	m.viewport.SetContent(m.renderMessages())
-
 }
 
 func (m *Model) renderMessages() string {
