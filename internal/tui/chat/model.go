@@ -160,22 +160,18 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		m.inputBar.Focus()
 
 	case tui.OpenConversationMsg:
-		if msg.New {
-			cmds = append(cmds, tui.MsgCmd(tui.ClearChatMsg{}))
-		} else {
-			conversation, err := m.client.GetSession(msg.ConversationID)
-			if err != nil {
-				cmds = append(cmds, tui.MsgCmd(tui.ErrorMsg(err)))
-			}
-
-			m.reset()
-			for _, msg := range conversation.Messages {
-				m.msgs = append(m.msgs, newChatRequestModel(msg.Content, m.width))
-			}
-			m.viewport.SetContent(m.renderMessages())
-			m.inputBar.Reset()
-			m.viewport.GotoBottom()
+		conversation, err := m.client.GetConversation(msg.ConversationID)
+		if err != nil {
+			cmds = append(cmds, tui.MsgCmd(tui.ErrorMsg(err)))
 		}
+
+		m.reset()
+		for _, msg := range conversation.Messages {
+			m.msgs = append(m.msgs, newChatRequestModel(msg.Content, m.width))
+		}
+		m.viewport.SetContent(m.renderMessages())
+		m.inputBar.Reset()
+		m.viewport.GotoBottom()
 
 	default:
 		cmds = append(cmds, m.inputBar.Update(msg))

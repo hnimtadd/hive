@@ -23,28 +23,26 @@ type sessionPlan struct {
 	Status Status `json:"status" db:"status"`
 }
 
-// Session represents a single session in the distributed system.
-type Session struct {
+// Conversation represents a single session in the distributed system.
+type Conversation struct {
 	// Core identifiers
 	ID               string            `json:"_id"                   jsonschema:"ID of the session"`
-	SessionID        string            `json:"session_id"`
-	ConversationID   string            `json:"conversation_id"`
 	Status           Status            `json:"status"                jsonschema:"Current session status"`
 	NextAction       *string           `json:"next_action,omitempty" jsonschema:"Previous agent suggested next action to complete"`
 	Plan             []sessionPlan     `json:"plan"                  jsonschema:"Our mastery plan"`
 	Artifacts        map[string]string `json:"artifacts"             jsonschema:"Shared artifacts extracted by other agents that uses for this session life-cycle"`
 	InternalThoughts string            `json:"internal_thoughts"     jsonschema:"Thoughts of previous agent"`
 	Summary          string            `json:"summary,omitempty"     jsonschema:"Compressed history of previous execution cycles"`
-	Messages         []Message         `json:"message"               jsonschema:"global conversation"`
+	Messages         []Message         `json:"messages"              jsonschema:"global conversation"`
 
 	Location string          `json:"-"`
 	Context  context.Context `json:"-"`
 	Retries  uint            `json:"retries"`
 }
 
-// NewSession creates a new session with default values.
-func NewSession() *Session {
-	return &Session{
+// NewConversation creates a new session with default values.
+func NewConversation() *Conversation {
+	return &Conversation{
 		ID:        uuid.New().String(),
 		Status:    SessionStatusNotStarted,
 		Artifacts: map[string]string{},
@@ -52,7 +50,7 @@ func NewSession() *Session {
 	}
 }
 
-func (t *Session) JSONString() (string, error) {
+func (t *Conversation) JSONString() (string, error) {
 	jsonBytes, err := json.Marshal(t)
 	if err != nil {
 		return "", err
@@ -63,7 +61,7 @@ func (t *Session) JSONString() (string, error) {
 // CompactJSONString returns a JSON representation of the session with reduced message history.
 // Only includes the most recent messages instead of the full conversation history.
 // This helps prevent context window overflow by keeping session descriptions compact.
-func (t *Session) CompactJSONString() (string, error) {
+func (t *Conversation) CompactJSONString() (string, error) {
 	type compactView struct {
 		ID               string            `json:"_id"`
 		Status           Status            `json:"status"`

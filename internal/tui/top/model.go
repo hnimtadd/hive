@@ -82,7 +82,6 @@ func newModel(cfg *config.Config) (*model, error) {
 	helpModel := help.NewModel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-
 	return &model{
 		cfg:           cfg,
 		mode:          tui.DefaultMode,
@@ -136,43 +135,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd := []tea.Cmd{}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.height, m.width = msg.Height, msg.Width
-		mainHeight := max(0, msg.Height-tui.FooterHeight-tui.HeaderHeight)
-		m.header.Update(tea.WindowSizeMsg{
-			Height: tui.HeaderHeight,
-			Width:  m.width,
-		})
-		m.footer.Update(tea.WindowSizeMsg{
-			Height: tui.FooterHeight,
-			Width:  m.width,
-		})
-
-		m.content.Update(tea.WindowSizeMsg{
-			Height: mainHeight,
-			Width:  m.width,
-		})
-
-		m.help.Update(tea.WindowSizeMsg{
-			Height: mainHeight,
-			Width:  m.width,
-		})
+		cmd = append(cmd, m.handleResizeMsg(msg))
 
 	case tui.ErrorMsg, tui.InfoMsg:
 		cmd = append(cmd, m.footer.Update(msg))
 
 	case tui.ChangeModeMsg:
-		if m.mode != tui.Mode(msg) {
-			m.mode = tui.Mode(msg)
-			switch m.mode {
-			case tui.ModeNormal:
-				m.content.Update(tea.BlurMsg{})
-			case tui.ModeInsert:
-				m.content.Update(tea.FocusMsg{})
-			}
-			m.footer.Update(msg)
-			// Forward the mode change to chat so inputbar can update
-			cmd = append(cmd, m.content.Update(msg))
-		}
+		cmd = append(cmd, m.handleChangeModeMsg(msg))
 	case tui.ChangeStatusMsg:
 		if m.status != tui.Status(msg) {
 			m.status = tui.Status(msg)
@@ -202,11 +171,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = append(cmd, m.waitForChannelMessage())
 
 	case tui.OpenConversationMsg:
-		if msg.New {
-			m.resetConversation()
-			cmd = append(cmd, m.content.Update(tui.ClearChatMsg{}))
-		}
-		cmd = append(cmd, m.content.Update(msg))
+		cmd = append(cmd, m.handleOpenConversationMsg(msg))
 
 	case tea.KeyMsg:
 		// Pressing any key makes any info/error message in the footer disappear.
@@ -269,10 +234,6 @@ func (m *model) View() tea.View {
 
 // executeTask sends a message to the gRPC server and handles the response stream.
 func (m *model) executeTask(content string) tea.Cmd {
-	if err := m.ensureConversation(); err != nil {
-		return tui.MsgCmd(tui.ErrorMsg(err))
-	}
-
 	turnID, requestID, err := m.client.SendTurn(m.ctx, m.conversationID, content)
 	if err != nil {
 		return tui.MsgCmd(tui.ErrorMsg(err))
@@ -289,47 +250,6 @@ func (m *model) executeTask(content string) tea.Cmd {
 	return tui.NoopCmd
 }
 
-func (m *model) ensureConversation() error {
-	if m.conversationID != "" && m.responseCh != nil {
-		return nil
-	}
-
-	conversationID, responseCh, err := m.client.StartConversation(m.ctx, "")
-	if err != nil {
-		return err
-	}
-
-	m.conversationID = conversationID
-	_ = m.content.RegisterConversation(conversationID)
-	m.responseCh = responseCh
-	if !m.streamListenerStarted {
-		m.startStreamListener()
-		m.streamListenerStarted = true
-	}
-	return nil
-}
-
-func (m *model) startStreamListener() {
-	go func() {
-		for {
-			select {
-			case <-m.ctx.Done():
-				return
-
-			case update, ok := <-m.responseCh:
-				if !ok {
-					return
-				}
-				select {
-				case m.msgCh <- sessionUpdateMsg{update: update}:
-				case <-m.ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-}
-
 func (m *model) handleSessionUpdate(update *agentv1.HiveSessionResponse) []tea.Cmd {
 	cmds := []tea.Cmd{}
 	if update == nil {
@@ -337,9 +257,7 @@ func (m *model) handleSessionUpdate(update *agentv1.HiveSessionResponse) []tea.C
 	}
 
 	if createConv := update.GetCreateConversation(); createConv != nil {
-		if m.conversationID == "" {
-			m.conversationID = createConv.GetConversationId()
-		}
+		m.conversationID = createConv.GetConversationId()
 		_ = m.content.RegisterConversation(createConv.GetConversationId())
 		return cmds
 	}
@@ -445,10 +363,98 @@ func (m *model) cleanupTaskTracking(taskID string) {
 	}
 }
 
+func (m *model) startStreamListener() {
+	go func() {
+		for {
+			select {
+			case <-m.ctx.Done():
+				return
+
+			case update, ok := <-m.responseCh:
+				if !ok {
+					return
+				}
+				select {
+				case m.msgCh <- sessionUpdateMsg{update: update}:
+				case <-m.ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+}
+
+func (m *model) registerConversation(convID string, respCh <-chan *agentv1.HiveSessionResponse) {
+	m.conversationID = convID
+	m.responseCh = respCh
+	m.streamListenerStarted = true
+	m.requestToTask = map[string]string{}
+	m.startedTasks = map[string]struct{}{}
+}
+
 func (m *model) resetConversation() {
 	m.conversationID = ""
 	m.responseCh = nil
 	m.streamListenerStarted = false
 	m.requestToTask = map[string]string{}
 	m.startedTasks = map[string]struct{}{}
+	m.startStreamListener()
+}
+
+func (m *model) handleOpenConversationMsg(msg tui.OpenConversationMsg) tea.Cmd {
+	convID, respCh, err := m.client.StartConversation(m.ctx, msg.ConversationID)
+	if err != nil {
+		return tui.MsgCmd(tui.ErrorMsg(err))
+	}
+	// if current conversationID is not empty, which mean, we need to emit the
+	// signal that we need to clear the old conversation.
+	m.resetConversation()
+	m.registerConversation(convID, respCh)
+	m.content.Update(tui.ClearChatMsg{})
+	// at this point, the activeconversation is already available inside model
+	// we could subsitue and emit the message to the content model with the
+	// new convID.
+	msg.New = false
+	msg.ConversationID = convID
+	return m.content.Update(msg)
+}
+
+func (m *model) handleResizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
+	m.height, m.width = msg.Height, msg.Width
+	mainHeight := max(0, msg.Height-tui.FooterHeight-tui.HeaderHeight)
+	m.header.Update(tea.WindowSizeMsg{
+		Height: tui.HeaderHeight,
+		Width:  m.width,
+	})
+	m.footer.Update(tea.WindowSizeMsg{
+		Height: tui.FooterHeight,
+		Width:  m.width,
+	})
+
+	m.content.Update(tea.WindowSizeMsg{
+		Height: mainHeight,
+		Width:  m.width,
+	})
+
+	m.help.Update(tea.WindowSizeMsg{
+		Height: mainHeight,
+		Width:  m.width,
+	})
+	return nil
+}
+
+func (m *model) handleChangeModeMsg(msg tui.ChangeModeMsg) tea.Cmd {
+	if m.mode != tui.Mode(msg) {
+		m.mode = tui.Mode(msg)
+		switch m.mode {
+		case tui.ModeNormal:
+			m.content.Update(tea.BlurMsg{})
+		case tui.ModeInsert:
+			m.content.Update(tea.FocusMsg{})
+		}
+		m.footer.Update(msg)
+		// Forward the mode change to chat so inputbar can update
+		return m.content.Update(msg)
+	}
+	return nil
 }

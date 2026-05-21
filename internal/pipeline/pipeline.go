@@ -12,17 +12,17 @@ type Pipeline struct {
 	pre       []Stage
 	iteration []Stage
 
-	deps PipelineDependencies
+	deps Dependencies
 
 	// inline registry for pending feedback
 	pendingFeedback sync.Map
 }
 
-func NewPipeline(deps PipelineDependencies) *Pipeline {
+func NewPipeline(deps Dependencies) *Pipeline {
 	p := &Pipeline{
 		deps: deps,
 	}
-	p.deps.Parent = p
+	p.deps.parent = p
 
 	stageDeps := &p.deps
 	p.pre = []Stage{NewContextStage(stageDeps)}

@@ -24,15 +24,18 @@ type Client struct {
 	streamsMu sync.RWMutex
 	streams   map[string]grpc.BidiStreamingClient[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse] // Active streams keyed by conversation ID
 	storage   storage.SessionStorage
+
+	cc        *grpc.ClientConn
+	closeOnce sync.Once
 }
 
 type InlineRoundResult struct {
-	ConversationID string
-	TurnID         string
-	Status         string
-	Content        string
-	Question       string
-	Updates        []string
+	ConversationID string   `json:"conversation_id"`
+	TurnID         string   `json:"turn_id"`
+	Status         string   `json:"status"`
+	Content        string   `json:"content"`
+	Question       string   `json:"question"`
+	Updates        []string `json:"updates"`
 }
 
 func NewClient(cfg *config.Config) (*Client, error) {
@@ -42,10 +45,17 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	cc, err := grpc.NewClient(cfg.Server.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connection to server: %w", err)
+	}
+
 	return &Client{
 		config:  cfg,
 		storage: storage,
 		streams: make(map[string]grpc.BidiStreamingClient[agentv1.HiveSessionRequest, agentv1.HiveSessionResponse]),
+		cc:      cc,
 	}, nil
 }
 
@@ -59,13 +69,13 @@ func (c *Client) SendFeedback(ctx context.Context, conversationID, turnID, feedb
 	}
 
 	if conversationID == "" {
-		return fmt.Errorf("conversationID cannot be empty")
+		return errors.New("conversationID cannot be empty")
 	}
 	if turnID == "" {
-		return fmt.Errorf("turnID cannot be empty")
+		return errors.New("turnID cannot be empty")
 	}
 	if feedback == "" {
-		return fmt.Errorf("feedback cannot be empty")
+		return errors.New("feedback cannot be empty")
 	}
 
 	stream, exists := c.getStream(conversationID)
@@ -98,15 +108,10 @@ func (c *Client) SendFeedback(ctx context.Context, conversationID, turnID, feedb
 // StartConversation opens a persistent HiveSession stream and initializes a conversation.
 // The returned response channel carries all subsequent server updates for the stream.
 func (c *Client) StartConversation(ctx context.Context, resumeID string) (string, <-chan *agentv1.HiveSessionResponse, error) {
-	cc, err := grpc.NewClient(c.config.Server.Addr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create connection to server: %w", err)
-	}
-
-	client := agentv1.NewAgentServiceClient(cc)
+	client := agentv1.NewAgentServiceClient(c.cc)
 	srv, err := client.HiveSession(ctx)
 	if err != nil {
-		_ = cc.Close()
+		_ = c.cc.Close()
 		return "", nil, fmt.Errorf("failed to open stream: %w", err)
 	}
 
@@ -133,26 +138,26 @@ func (c *Client) StartConversation(ctx context.Context, resumeID string) (string
 
 	if err = srv.Send(createReq); err != nil {
 		_ = srv.CloseSend()
-		_ = cc.Close()
+		c.close()
 		return "", nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 
 	firstResp, err := srv.Recv()
 	if err != nil {
 		_ = srv.CloseSend()
-		_ = cc.Close()
+		c.close()
 		return "", nil, fmt.Errorf("failed to receive create conversation response: %w", err)
 	}
 	if n := firstResp.GetNotification(); n != nil && n.GetError() != "" {
 		_ = srv.CloseSend()
-		_ = cc.Close()
+		c.close()
 		return "", nil, errors.New(n.GetError())
 	}
 
 	conv := firstResp.GetCreateConversation()
 	if conv == nil || conv.GetConversationId() == "" {
 		_ = srv.CloseSend()
-		_ = cc.Close()
+		c.close()
 		return "", nil, fmt.Errorf("expected create conversation response, got %T", firstResp.GetPayload())
 	}
 	conversationID := conv.GetConversationId()
@@ -165,7 +170,7 @@ func (c *Client) StartConversation(ctx context.Context, resumeID string) (string
 		defer close(responseCh)
 		defer c.dropStream(conversationID)
 		defer srv.CloseSend() //nolint: errcheck // best-effort stream close
-		defer cc.Close()      //nolint: errcheck // best-effort connection close
+		defer c.close()
 
 		for {
 			update, recvErr := srv.Recv()
@@ -190,10 +195,10 @@ func (c *Client) StartConversation(ctx context.Context, resumeID string) (string
 // SendTurn sends a create_turn request over an existing conversation stream.
 func (c *Client) SendTurn(ctx context.Context, conversationID, command string) (turnID string, requestID string, err error) {
 	if conversationID == "" {
-		return "", "", fmt.Errorf("conversationID cannot be empty")
+		return "", "", errors.New("conversationID cannot be empty")
 	}
 	if command == "" {
-		return "", "", fmt.Errorf("command cannot be empty")
+		return "", "", errors.New("command cannot be empty")
 	}
 
 	select {
@@ -337,7 +342,9 @@ func (c *Client) ExecuteTaskWithChannel(ctx context.Context, command string) (<-
 // It consumes a single turn flow and returns when it reaches one of:
 // - turn completed (success/failed)
 // - input required
-// - notification error
+// - notification error.
+// Keep it temporarily here, will definitely need to take a look at this in
+// the future.
 func (c *Client) ExecuteTaskInline(ctx context.Context, command string) (*InlineRoundResult, error) {
 	responseCh, err := c.ExecuteTaskWithChannel(ctx, command)
 	if err != nil {
@@ -358,7 +365,7 @@ func (c *Client) ExecuteTaskInline(ctx context.Context, command string) (*Inline
 				if result.Content != "" || result.Question != "" || len(result.Updates) > 0 {
 					return result, nil
 				}
-				return nil, fmt.Errorf("inline round terminated without response")
+				return nil, errors.New("inline round terminated without response")
 			}
 
 			if conv := resp.GetCreateConversation(); conv != nil {
@@ -458,10 +465,20 @@ func (c *Client) sendNotificationError(ch chan<- *agentv1.HiveSessionResponse, e
 	}
 }
 
-func (c *Client) ListSessions() ([]*types.Session, error) {
+func (c *Client) ListConversations() ([]*types.Conversation, error) {
 	return c.storage.List()
 }
 
-func (c *Client) GetSession(sessionID string) (*types.Session, error) {
-	return c.storage.Load(sessionID)
+func (c *Client) GetConversation(id string) (*types.Conversation, error) {
+	return c.storage.Load(id)
+}
+
+func (c *Client) close() {
+	if c.cc != nil {
+		c.closeOnce.Do(
+			func() {
+				_ = c.cc.Close()
+			},
+		)
+	}
 }

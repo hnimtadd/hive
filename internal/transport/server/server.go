@@ -33,7 +33,7 @@ type HiveServer struct {
 
 var _ agentv1.AgentServiceServer = &HiveServer{}
 
-func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, sessionStorage storage.SessionStorage) (*HiveServer, error) {
+func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Registry, conversationStorage storage.SessionStorage) (*HiveServer, error) {
 	// Create task manager (storage + queue)
 	sessionLogger, err := observability.NewSessionLogger(&cfg.Tracing.SessionLog)
 	if err != nil {
@@ -41,19 +41,20 @@ func NewHiveServer(cfg *config.Config, provider llm.Provider, reg registry.Regis
 	}
 
 	eventbus := eventbus.NewEventBus[*agentv1.SessionEvent]()
-	pipeline := pipeline.NewPipeline(pipeline.PipelineDependencies{
+	pipeline := pipeline.NewPipeline(pipeline.Dependencies{
 		EventBus:      eventbus,
 		SessionLogger: sessionLogger,
 		Config:        *cfg,
 		Registry:      reg,
 		Provider:      provider,
+		Storage:       conversationStorage,
 	})
 
 	return &HiveServer{
 		config:   cfg,
 		pipeline: pipeline,
 		eventbus: eventbus,
-		sessions: sessionStorage,
+		sessions: conversationStorage,
 	}, nil
 }
 

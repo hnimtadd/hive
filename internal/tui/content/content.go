@@ -25,7 +25,7 @@ type Model struct {
 	client *client.Client
 
 	view          sessionsView
-	conversations []*types.Session
+	conversations []*types.Conversation
 	cursor        int
 	activeChatID  string
 }
@@ -48,7 +48,7 @@ func NewModel(opts *ModelOptions) (*Model, error) {
 }
 
 func (m *Model) Init() tea.Cmd {
-	sessions, err := m.client.ListSessions()
+	sessions, err := m.client.ListConversations()
 	if err != nil {
 		return tui.MsgCmd(tui.ErrorMsg(err))
 	}
@@ -57,30 +57,40 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
-	switch keyMsg := msg.(type) {
+	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.view != viewConversationList {
 			return m.chat.Update(msg)
 		}
-		switch keyMsg.String() {
+		switch msg.String() {
 		case "up", "k":
 			m.moveCursor(-1)
 			return nil
+
 		case "down", "j":
 			m.moveCursor(1)
 			return nil
+
 		case "enter":
 			return m.openSelectedConversation()
+
 		default:
 			return nil
 		}
+
 	case tea.WindowSizeMsg:
-		m.width = keyMsg.Width
-		m.height = keyMsg.Height
+		m.width = msg.Width
+		m.height = msg.Height
 		return m.chat.Update(msg)
+
 	case tui.OpenConversationMsg:
 		m.ShowChat()
+		m.activeChatID = msg.ConversationID
 		return m.chat.Update(msg)
+
+	case tui.ClearChatMsg:
+		return m.chat.Update(msg)
+
 	default:
 		return m.chat.Update(msg)
 	}
@@ -172,18 +182,15 @@ func (m *Model) renderConversationList() string {
 		return ""
 	}
 
-	header := lipgloss.NewStyle().Bold(true).Foreground(tui.Accent).Render("Sessions")
-	subtitle := lipgloss.NewStyle().Foreground(tui.Muted).
-		Render("Select a conversation to open chat view.")
 	contentWidth := max(0, m.width-4)
-	header = lipgloss.NewStyle().
+	header := lipgloss.NewStyle().
 		Foreground(tui.Accent).
 		Bold(true).
 		Background(tui.Background).
 		Width(contentWidth).
 		Render("Sessions")
 
-	subtitle = lipgloss.NewStyle().
+	subtitle := lipgloss.NewStyle().
 		Foreground(tui.Muted).
 		Background(tui.Background).
 		Width(contentWidth).
@@ -239,11 +246,11 @@ func (m *Model) RegisterConversation(id string) error {
 			return nil
 		}
 	}
-	conversation, err := m.client.GetSession(id)
+	conversation, err := m.client.GetConversation(id)
 	if err != nil {
 		return err
 	}
-	m.conversations = append([]*types.Session{conversation}, m.conversations...)
+	m.conversations = append([]*types.Conversation{conversation}, m.conversations...)
 	m.activeChatID = id
 	return nil
 }
