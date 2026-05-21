@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/hnimtadd/hive/internal/internaltypes"
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/observability"
-	"github.com/hnimtadd/hive/internal/types"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
@@ -17,7 +17,7 @@ type eventStreamMiddleware struct {
 }
 
 // OnRequest implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
+func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, req internaltypes.LLMRequest) {
 	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
 		Payload: &agentv1.Notification_Info{
 			Info: fmt.Sprintf("llm request: agent=%s input_len=%d", agentID, len(req.Input)),
@@ -33,7 +33,7 @@ func (e *eventStreamMiddleware) OnRequest(ctx context.Context, agentID string, r
 }
 
 // OnResponse implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
+func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, resp internaltypes.LLMResponse) {
 	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
 		Payload: &agentv1.Notification_Info{
 			Info: fmt.Sprintf("llm response: agent=%s finish_reason=%s", agentID, resp.FinishReason),
@@ -48,7 +48,7 @@ func (e *eventStreamMiddleware) OnResponse(ctx context.Context, agentID string, 
 }
 
 // OnToolCall implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
+func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent internaltypes.ToolCallRequest) {
 	event := agentv1.NewSessionEventNotification("", &agentv1.Notification{
 		Payload: &agentv1.Notification_Info{
 			Info: fmt.Sprintf("tool call: agent=%s tool=%s call_id=%s", agentID, toolEvent.ToolName, toolEvent.CallID),
@@ -64,7 +64,7 @@ func (e *eventStreamMiddleware) OnToolCall(ctx context.Context, agentID string, 
 }
 
 // OnToolCall implements [middleware.LLMMiddleware].
-func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent types.ToolCallResponse) {
+func (e *eventStreamMiddleware) OnToolCallResponse(ctx context.Context, agentID string, toolEvent internaltypes.ToolCallResponse) {
 	status := "failed"
 	if toolEvent.Succeed {
 		status = "succeeded"

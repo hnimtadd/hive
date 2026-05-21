@@ -1,4 +1,4 @@
-package types
+package internaltypes
 
 // ToolCallRequest represent our tool call request/response.
 type ToolCallRequest struct {

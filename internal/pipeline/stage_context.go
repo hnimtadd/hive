@@ -10,21 +10,21 @@ import (
 )
 
 type ContextStage struct {
-	deps *PipelineDependencies
+	deps *Dependencies
 }
 
 var _ Stage = &ContextStage{}
 
-func NewContextStage(deps *PipelineDependencies) *ContextStage {
+func NewContextStage(deps *Dependencies) *ContextStage {
 	return &ContextStage{deps: deps}
 }
 
 // Execute implements [Stage].
-// ContextStage populates context into the pipeline state
+// ContextStage populates context into the pipeline state.
 func (c *ContextStage) Execute(ctx context.Context, state *PipelineState) (StageResult, error) {
 	ctx = observability.ContextWithTraceContext(ctx, observability.NewRootTraceContext())
 
-	eventBusTopic := c.deps.EventBus.Publish(state.Session.ID)
+	eventBusTopic := c.deps.EventBus.Publish(state.Conversation.ID)
 	ctx = middleware.ContextWithMiddleware(ctx, middleware.JointMiddleware(
 		system.EventStreamMiddleware(eventBusTopic),
 		observability.NewTraceMiddleware(c.deps.SessionLogger),

@@ -28,7 +28,7 @@ type Handler struct {
 
 	storage storage.SessionStorage
 
-	session *types.Session
+	session *types.Conversation
 
 	unsubscribe func()
 	runMu       sync.Mutex
@@ -98,11 +98,11 @@ func (h *Handler) handleCreateConversation(ctx context.Context, req *agentv1.Hiv
 	}
 
 	var resp *agentv1.HiveSessionResponse
+
 	switch mode := payload.CreateConversation.GetMode().(type) {
 	case *agentv1.CreateConversationRequest_CreateNew:
-		session := types.NewSession()
-		session.ConversationID = session.ID
-		if err := h.storage.Create(session); err != nil {
+		session := types.NewConversation()
+		if err := h.storage.Save(session); err != nil {
 			return err
 		}
 		h.session = session
@@ -123,9 +123,6 @@ func (h *Handler) handleCreateConversation(ctx context.Context, req *agentv1.Hiv
 		session, err := h.storage.Load(mode.ResumeId)
 		if err != nil {
 			return err
-		}
-		if session.ConversationID == "" {
-			session.ConversationID = session.ID
 		}
 		h.session = session
 		resp = &agentv1.HiveSessionResponse{

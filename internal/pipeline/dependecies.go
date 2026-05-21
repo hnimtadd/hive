@@ -5,16 +5,18 @@ import (
 	"github.com/hnimtadd/hive/internal/eventbus"
 	"github.com/hnimtadd/hive/internal/model/llm"
 	"github.com/hnimtadd/hive/internal/observability"
+	"github.com/hnimtadd/hive/internal/storage"
 	"github.com/hnimtadd/hive/pkg/config"
 	agentv1 "github.com/hnimtadd/hive/proto/agent/v1"
 )
 
-type PipelineDependencies struct {
+type Dependencies struct {
 	EventBus      *eventbus.EventBus[*agentv1.SessionEvent]
 	SessionLogger *observability.SessionLogger
 	Config        config.Config
 	Registry      registry.Registry
 	Provider      llm.Provider
+	Storage       storage.SessionStorage
 
-	Parent *Pipeline
+	parent *Pipeline
 }

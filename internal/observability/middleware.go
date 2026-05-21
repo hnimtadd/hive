@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/hnimtadd/hive/internal/internaltypes"
 	"github.com/hnimtadd/hive/internal/middleware"
-	"github.com/hnimtadd/hive/internal/types"
 )
 
 const defaultTraceID = "unavailable"
@@ -22,7 +22,7 @@ func (t *traceMiddleware) IsEnabled() bool {
 }
 
 // OnRequest implements [middleware.LLMMiddleware].
-func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req types.LLMRequest) {
+func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req internaltypes.LLMRequest) {
 	if !t.IsEnabled() {
 		return
 	}
@@ -39,7 +39,7 @@ func (t *traceMiddleware) OnRequest(ctx context.Context, agentID string, req typ
 }
 
 // OnResponse implements [middleware.LLMMiddleware].
-func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp types.LLMResponse) {
+func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp internaltypes.LLMResponse) {
 	if !t.IsEnabled() {
 		return
 	}
@@ -64,7 +64,7 @@ func (t *traceMiddleware) OnResponse(ctx context.Context, agentID string, resp t
 }
 
 // OnToolCall implements [middleware.LLMMiddleware].
-func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent types.ToolCallRequest) {
+func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEvent internaltypes.ToolCallRequest) {
 	if !t.IsEnabled() {
 		return
 	}
@@ -87,7 +87,7 @@ func (t *traceMiddleware) OnToolCall(ctx context.Context, agentID string, toolEv
 }
 
 // OnToolCall implements [middleware.LLMMiddleware].
-func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, toolEvent types.ToolCallResponse) {
+func (t *traceMiddleware) OnToolCallResponse(ctx context.Context, _ string, toolEvent internaltypes.ToolCallResponse) {
 	if !t.IsEnabled() {
 		return
 	}

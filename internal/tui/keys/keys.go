@@ -29,6 +29,10 @@ var HiveKeys = hive{
 			key.WithKeys("?"),
 			key.WithHelp("?", "toggle help panel"),
 		),
+		Sessions: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "toggle sessions/chat view"),
+		),
 	},
 	Insert: insert{
 		Leave: key.NewBinding(
@@ -46,6 +50,7 @@ func (mapping hive) Mapping() map[tui.Mode][]key.Binding {
 		tui.ModeNormal: {
 			mapping.Normal.Insert,
 			mapping.Normal.Clear,
+			mapping.Normal.Sessions,
 			mapping.Normal.Quit,
 			mapping.Normal.Help,
 		},

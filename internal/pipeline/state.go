@@ -9,7 +9,7 @@ import (
 
 // PipelineState is the shared mutabled state for the whole pipeline execution.
 type PipelineState struct {
-	Session *types.Session
+	Conversation *types.Conversation
 
 	// Ctx holds enriched context after ContextStage. This context already have
 	// task identity information injected, so inner agent could read from this.
@@ -22,11 +22,11 @@ type PipelineState struct {
 }
 
 // NewPipelineState creates a PipelineState with identity fields available.
-func NewPipelineState(ctx context.Context, session *types.Session) *PipelineState {
+func NewPipelineState(ctx context.Context, session *types.Conversation) *PipelineState {
 	return &PipelineState{
-		Session: session,
-		Ctx:     ctx,
-		RunID:   session.ID,
+		Conversation: session,
+		Ctx:          ctx,
+		RunID:        session.ID,
 	}
 }
 

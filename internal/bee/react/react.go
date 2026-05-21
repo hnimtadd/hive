@@ -13,9 +13,9 @@ import (
 	"github.com/cloudwego/eino/compose"
 	einoreact "github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"github.com/hnimtadd/hive/internal/internaltypes"
 	"github.com/hnimtadd/hive/internal/middleware"
 	"github.com/hnimtadd/hive/internal/observability"
-	"github.com/hnimtadd/hive/internal/types"
 	"github.com/samber/lo"
 )
 
@@ -88,7 +88,7 @@ func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Mess
 		slog.Int("message_count", len(messages)),
 	)
 	middleware := middleware.MiddlewareFromContext(ctx)
-	middleware.OnRequest(ctx, a.id, types.LLMRequest{
+	middleware.OnRequest(ctx, a.id, internaltypes.LLMRequest{
 		Input: messages[len(messages)-1].Content,
 	})
 	start := time.Now()
@@ -116,11 +116,11 @@ func (a *Agent) ExecuteWithMessages(ctx context.Context, messages []*schema.Mess
 				return tools
 			}, []string{})
 
-		middleware.OnResponse(ctx, a.id, types.LLMResponse{
+		middleware.OnResponse(ctx, a.id, internaltypes.LLMResponse{
 			Output:       result.Content,
 			ToolCalls:    toolCalls,
 			FinishReason: result.ResponseMeta.FinishReason,
-			TokenUsed: types.TokenUsage{
+			TokenUsed: internaltypes.TokenUsage{
 				PromptTokens:     result.ResponseMeta.Usage.PromptTokens,
 				TotalTokens:      result.ResponseMeta.Usage.TotalTokens,
 				CompletionTokens: result.ResponseMeta.Usage.CompletionTokens,
@@ -143,7 +143,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = observability.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCallRequest{
+				toolCall := internaltypes.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
@@ -153,7 +153,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 
 				// Execute the tool
 				output, err := next(ctx, input)
-				tr := types.ToolCallResponse{
+				tr := internaltypes.ToolCallResponse{
 					CallID:          input.CallID,
 					ExecutionTimeMs: int(time.Since(start).Milliseconds()),
 				}
@@ -174,7 +174,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedInvokableToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = observability.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCallRequest{
+				toolCall := internaltypes.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
@@ -184,7 +184,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 
 				// Execute the tool
 				output, err := next(ctx, input)
-				tr := types.ToolCallResponse{
+				tr := internaltypes.ToolCallResponse{
 					CallID:          input.CallID,
 					ExecutionTimeMs: int(time.Since(start).Milliseconds()),
 				}
@@ -206,7 +206,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.EnhancedStreamableToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = observability.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCallRequest{
+				toolCall := internaltypes.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
@@ -217,7 +217,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 				// Execute the tool
 				output, err := next(ctx, input)
 				go func(output compose.EnhancedStreamableToolOutput, err error) {
-					tr := types.ToolCallResponse{
+					tr := internaltypes.ToolCallResponse{
 						CallID:          input.CallID,
 						ExecutionTimeMs: int(time.Since(start).Milliseconds()),
 					}
@@ -250,7 +250,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.StreamToolOutput, error) {
 				mw := middleware.MiddlewareFromContext(ctx)
 				ctx, _ = observability.ContextWithChildSpan(ctx)
-				toolCall := types.ToolCallRequest{
+				toolCall := internaltypes.ToolCallRequest{
 					ToolName:  input.Name,
 					Arguments: input.Arguments,
 					CallID:    input.CallID,
@@ -262,7 +262,7 @@ func (a *Agent) hiveMiddleware() compose.ToolMiddleware {
 				// Execute the tool
 				output, err := next(ctx, input)
 				go func(output compose.StreamToolOutput, err error) {
-					tr := types.ToolCallResponse{
+					tr := internaltypes.ToolCallResponse{
 						CallID:          input.CallID,
 						ExecutionTimeMs: int(time.Since(start).Milliseconds()),
 					}
